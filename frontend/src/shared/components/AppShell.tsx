@@ -9,10 +9,11 @@ import {
   ListChecks,
   FolderOpen,
 } from "lucide-react";
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { navigationItems } from "../data/platformData";
 import { useStore } from "../../app/store";
+import { PersonalSettingsModal } from "../../features/personal-settings/PersonalSettingsModal";
 import type { ViewKey } from "../types/platform";
 import { useNavHighlight } from "../hooks/useNavHighlight";
 
@@ -55,6 +56,8 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
   const [helpPos, setHelpPos] = useState({ top: 0, left: 0 });
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showPersonalSettings, setShowPersonalSettings] = useState(false);
   const { state } = useStore();
   const navigate = useNavigate();
 
@@ -94,6 +97,20 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
     return results.slice(0, 10);
   }, [searchQuery, state, navigate]);
 
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭用户菜单
+  useEffect(() => {
+    if (!showUserMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showUserMenu]);
+
   // 鼠标移动时跟随
   const handleNavMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const container = containerRef.current;
@@ -130,12 +147,10 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
           <div className="brand-mark">
             <LogoIcon />
           </div>
-          {!collapsed && (
-            <div>
-              <strong>AITestLink</strong>
-              <span>AI 测试平台</span>
-            </div>
-          )}
+          <div className="brand-text">
+            <strong>TestLink</strong>
+            <span>AI 测试平台</span>
+          </div>
         </div>
 
         <nav className="sidebar__nav" aria-label="主导航">
@@ -250,6 +265,29 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
             <button className="icon-button" type="button" title="通知">
               <Bell size={18} />
             </button>
+            <div className="user-avatar-wrapper" ref={userMenuRef}>
+              <button className="user-avatar" type="button" onClick={() => setShowUserMenu(!showUserMenu)}>
+                <span>Y</span>
+              </button>
+              {showUserMenu && (
+                <div className="user-menu">
+                  <div className="user-menu__header">
+                    <div className="user-avatar user-avatar--sm"><span>Y</span></div>
+                    <div>
+                      <strong>管理员</strong>
+                      <span>admin@aitestlink.com</span>
+                    </div>
+                  </div>
+                  <div className="user-menu__divider" />
+                  <button className="user-menu__item" type="button" onClick={() => { setShowUserMenu(false); setShowPersonalSettings(true); }}>
+                    个人设置
+                  </button>
+                  <button className="user-menu__item user-menu__item--danger" type="button" onClick={() => setShowUserMenu(false)}>
+                    退出登录
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
         <div className="content">{children}</div>
@@ -297,6 +335,11 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
           </div>
         </div>
       )}
+
+      <PersonalSettingsModal
+        open={showPersonalSettings}
+        onClose={() => setShowPersonalSettings(false)}
+      />
     </div>
   );
 }

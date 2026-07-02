@@ -8,7 +8,8 @@ export type ViewKey =
   | "requirements"
   | "testDesign"
   | "automation"
-  | "reports";
+  | "reports"
+  | "modelConfig";
 
 // ─── 导航 ───
 

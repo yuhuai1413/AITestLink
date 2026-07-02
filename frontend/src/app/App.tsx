@@ -8,6 +8,7 @@ import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
 import { ReportsPage } from "../features/reports/ReportsPage";
 import { RequirementAnalysisPage } from "../features/requirements/RequirementAnalysisPage";
 import { TestDesignPage } from "../features/test-design/TestDesignPage";
+import { ModelConfigPage } from "../features/model-config/ModelConfigPage";
 import { useAPISync } from "../api/useAPISync";
 
 /** 把 URL pathname 映射到 ViewKey */
@@ -17,6 +18,7 @@ function pathnameToView(pathname: string): ViewKey {
   if (pathname.startsWith("/test-design")) return "testDesign";
   if (pathname.startsWith("/automation")) return "automation";
   if (pathname.startsWith("/reports")) return "reports";
+  if (pathname.startsWith("/model-config")) return "modelConfig";
   return "dashboard";
 }
 
@@ -34,6 +36,7 @@ function AppShellLayout({ children }: { children: React.ReactNode }) {
       testDesign: "/test-design",
       automation: "/automation",
       reports: "/reports",
+      modelConfig: "/model-config",
     };
     navigate(map[view]);
   };
@@ -46,7 +49,6 @@ function AppShellLayout({ children }: { children: React.ReactNode }) {
 }
 
 export function App() {
-  // Initialize API sync (fetches data from backend if available)
   useAPISync();
 
   return (
@@ -59,6 +61,7 @@ export function App() {
         <Route path="/test-design" element={<TestDesignPage />} />
         <Route path="/automation" element={<AutomationPage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/model-config" element={<ModelConfigPage />} />
       </Routes>
     </AppShellLayout>
   );

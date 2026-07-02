@@ -49,7 +49,7 @@ createdb aitestlink
 |----|------|
 | 前端 | React 18 + TypeScript + Vite |
 | 后端 | FastAPI + SQLAlchemy (async) |
-| 数据库 | PostgreSQL |
+| 数据库 | SQLite |
 | AI | OpenAI Compatible API (Claude/GPT) |
 | 样式 | 手写 CSS（紫色主题） |
 

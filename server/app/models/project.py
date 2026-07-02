@@ -2,7 +2,6 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Column, DateTime, Integer, String, Text
-from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
 
@@ -10,7 +9,7 @@ from app.database import Base
 class Project(Base):
     __tablename__ = "projects"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False)
     version = Column(String(50), nullable=False, default="V0.1")
     owner = Column(String(255), nullable=False)

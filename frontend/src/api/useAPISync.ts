@@ -11,37 +11,45 @@ import {
 import type { ApiProject, ApiFile, ApiRequirement, ApiTestPoint, ApiTestCase, ApiAITask } from "../api/client";
 import type { Project, FileAsset, Requirement, TestPoint, TestCase, AITask } from "../shared/types/platform";
 
-/** Sync frontend store with backend API */
+/** Sync frontend store with backend API (non-blocking) */
 export function useAPISync() {
   const { state, dispatch } = useStore();
   const initialized = useRef(false);
 
-  // Load initial data from API
+  // Non-blocking: fetch API data in background, don't block rendering
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
 
-    async function loadAll() {
+    const settle = async <T>(fn: () => Promise<T>): Promise<T[]> => {
       try {
-        const [projects, files, requirements, testPoints, testCases] = await Promise.all([
-          projectsApi.list(),
-          loadAllFiles(),
-          loadAllRequirements(),
-          loadAllTestPoints(),
-          loadAllTestCases(),
+        const result = await Promise.race([
+          fn(),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000)),
         ]);
-
-        // Populate store
-        projects.forEach((p) => dispatch({ type: "ADD_PROJECT", payload: apiToProject(p) }));
-        files.forEach((f) => dispatch({ type: "ADD_FILE", payload: apiToFile(f) }));
-        requirements.forEach((r) => dispatch({ type: "ADD_REQUIREMENT", payload: apiToRequirement(r) }));
-        testPoints.forEach((tp) => dispatch({ type: "ADD_TEST_POINT", payload: apiToTestPoint(tp) }));
-        testCases.forEach((tc) => dispatch({ type: "ADD_TEST_CASE", payload: apiToTestCase(tc) }));
-      } catch (err) {
-        console.warn("API not available, using local data:", err);
+        return Array.isArray(result) ? result : [];
+      } catch {
+        return [];
       }
+    };
+
+    async function loadAll() {
+      const [projects, files, requirements, testPoints, testCases] = await Promise.all([
+        settle(() => projectsApi.list()),
+        settle(() => loadAllFiles()),
+        settle(() => loadAllRequirements()),
+        settle(() => loadAllTestPoints()),
+        settle(() => loadAllTestCases()),
+      ]);
+
+      projects.forEach((p) => dispatch({ type: "ADD_PROJECT", payload: apiToProject(p) }));
+      files.forEach((f) => dispatch({ type: "ADD_FILE", payload: apiToFile(f) }));
+      requirements.forEach((r) => dispatch({ type: "ADD_REQUIREMENT", payload: apiToRequirement(r) }));
+      testPoints.forEach((tp) => dispatch({ type: "ADD_TEST_POINT", payload: apiToTestPoint(tp) }));
+      testCases.forEach((tc) => dispatch({ type: "ADD_TEST_CASE", payload: apiToTestCase(tc) }));
     }
 
+    // Fire and forget — don't block app rendering
     loadAll();
   }, [dispatch]);
 

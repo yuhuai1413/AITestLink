@@ -26,7 +26,7 @@ export function Modal({ open, onClose, title, children, width = 520 }: ModalProp
     <dialog
       ref={dialogRef}
       className="modal-dialog"
-      style={{ maxWidth: width }}
+      style={{ width: `${width}px`, maxWidth: "90vw" }}
       onCancel={onClose}
     >
       <div className="modal-dialog__header">

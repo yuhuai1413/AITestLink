@@ -16,14 +16,9 @@ cp .env.example .env
 # 编辑 .env，填写数据库连接和 LLM API Key
 ```
 
-### 3. 创建数据库
+### 3. 启动服务
 ```bash
-# PostgreSQL
-createdb aitestlink
-```
-
-### 4. 启动服务
-```bash
+# 数据库自动创建（SQLite）
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -36,6 +31,6 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ## 技术栈
 - FastAPI — Web 框架
 - SQLAlchemy (async) — ORM
-- PostgreSQL — 数据库
+- SQLite — 数据库
 - httpx — LLM API 调用
 - python-docx / PyPDF2 — 文件文本提取

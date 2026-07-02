@@ -5,6 +5,7 @@ export interface Column<T> {
   label: string;
   render: (row: T) => ReactNode;
   align?: "left" | "center" | "right";
+  width?: string;
 }
 
 interface DataTableProps<T> {
@@ -20,7 +21,11 @@ export function DataTable<T>({ columns, rows, getRowKey }: DataTableProps<T>) {
         <thead>
           <tr>
             {columns.map((column) => (
-              <th key={column.key} className="align-center">
+              <th
+                key={column.key}
+                className="align-center"
+                style={column.width ? { width: column.width, minWidth: column.width } : undefined}
+              >
                 {column.label}
               </th>
             ))}
@@ -30,7 +35,11 @@ export function DataTable<T>({ columns, rows, getRowKey }: DataTableProps<T>) {
           {rows.map((row) => (
             <tr key={getRowKey(row)}>
               {columns.map((column) => (
-                <td key={column.key} className={`align-${column.align ?? "center"}`}>
+                <td
+                  key={column.key}
+                  className={`align-${column.align ?? "center"}`}
+                  style={column.width ? { width: column.width, minWidth: column.width } : undefined}
+                >
                   {column.render(row)}
                 </td>
               ))}

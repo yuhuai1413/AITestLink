@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   ListChecks,
   PlayCircle,
+  Settings,
 } from "lucide-react";
 import type {
   AgentCapability,
@@ -51,6 +52,12 @@ export const navigationItems: NavigationItem[] = [
     label: "报告中心",
     description: "日报、回归和质量结论",
     icon: ClipboardCheck,
+  },
+  {
+    key: "modelConfig",
+    label: "模型配置",
+    description: "AI 模型和 API 设置",
+    icon: Settings,
   },
 ];
 

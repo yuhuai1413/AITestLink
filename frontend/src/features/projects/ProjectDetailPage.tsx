@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useStore, useProject, useProjectRequirements, useProjectTestPoints, useProjectTestCases, useProjectFiles, useProjectAITasks } from "../../app/store";
 import { DataTable } from "../../shared/components/DataTable";
+import { Modal } from "../../shared/components/Modal";
 import { SectionHeader } from "../../shared/components/SectionHeader";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { useAISimulation } from "../../shared/hooks/useAISimulation";
