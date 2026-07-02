@@ -1,6 +1,27 @@
+# 依赖
 node_modules/
-.DS_Store
+__pycache__/
+*.pyc
+venv/
+
+# 构建产物
 dist/
+build/
+
+# 环境与配置
 *.local
 .npmrc
+.env
+.env.*
+
+# 缓存
 .pnpm-store/
+.vite/
+.pytest_cache/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 上传文件
+server/uploads/*
