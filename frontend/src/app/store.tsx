@@ -87,7 +87,7 @@ type Action =
   | { type: "ADD_AI_TASK"; payload: AITask }
   | { type: "UPDATE_AI_TASK"; payload: AITask };
 
-function reducer(state: AppState, action: Action): AppState {
+export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case "ADD_PROJECT":
       return { ...state, projects: [...state.projects, action.payload] };

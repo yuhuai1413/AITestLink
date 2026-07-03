@@ -2,26 +2,71 @@ import json
 import logging
 
 import httpx
+from sqlalchemy import select
 
 from app.config import settings
+from app.database import async_session
+from app.models.model_config import ModelConfig
 
 logger = logging.getLogger(__name__)
 
 
-class AIService:
-    def __init__(self):
-        self.api_key = settings.LLM_API_KEY
-        self.base_url = settings.LLM_BASE_URL
-        self.model = settings.LLM_MODEL
+# 任务类型到配置ID的映射
+TASK_CONFIG_MAP = {
+    "需求解析": "parse-requirements",
+    "测试点生成": "generate-test-points",
+    "用例生成": "generate-test-cases",
+    "用例评审": "review-test-cases",
+}
 
-    async def _call_llm(self, system_prompt: str, user_prompt: str) -> str:
+
+async def _get_config_for_task(task_type: str) -> dict:
+    """根据任务类型从数据库获取配置"""
+    config_id = TASK_CONFIG_MAP.get(task_type)
+
+    async with async_session() as db:
+        if config_id:
+            result = await db.execute(select(ModelConfig).where(ModelConfig.id == config_id))
+            config = result.scalar_one_or_none()
+            if config and config.enabled and config.api_key:
+                return {
+                    "api_key": config.api_key,
+                    "endpoint": config.endpoint,
+                    "model": config.model_name,
+                }
+
+        # 尝试获取任意一个启用的配置
+        result = await db.execute(
+            select(ModelConfig).where(ModelConfig.enabled == True, ModelConfig.api_key != "")
+        )
+        configs = result.scalars().all()
+        if configs:
+            config = configs[0]
+            return {
+                "api_key": config.api_key,
+                "endpoint": config.endpoint,
+                "model": config.model_name,
+            }
+
+    # 使用默认配置
+    return {
+        "api_key": settings.LLM_API_KEY,
+        "endpoint": settings.LLM_BASE_URL,
+        "model": settings.LLM_MODEL,
+    }
+
+
+class AIService:
+    async def _call_llm(self, system_prompt: str, user_prompt: str, task_type: str = "") -> str:
         """Call LLM API and return the response content."""
+        config = await _get_config_for_task(task_type)
+
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {config['api_key']}",
             "Content-Type": "application/json",
         }
         payload = {
-            "model": self.model,
+            "model": config['model'],
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -32,7 +77,7 @@ class AIService:
 
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(
-                f"{self.base_url}/chat/completions",
+                config['endpoint'],
                 headers=headers,
                 json=payload,
             )
@@ -76,7 +121,7 @@ class AIService:
 
         user_prompt = f"请分析以下需求文档内容，提取结构化需求：\n\n{file_content[:3000]}"
 
-        response = await self._call_llm(system_prompt, user_prompt)
+        response = await self._call_llm(system_prompt, user_prompt, "需求解析")
         return self._parse_json_response(response)
 
     async def generate_test_points(self, requirements_text: str) -> list[dict]:
@@ -96,7 +141,7 @@ class AIService:
 
         user_prompt = f"请根据以下需求生成测试点：\n\n{requirements_text[:3000]}"
 
-        response = await self._call_llm(system_prompt, user_prompt)
+        response = await self._call_llm(system_prompt, user_prompt, "测试点生成")
         return self._parse_json_response(response)
 
     async def generate_test_cases(self, test_points_text: str) -> list[dict]:
@@ -120,5 +165,5 @@ class AIService:
 
         user_prompt = f"请根据以下测试点生成测试用例：\n\n{test_points_text[:3000]}"
 
-        response = await self._call_llm(system_prompt, user_prompt)
+        response = await self._call_llm(system_prompt, user_prompt, "用例生成")
         return self._parse_json_response(response)

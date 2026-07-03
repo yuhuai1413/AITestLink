@@ -148,7 +148,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
             <LogoIcon />
           </div>
           <div className="brand-text">
-            <strong>TestLink</strong>
+            <strong>智测通</strong>
             <span>AI 测试平台</span>
           </div>
         </div>
@@ -282,7 +282,12 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
                   <button className="user-menu__item" type="button" onClick={() => { setShowUserMenu(false); setShowPersonalSettings(true); }}>
                     个人设置
                   </button>
-                  <button className="user-menu__item user-menu__item--danger" type="button" onClick={() => setShowUserMenu(false)}>
+                  <button className="user-menu__item user-menu__item--danger" type="button" onClick={() => {
+                    localStorage.removeItem("token");
+                    localStorage.removeItem("user");
+                    setShowUserMenu(false);
+                    window.location.href = "/login";
+                  }}>
                     退出登录
                   </button>
                 </div>
@@ -304,7 +309,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
             <div className="help-popover__body">
               <div className="help-section">
                 <h3>平台简介</h3>
-                <p>AITestLink 是一款 AI 驱动的软件测试平台，支持从需求文档到测试用例的全链路自动化生成。</p>
+                <p>智测通是一款 AI 驱动的软件测试平台，支持从需求文档到测试用例的全链路自动化生成。</p>
               </div>
               <div className="help-section">
                 <h3>核心功能</h3>

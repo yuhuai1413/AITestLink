@@ -1,77 +1,51 @@
-import { useState, useEffect } from "react";
-import { Eye, EyeOff, Pencil, TestTube } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Eye, EyeOff, Pencil, TestTube, Loader2, Check, X, Save } from "lucide-react";
 import { Modal } from "../../shared/components/Modal";
 import { SectionHeader } from "../../shared/components/SectionHeader";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { DataTable } from "../../shared/components/DataTable";
+import { modelConfigApi, type ApiModelConfig } from "../../api/client";
 
-interface ModelConfig {
-  id: string;
-  name: string;
-  aiNode: string;
-  provider: string;
-  modelName: string;
-  apiKey: string;
-  endpoint: string;
-  description: string;
-  enabled: boolean;
+// Toast 提示组件
+function Toast({ message, type, onClose }: { message: string; type: "success" | "error"; onClose: () => void }) {
+  return (
+    <div className={`toast toast--${type}`}>
+      {type === "success" ? <Check size={16} /> : <X size={16} />}
+      <span>{message}</span>
+    </div>
+  );
 }
 
-const STORAGE_KEY = "aitestlink-model-configs";
-const CONFIG_VERSION = "2.0";
+// 全局 toast 状态
+let toastState: { message: string; type: "success" | "error" } | null = null;
+let toastListeners: Array<() => void> = [];
 
-const defaultConfigs: ModelConfig[] = [
-  {
-    id: "parse-requirements",
-    name: "需求解析",
-    aiNode: "需求解析节点",
-    provider: "小米-MiMo大模型平台",
-    modelName: "mimo-v2.5",
-    apiKey: "tp-cazodxk90u6tcem5z6cumzxxlxzm5ioon8hf561ow4bo0jzf",
-    endpoint: "https://api.xiaomimimo.com/v1",
-    description: "从需求文档中提取模块、功能点和业务规则",
-    enabled: true,
-  },
-  {
-    id: "generate-test-points",
-    name: "测试点生成",
-    aiNode: "测试设计节点",
-    provider: "小米-MiMo大模型平台",
-    modelName: "mimo-v2.5",
-    apiKey: "tp-cazodxk90u6tcem5z6cumzxxlxzm5ioon8hf561ow4bo0jzf",
-    endpoint: "https://api.xiaomimimo.com/v1",
-    description: "根据需求生成覆盖正常、异常、边界等场景的测试点",
-    enabled: true,
-  },
-  {
-    id: "generate-test-cases",
-    name: "用例生成",
-    aiNode: "测试设计节点",
-    provider: "小米-MiMo大模型平台",
-    modelName: "mimo-v2.5",
-    apiKey: "tp-cazodxk90u6tcem5z6cumzxxlxzm5ioon8hf561ow4bo0jzf",
-    endpoint: "https://api.xiaomimimo.com/v1",
-    description: "根据测试点生成包含步骤和预期结果的测试用例",
-    enabled: true,
-  },
-  {
-    id: "review-test-cases",
-    name: "用例评审",
-    aiNode: "测试设计节点",
-    provider: "小米-MiMo大模型平台",
-    modelName: "mimo-v2.5",
-    apiKey: "tp-cazodxk90u6tcem5z6cumzxxlxzm5ioon8hf561ow4bo0jzf",
-    endpoint: "https://api.xiaomimimo.com/v1",
-    description: "评审测试用例的完整性和可执行性",
-    enabled: true,
-  },
-];
+function showToast(message: string, type: "success" | "error") {
+  toastState = { message, type };
+  toastListeners.forEach((l) => l());
+  setTimeout(() => {
+    toastState = null;
+    toastListeners.forEach((l) => l());
+  }, 3000);
+}
+
+function useToast() {
+  const [, forceUpdate] = useState(0);
+  useEffect(() => {
+    const listener = () => forceUpdate((n) => n + 1);
+    toastListeners.push(listener);
+    return () => {
+      toastListeners = toastListeners.filter((l) => l !== listener);
+    };
+  }, []);
+  return toastState;
+}
 
 const nodeColors: Record<string, string> = {
   "需求解析节点": "green",
-  "测试设计节点": "blue",
-  "自动化节点": "amber",
-  "报告节点": "slate",
+  "测试点生成节点": "blue",
+  "用例生成节点": "amber",
+  "用例评审节点": "red",
 };
 
 const providerModels: Record<string, { models: string[]; endpoint: string }> = {
@@ -117,23 +91,52 @@ const providerModels: Record<string, { models: string[]; endpoint: string }> = {
   },
 };
 
-function loadConfigs(): ModelConfig[] {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      // 版本检查：旧数据自动替换为新默认值
-      if (parsed._version === CONFIG_VERSION) {
-        return parsed.configs || defaultConfigs;
-      }
-    }
-  } catch {}
-  return defaultConfigs;
-}
-
-function saveConfigs(configs: ModelConfig[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ _version: CONFIG_VERSION, configs }));
-}
+const defaultConfigs: ApiModelConfig[] = [
+  {
+    id: "parse-requirements",
+    name: "需求解析",
+    aiNode: "需求解析节点",
+    provider: "小米-MiMo大模型平台",
+    modelName: "mimo-v2.5",
+    apiKey: "",
+    endpoint: "https://api.xiaomimimo.com/v1",
+    description: "从需求文档中提取模块、功能点和业务规则",
+    enabled: true,
+  },
+  {
+    id: "generate-test-points",
+    name: "测试点生成",
+    aiNode: "测试设计节点",
+    provider: "小米-MiMo大模型平台",
+    modelName: "mimo-v2.5",
+    apiKey: "",
+    endpoint: "https://api.xiaomimimo.com/v1",
+    description: "根据需求生成覆盖正常、异常、边界等场景的测试点",
+    enabled: true,
+  },
+  {
+    id: "generate-test-cases",
+    name: "用例生成",
+    aiNode: "测试设计节点",
+    provider: "小米-MiMo大模型平台",
+    modelName: "mimo-v2.5",
+    apiKey: "",
+    endpoint: "https://api.xiaomimimo.com/v1",
+    description: "根据测试点生成包含步骤和预期结果的测试用例",
+    enabled: true,
+  },
+  {
+    id: "review-test-cases",
+    name: "用例评审",
+    aiNode: "测试设计节点",
+    provider: "小米-MiMo大模型平台",
+    modelName: "mimo-v2.5",
+    apiKey: "",
+    endpoint: "https://api.xiaomimimo.com/v1",
+    description: "评审测试用例的完整性和可执行性",
+    enabled: true,
+  },
+];
 
 function maskKey(key: string): string {
   if (!key) return "****未配置";
@@ -142,26 +145,129 @@ function maskKey(key: string): string {
 }
 
 export function ModelConfigPage() {
-  const [configs, setConfigs] = useState<ModelConfig[]>([]);
-  const [editingConfig, setEditingConfig] = useState<ModelConfig | null>(null);
+  const [configs, setConfigs] = useState<ApiModelConfig[]>([]);
+  const [editingConfig, setEditingConfig] = useState<ApiModelConfig | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, "success" | "error" | null>>({});
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const toast = useToast();
 
+  // 加载配置
   useEffect(() => {
-    setConfigs(loadConfigs());
+    loadConfigs();
   }, []);
 
-  const updateConfig = (id: string, field: keyof ModelConfig, value: string | boolean) => {
-    const newConfigs = configs.map((c) => (c.id === id ? { ...c, [field]: value } : c));
-    setConfigs(newConfigs);
-    saveConfigs(newConfigs);
+  const loadConfigs = async () => {
+    setLoading(true);
+    try {
+      const data = await modelConfigApi.list();
+      if (data && data.length > 0) {
+        setConfigs(data);
+      }
+      // 如果后端没有配置，不覆盖，保持空列表让用户手动添加
+    } catch (error) {
+      console.error("Failed to load configs:", error);
+      // 加载失败时不覆盖现有配置
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const saveConfigs = async (newConfigs: ApiModelConfig[]) => {
+    setSaving(true);
+    try {
+      const result = await modelConfigApi.update(newConfigs);
+      if (result.ok) {
+        setConfigs(newConfigs);
+      }
+    } catch (error) {
+      console.error("Failed to save configs:", error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const testConnection = useCallback(async (config: ApiModelConfig) => {
+    setTestingId(config.id);
+    setTestResults(prev => ({ ...prev, [config.id]: null }));
+
+    try {
+      const result = await modelConfigApi.test(config.id);
+      if (result.ok) {
+        setTestResults(prev => ({ ...prev, [config.id]: "success" }));
+        // 显示成功提示
+        showToast(result.message || "连通正常", "success");
+      } else {
+        setTestResults(prev => ({ ...prev, [config.id]: "error" }));
+        showToast(result.message || "测试失败", "error");
+      }
+    } catch (error: any) {
+      console.error("Test connection error:", error);
+      setTestResults(prev => ({ ...prev, [config.id]: "error" }));
+      showToast(error.message || "测试失败", "error");
+    } finally {
+      setTestingId(null);
+      // 3秒后清除测试结果
+      setTimeout(() => {
+        setTestResults(prev => ({ ...prev, [config.id]: null }));
+      }, 3000);
+    }
+  }, []);
+
+  const updateConfig = async (id: string, field: keyof ApiModelConfig, value: string | boolean) => {
+    const newConfigs = configs.map((c) => (c.id === id ? { ...c, [field]: value } : c));
+    // 先保存到后端，成功后再更新状态
+    await saveConfigs(newConfigs);
+  };
+
+  const handleSaveEdit = async () => {
+    if (editingConfig) {
+      // 直接用 editingConfig 更新 configs 中对应项，确保 apiKey 被正确传递
+      const newConfigs = configs.map((c) => {
+        if (c.id === editingConfig.id) {
+          // 返回 editingConfig 的副本，确保所有字段（包括 apiKey）都被保留
+          return { ...editingConfig };
+        }
+        return c;
+      });
+      await saveConfigs(newConfigs);
+      // 重新加载配置以确保状态同步
+      await loadConfigs();
+      setEditingConfig(null);
+      setShowApiKey(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="page-stack">
+        <SectionHeader
+          eyebrow="系统设置"
+          title="模型配置"
+          description="为每个 AI 节点配置模型供应商、API Key 和参数。"
+        />
+        <div className="work-panel" style={{ textAlign: "center", padding: "40px" }}>
+          <Loader2 size={24} className="animate-spin" style={{ marginBottom: 8 }} />
+          <p>加载配置中...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="page-stack">
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => {}} />}
       <SectionHeader
         eyebrow="系统设置"
         title="模型配置"
-        description="为每个 AI 节点配置模型供应商、API Key 和参数。"
+        description="为每个 AI 节点配置模型供应商、API Key 和参数。配置会自动保存到后端。"
+        actions={
+          <StatusPill tone={saving ? "amber" : "green"}>
+            {saving ? "保存中..." : "已同步"}
+          </StatusPill>
+        }
       />
 
       <section className="work-panel">
@@ -217,8 +323,29 @@ export function ModelConfigPage() {
                   <button className="text-button" type="button" style={{ color: "var(--blue)", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 4 }} onClick={() => setEditingConfig({ ...row })}>
                     <Pencil size={13} strokeWidth={2.5} /> 编辑
                   </button>
-                  <button className="text-button" type="button" style={{ color: "var(--green)", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 4 }} onClick={() => alert("测试连接中...（功能待实现）")}>
-                    <TestTube size={13} strokeWidth={2.5} /> 测试
+                  <button 
+                    className="text-button" 
+                    type="button" 
+                    style={{ 
+                      color: testResults[row.id] === "success" ? "var(--green)" : testResults[row.id] === "error" ? "var(--red)" : "var(--green)", 
+                      fontSize: 13, 
+                      display: "inline-flex", 
+                      alignItems: "center", 
+                      gap: 4 
+                    }} 
+                    onClick={() => testConnection(row)}
+                    disabled={testingId === row.id}
+                  >
+                    {testingId === row.id ? (
+                      <Loader2 size={13} strokeWidth={2.5} className="animate-spin" />
+                    ) : testResults[row.id] === "success" ? (
+                      <Check size={13} strokeWidth={2.5} />
+                    ) : testResults[row.id] === "error" ? (
+                      <X size={13} strokeWidth={2.5} />
+                    ) : (
+                      <TestTube size={13} strokeWidth={2.5} />
+                    )}
+                    {testingId === row.id ? "测试中" : testResults[row.id] === "success" ? "成功" : testResults[row.id] === "error" ? "失败" : "测试"}
                   </button>
                 </div>
               ),
@@ -235,7 +362,7 @@ export function ModelConfigPage() {
         width={560}
       >
         {editingConfig && (
-          <form className="form-stack" onSubmit={(e) => { e.preventDefault(); if (editingConfig) { const newConfigs = configs.map((c) => (c.id === editingConfig.id ? editingConfig : c)); setConfigs(newConfigs); saveConfigs(newConfigs); } setEditingConfig(null); setShowApiKey(false); }}>
+          <form className="form-stack" onSubmit={(e) => { e.preventDefault(); handleSaveEdit(); }}>
             <div className="form-row">
               <label className="form-label">
                 供应商
@@ -294,7 +421,10 @@ export function ModelConfigPage() {
             </div>
             <div className="form-actions">
               <button className="ghost-button" type="button" onClick={() => { setEditingConfig(null); setShowApiKey(false); }}>取消</button>
-              <button className="primary-button" type="submit">保存</button>
+              <button className="primary-button" type="submit">
+                <Save size={16} />
+                保存
+              </button>
             </div>
           </form>
         )}

@@ -8,13 +8,15 @@ import {
   Pencil,
   Trash2,
   WandSparkles,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import { useStore, useProject, useProjectRequirements, useProjectTestPoints, useProjectTestCases, useProjectFiles, useProjectAITasks } from "../../app/store";
 import { DataTable } from "../../shared/components/DataTable";
 import { Modal } from "../../shared/components/Modal";
 import { SectionHeader } from "../../shared/components/SectionHeader";
 import { StatusPill } from "../../shared/components/StatusPill";
-import { useAISimulation } from "../../shared/hooks/useAISimulation";
+import { useAIAction } from "../../shared/hooks/useAIAction";
 import { exportTestCasesToExcel } from "../../shared/utils/exportExcel";
 import { TestCaseEditModal } from "../test-design/TestCaseEditModal";
 import { TestCaseDetailModal } from "../test-design/TestCaseDetailModal";
@@ -287,30 +289,10 @@ function FilesTab({ projectId }: { projectId: string }) {
 function RequirementsTab({ projectId }: { projectId: string }) {
   const requirements = useProjectRequirements(projectId);
   const { dispatch } = useStore();
-  const { simulateAI } = useAISimulation(projectId);
+  const { loading, error, parseRequirements } = useAIAction(projectId);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRule, setEditRule] = useState("");
   const [editQuestion, setEditQuestion] = useState("");
-
-  const handleParse = async () => {
-    await simulateAI("需求解析");
-    const mockRequirements = [
-      { module: "用户管理", feature: "登录注册", source: "PRD 2.1", risk: "高" as const, rule: "支持手机号、邮箱注册，登录需验证验证码。", question: "是否支持第三方登录？" },
-      { module: "用户管理", feature: "权限控制", source: "PRD 2.2", risk: "中" as const, rule: "管理员、普通用户、只读用户三种角色。", question: "角色是否支持自定义？" },
-      { module: "核心业务", feature: "数据导入", source: "PRD 3.1", risk: "高" as const, rule: "支持 Excel、CSV 格式导入，需校验数据格式。", question: "单次导入上限是多少条？" },
-    ];
-    mockRequirements.forEach((req, i) => {
-      dispatch({
-        type: "ADD_REQUIREMENT",
-        payload: {
-          id: `REQ-AUTO-${Date.now()}-${i}`,
-          projectId,
-          confirmed: false,
-          ...req,
-        },
-      });
-    });
-  };
 
   const startEdit = (req: { id: string; rule: string; question: string }) => {
     setEditingId(req.id);
@@ -335,12 +317,24 @@ function RequirementsTab({ projectId }: { projectId: string }) {
         title="AI 需求解析"
         description="基于上传的文档，AI 自动提取模块、功能点、业务规则和待确认问题。"
         actions={
-          <button className="primary-button" type="button" onClick={handleParse}>
-            <WandSparkles size={17} />
-            AI 解析
+          <button className="primary-button" type="button" onClick={parseRequirements} disabled={loading}>
+            {loading ? (
+              <Loader2 size={17} className="animate-spin" />
+            ) : (
+              <WandSparkles size={17} />
+            )}
+            {loading ? "解析中..." : "AI 解析"}
           </button>
         }
       />
+
+      {error && (
+        <div className="error-banner">
+          <AlertCircle size={16} />
+          <span>{error}</span>
+        </div>
+      )}
+
       <section className="work-panel">
         {requirements.length === 0 ? (
           <div className="empty-state">
@@ -413,7 +407,7 @@ function RequirementsTab({ projectId }: { projectId: string }) {
 function TestPointsTab({ projectId }: { projectId: string }) {
   const testPoints = useProjectTestPoints(projectId);
   const { dispatch } = useStore();
-  const { simulateAI } = useAISimulation(projectId);
+  const { loading, error, generateTestPoints } = useAIAction(projectId);
   const [moduleFilter, setModuleFilter] = useState<string>("all");
   const [editingPoint, setEditingPoint] = useState<TestPoint | null>(null);
 
@@ -427,29 +421,6 @@ function TestPointsTab({ projectId }: { projectId: string }) {
     [testPoints, moduleFilter],
   );
 
-  const handleGenerate = async () => {
-    await simulateAI("测试点生成");
-    const mockPoints = [
-      { module: "用户管理", type: "正常流程" as const, title: "用户使用有效手机号注册并登录成功", priority: "P0" as const, automatable: true },
-      { module: "用户管理", type: "异常流程" as const, title: "使用已注册手机号再次注册时提示冲突", priority: "P0" as const, automatable: true },
-      { module: "用户管理", type: "边界值" as const, title: "验证码过期后重新发送", priority: "P1" as const, automatable: true },
-      { module: "核心业务", type: "数据一致性" as const, title: "导入数据与已有数据冲突时的处理", priority: "P0" as const, automatable: false },
-      { module: "核心业务", type: "权限控制" as const, title: "只读用户无法执行数据导入操作", priority: "P1" as const, automatable: true },
-    ];
-    mockPoints.forEach((point, i) => {
-      dispatch({
-        type: "ADD_TEST_POINT",
-        payload: {
-          id: `TP-AUTO-${Date.now()}-${i}`,
-          projectId,
-          description: point.title,
-          reviewStatus: "待评审",
-          ...point,
-        },
-      });
-    });
-  };
-
   return (
     <div className="page-stack">
       <SectionHeader
@@ -457,12 +428,23 @@ function TestPointsTab({ projectId }: { projectId: string }) {
         title="AI 测试点生成"
         description="基于需求解析结果，AI 生成覆盖正常、异常、边界、权限、数据一致性和状态流转的测试点。"
         actions={
-          <button className="primary-button" type="button" onClick={handleGenerate}>
-            <WandSparkles size={17} />
-            生成测试点
+          <button className="primary-button" type="button" onClick={generateTestPoints} disabled={loading}>
+            {loading ? (
+              <Loader2 size={17} className="animate-spin" />
+            ) : (
+              <WandSparkles size={17} />
+            )}
+            {loading ? "生成中..." : "生成测试点"}
           </button>
         }
       />
+
+      {error && (
+        <div className="error-banner">
+          <AlertCircle size={16} />
+          <span>{error}</span>
+        </div>
+      )}
 
       {modules.length > 0 && (
         <div className="filter-bar">
@@ -560,7 +542,7 @@ function TestPointsTab({ projectId }: { projectId: string }) {
 function TestCasesTab({ projectId }: { projectId: string }) {
   const testCases = useProjectTestCases(projectId);
   const { dispatch } = useStore();
-  const { simulateAI } = useAISimulation(projectId);
+  const { loading, error, generateTestCases } = useAIAction(projectId);
   const [editingCase, setEditingCase] = useState<TestCase | null>(null);
   const [detailCase, setDetailCase] = useState<TestCase | null>(null);
   const [moduleFilter, setModuleFilter] = useState<string>("all");
@@ -621,55 +603,6 @@ function TestCasesTab({ projectId }: { projectId: string }) {
     setSelectedIds(new Set());
   };
 
-  const handleGenerate = async () => {
-    await simulateAI("用例生成");
-    const mockCases: Omit<TestCase, "id" | "createdAt" | "updatedAt">[] = [
-      {
-        projectId,
-        caseCode: "TC_USER_001",
-        module: "用户管理",
-        feature: "注册",
-        title: "使用有效手机号完成注册",
-        priority: "P0",
-        precondition: "未注册手机号",
-        steps: "1. 打开注册页面\n2. 输入手机号\n3. 获取验证码\n4. 输入验证码\n5. 点击注册",
-        testData: "13800138000",
-        expectedResult: "注册成功，跳转到登录页",
-        automation: "适合",
-        reviewStatus: "待评审",
-        remark: "",
-      },
-      {
-        projectId,
-        caseCode: "TC_USER_002",
-        module: "用户管理",
-        feature: "登录",
-        title: "使用正确验证码登录成功",
-        priority: "P0",
-        precondition: "已注册用户",
-        steps: "1. 打开登录页面\n2. 输入手机号\n3. 获取验证码\n4. 输入正确验证码\n5. 点击登录",
-        testData: "13800138000 / 正确验证码",
-        expectedResult: "登录成功，进入首页",
-        automation: "适合",
-        reviewStatus: "待评审",
-        remark: "",
-      },
-    ];
-    mockCases.forEach((tc, i) => {
-      dispatch({
-        type: "ADD_TEST_CASE",
-        payload: {
-          id: `TC-AUTO-${Date.now()}-${i}`,
-          testPointId: undefined,
-          requirementId: undefined,
-          createdAt: new Date().toISOString().slice(0, 10),
-          updatedAt: new Date().toISOString().slice(0, 10),
-          ...tc,
-        },
-      });
-    });
-  };
-
   const handleExport = () => {
     exportTestCasesToExcel(filtered);
   };
@@ -686,13 +619,24 @@ function TestCasesTab({ projectId }: { projectId: string }) {
               <Download size={17} />
               导出 Excel
             </button>
-            <button className="primary-button" type="button" onClick={handleGenerate}>
-              <WandSparkles size={17} />
-              生成用例
+            <button className="primary-button" type="button" onClick={generateTestCases} disabled={loading}>
+              {loading ? (
+                <Loader2 size={17} className="animate-spin" />
+              ) : (
+                <WandSparkles size={17} />
+              )}
+              {loading ? "生成中..." : "生成用例"}
             </button>
           </>
         }
       />
+
+      {error && (
+        <div className="error-banner">
+          <AlertCircle size={16} />
+          <span>{error}</span>
+        </div>
+      )}
 
       {modules.length > 0 && (
         <div className="filter-bar">

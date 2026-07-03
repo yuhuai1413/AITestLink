@@ -1,0 +1,49 @@
+{
+  "_version": "2.0",
+  "configs": [
+    {
+      "id": "parse-requirements",
+      "name": "需求解析",
+      "aiNode": "需求解析节点",
+      "provider": "小米-MiMo大模型平台",
+      "modelName": "mimo-v2.5",
+      "apiKey": "tp-cazodxk90u6tcem5z6cumzxxlxzm5ioon8hf561ow4bo0jzf",
+      "endpoint": "https://token-plan-cn.xiaomimimo.com/v1/chat/completions",
+      "description": "从需求文档中提取模块、功能点和业务规则",
+      "enabled": true
+    },
+    {
+      "id": "generate-test-points",
+      "name": "测试点生成",
+      "aiNode": "测试设计节点",
+      "provider": "小米-MiMo大模型平台",
+      "modelName": "mimo-v2.5",
+      "apiKey": "",
+      "endpoint": "https://api.xiaomimimo.com/v1",
+      "description": "根据需求生成覆盖正常、异常、边界等场景的测试点",
+      "enabled": true
+    },
+    {
+      "id": "generate-test-cases",
+      "name": "用例生成",
+      "aiNode": "测试设计节点",
+      "provider": "小米-MiMo大模型平台",
+      "modelName": "mimo-v2.5",
+      "apiKey": "",
+      "endpoint": "https://api.xiaomimimo.com/v1",
+      "description": "根据测试点生成包含步骤和预期结果的测试用例",
+      "enabled": true
+    },
+    {
+      "id": "review-test-cases",
+      "name": "用例评审",
+      "aiNode": "测试设计节点",
+      "provider": "小米-MiMo大模型平台",
+      "modelName": "mimo-v2.5",
+      "apiKey": "",
+      "endpoint": "https://api.xiaomimimo.com/v1",
+      "description": "评审测试用例的完整性和可执行性",
+      "enabled": true
+    }
+  ]
+}

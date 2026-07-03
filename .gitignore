@@ -19,12 +19,18 @@ build/
 .vite/
 .pytest_cache/
 
+# 日志
+*.log
+
 # 系统文件
 .DS_Store
 Thumbs.db
 
 # 数据库
 *.db
+
+# 测试工作区
+AITestLink_测试工作区/
 
 # 上传文件
 server/uploads/*
