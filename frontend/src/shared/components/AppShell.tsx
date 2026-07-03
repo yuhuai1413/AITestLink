@@ -2,9 +2,11 @@ import {
   Bell,
   ChevronRight,
   CircleHelp,
+  LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
+  Settings,
   FileText,
   ListChecks,
   FolderOpen,
@@ -14,8 +16,16 @@ import { useNavigate } from "react-router-dom";
 import { navigationItems } from "../data/platformData";
 import { useStore } from "../../app/store";
 import { PersonalSettingsModal } from "../../features/personal-settings/PersonalSettingsModal";
+import { getMeWithAdmin } from "../../features/auth/api/auth";
 import type { ViewKey } from "../types/platform";
 import { useNavHighlight } from "../hooks/useNavHighlight";
+
+interface UserInfo {
+  nickname: string;
+  phone: string;
+  avatar: string;
+  isAdmin: boolean;
+}
 
 function LogoIcon() {
   return (
@@ -46,8 +56,15 @@ interface AppShellProps {
 }
 
 export function AppShell({ activeView, onChangeView, children }: AppShellProps) {
-  const activeItem = navigationItems.find((item) => item.key === activeView) ?? navigationItems[0];
-  const activeIdx = navigationItems.findIndex((item) => item.key === activeView);
+  const [userInfo, setUserInfo] = useState<UserInfo>({ nickname: "用户", phone: "", avatar: "", isAdmin: false });
+
+  const visibleNavItems = useMemo(
+    () => navigationItems.filter((item) => item.key !== "userManagement" || userInfo.isAdmin),
+    [userInfo.isAdmin]
+  );
+
+  const activeItem = visibleNavItems.find((item) => item.key === activeView) ?? visibleNavItems[0];
+  const activeIdx = visibleNavItems.findIndex((item) => item.key === activeView);
 
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [collapsed, setCollapsed] = useState(false);
@@ -58,6 +75,22 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showPersonalSettings, setShowPersonalSettings] = useState(false);
+
+  const fetchUser = useCallback(() => {
+    getMeWithAdmin().then((res) => {
+      if (res.ok && res.user) {
+        const avatarUrl = res.user.avatar ? `${res.user.avatar}?t=${Date.now()}` : "";
+        setUserInfo({
+          nickname: res.user.nickname || "用户",
+          phone: res.user.phone ? res.user.phone.replace(/(\d{3})\d{4}(\d{4})/, "$1****$2") : "",
+          avatar: avatarUrl,
+          isAdmin: res.user.is_admin || false,
+        });
+      }
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => { fetchUser(); }, [fetchUser]);
   const { state } = useStore();
   const navigate = useNavigate();
 
@@ -181,7 +214,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
               />
             )}
 
-            {navigationItems.map((item, idx) => {
+            {visibleNavItems.map((item, idx) => {
               const Icon = item.icon;
               const active = activeView === item.key;
               return (
@@ -266,29 +299,31 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
               <Bell size={18} />
             </button>
             <div className="user-avatar-wrapper" ref={userMenuRef}>
-              <button className="user-avatar" type="button" onClick={() => setShowUserMenu(!showUserMenu)}>
-                <span>Y</span>
+              <button className="user-avatar" type="button" onClick={() => setShowUserMenu(!showUserMenu)} style={userInfo.avatar ? { backgroundImage: `url(${userInfo.avatar})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>
+                {!userInfo.avatar && <span>{userInfo.nickname.charAt(0)}</span>}
               </button>
               {showUserMenu && (
                 <div className="user-menu">
                   <div className="user-menu__header">
-                    <div className="user-avatar user-avatar--sm"><span>Y</span></div>
+                    <div className="user-avatar user-avatar--sm" style={userInfo.avatar ? { backgroundImage: `url(${userInfo.avatar})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>
+                      {!userInfo.avatar && <span>{userInfo.nickname.charAt(0)}</span>}
+                    </div>
                     <div>
-                      <strong>管理员</strong>
-                      <span>admin@aitestlink.com</span>
+                      <strong>{userInfo.nickname}</strong>
+                      <span>{userInfo.phone}</span>
                     </div>
                   </div>
                   <div className="user-menu__divider" />
-                  <button className="user-menu__item" type="button" onClick={() => { setShowUserMenu(false); setShowPersonalSettings(true); }}>
-                    个人设置
+                  <button className="user-menu__item" type="button" onClick={() => { setShowUserMenu(false); setShowPersonalSettings(true); }} style={{ paddingLeft: 16, gap: 10 }}>
+                    <span style={{ width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Settings size={16} /></span> 个人设置
                   </button>
                   <button className="user-menu__item user-menu__item--danger" type="button" onClick={() => {
                     localStorage.removeItem("token");
                     localStorage.removeItem("user");
                     setShowUserMenu(false);
                     window.location.href = "/login";
-                  }}>
-                    退出登录
+                  }} style={{ paddingLeft: 16, gap: 10 }}>
+                    <span style={{ width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><LogOut size={16} /></span> 退出登录
                   </button>
                 </div>
               )}
@@ -344,6 +379,8 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
       <PersonalSettingsModal
         open={showPersonalSettings}
         onClose={() => setShowPersonalSettings(false)}
+        userInfo={userInfo}
+        onSaved={fetchUser}
       />
     </div>
   );

@@ -1,14 +1,16 @@
 import hashlib
+import os
 import secrets
 import string
 import uuid
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models.user import User
 
@@ -85,9 +87,13 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     if not data.phone or len(data.phone) != 11 or not data.phone.isdigit():
         return {"ok": False, "message": "手机号格式不正确"}
 
-    # 验证密码长度
-    if len(data.password) < 6:
-        return {"ok": False, "message": "密码长度至少6位"}
+    # 验证密码强度
+    if len(data.password) < 8:
+        return {"ok": False, "message": "密码长度不能少于8位"}
+    if not any(c.isalpha() for c in data.password):
+        return {"ok": False, "message": "密码必须包含字母"}
+    if not any(c.isdigit() for c in data.password):
+        return {"ok": False, "message": "密码必须包含数字"}
 
     # 验证验证码
     captcha = captcha_store.get(data.captcha_id)
@@ -142,10 +148,15 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     # 生成 Token
     token = generate_token()
+    avatar_url = user.avatar or ""
+    if avatar_url and not avatar_url.startswith("http"):
+        avatar_url = f"http://localhost:8001{avatar_url}"
     token_store[token] = {
         "user_id": user.id,
         "phone": user.phone,
         "nickname": user.nickname,
+        "avatar": avatar_url,
+        "is_admin": user.is_admin or False,
         "created_at": datetime.utcnow(),
     }
 
@@ -160,6 +171,8 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
             "id": user.id,
             "phone": user.phone,
             "nickname": user.nickname,
+            "avatar": avatar_url,
+            "is_admin": user.is_admin or False,
             "avatar": user.avatar,
         },
     }
@@ -169,13 +182,17 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
 async def get_me(token: str = None):
     """获取当前用户信息"""
     if not token:
-        raise HTTPException(status_code=401, detail="未登录")
+        return {"ok": False, "message": "未登录"}
 
     user_info = token_store.get(token)
     if not user_info:
-        raise HTTPException(status_code=401, detail="登录已过期")
+        return {"ok": False, "message": "登录已过期"}
 
-    return {"ok": True, "user": user_info}
+    # 确保 avatar 是完整 URL
+    avatar = user_info.get("avatar", "")
+    if avatar and not avatar.startswith("http"):
+        avatar = f"http://localhost:8001{avatar}"
+    return {"ok": True, "user": {**user_info, "avatar": avatar}}
 
 
 @router.post("/logout")
@@ -184,3 +201,128 @@ async def logout(token: str = None):
     if token and token in token_store:
         del token_store[token]
     return {"ok": True, "message": "已退出登录"}
+
+
+class UpdateProfileRequest(BaseModel):
+    nickname: str
+
+
+@router.put("/profile")
+async def update_profile(data: UpdateProfileRequest, token: str = None, db: AsyncSession = Depends(get_db)):
+    """更新用户昵称"""
+    if not token or token not in token_store:
+        return {"ok": False, "message": "未登录"}
+
+    user_id = token_store[token]["user_id"]
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        return {"ok": False, "message": "用户不存在"}
+
+    user.nickname = data.nickname
+    user.updated_at = datetime.utcnow()
+    await db.commit()
+
+    token_store[token]["nickname"] = data.nickname
+
+    return {"ok": True, "message": "保存成功"}
+
+
+@router.post("/avatar")
+async def upload_avatar(file: UploadFile = File(...), token: str = None, db: AsyncSession = Depends(get_db)):
+    """上传头像"""
+    if not token or token not in token_store:
+        return {"ok": False, "message": "未登录"}
+
+    if not file.content_type or not file.content_type.startswith("image/"):
+        return {"ok": False, "message": "请上传图片文件"}
+
+    content = await file.read()
+    if len(content) > 2 * 1024 * 1024:
+        return {"ok": False, "message": "图片大小不能超过 2MB"}
+
+    ext = file.content_type.split("/")[-1]
+    filename = f"avatar_{uuid.uuid4().hex[:12]}.{ext}"
+    upload_dir = os.path.join(settings.UPLOAD_DIR, "avatars")
+    os.makedirs(upload_dir, exist_ok=True)
+    filepath = os.path.join(upload_dir, filename)
+    with open(filepath, "wb") as f:
+        f.write(content)
+
+    avatar_url = f"http://localhost:8001/uploads/avatars/{filename}"
+
+    user_id = token_store[token]["user_id"]
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user:
+        user.avatar = avatar_url
+        user.updated_at = datetime.utcnow()
+        await db.commit()
+
+    token_store[token]["avatar"] = avatar_url
+
+    return {"ok": True, "message": "上传成功", "avatar": f"http://localhost:8001{avatar_url}"}
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+
+@router.put("/password")
+async def change_password(data: ChangePasswordRequest, token: str = None, db: AsyncSession = Depends(get_db)):
+    """修改密码"""
+    if not token or token not in token_store:
+        return {"ok": False, "message": "未登录"}
+
+    user_id = token_store[token]["user_id"]
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        return {"ok": False, "message": "用户不存在"}
+
+    if not verify_password(data.old_password, user.password_hash):
+        return {"ok": False, "message": "原密码错误"}
+
+    if len(data.new_password) < 8:
+        return {"ok": False, "message": "新密码长度不能少于8位"}
+    if not any(c.isalpha() for c in data.new_password):
+        return {"ok": False, "message": "新密码必须包含字母"}
+    if not any(c.isdigit() for c in data.new_password):
+        return {"ok": False, "message": "新密码必须包含数字"}
+
+    user.password_hash = hash_password(data.new_password)
+    user.updated_at = datetime.utcnow()
+    await db.commit()
+
+    return {"ok": True, "message": "密码修改成功"}
+
+
+@router.get("/users")
+async def list_users(token: str = None, db: AsyncSession = Depends(get_db)):
+    """获取用户列表（管理员专用）"""
+    if not token or token not in token_store:
+        return {"ok": False, "message": "未登录"}
+
+    user_info = token_store.get(token)
+    if not user_info or not user_info.get("is_admin"):
+        return {"ok": False, "message": "无权限"}
+
+    result = await db.execute(select(User).order_by(User.created_at.desc()))
+    users = result.scalars().all()
+
+    return {
+        "ok": True,
+        "users": [
+            {
+                "id": u.id,
+                "phone": u.phone,
+                "nickname": u.nickname,
+                "avatar": u.avatar or "",
+                "is_active": u.is_active,
+                "is_admin": u.is_admin or False,
+                "created_at": u.created_at.isoformat() if u.created_at else "",
+            }
+            for u in users
+        ],
+    }

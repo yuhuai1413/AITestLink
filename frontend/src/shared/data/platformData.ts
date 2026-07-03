@@ -8,6 +8,7 @@ import {
   ListChecks,
   PlayCircle,
   Settings,
+  Users,
 } from "lucide-react";
 import type {
   AgentCapability,
@@ -58,6 +59,12 @@ export const navigationItems: NavigationItem[] = [
     label: "模型配置",
     description: "AI 模型和 API 设置",
     icon: Settings,
+  },
+  {
+    key: "userManagement",
+    label: "用户管理",
+    description: "系统用户与权限",
+    icon: Users,
   },
 ];
 

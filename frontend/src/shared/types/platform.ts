@@ -9,7 +9,8 @@ export type ViewKey =
   | "testDesign"
   | "automation"
   | "reports"
-  | "modelConfig";
+  | "modelConfig"
+  | "userManagement";
 
 // ─── 导航 ───
 

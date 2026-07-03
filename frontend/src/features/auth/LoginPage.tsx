@@ -1,20 +1,24 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Eye, EyeOff, Sparkles, FileSearch, ListChecks, PlayCircle, ClipboardCheck, LayoutDashboard } from "lucide-react";
 
-const API_BASE = "http://localhost:8001/api";
+import { Button } from "./components/Button";
+import { Input } from "./components/Input";
+import { useTypeCycle } from "./hooks/useTypeCycle";
+import { cn, iosRadius, loginStyles, pageStyles } from "./styles/pageStyles";
+import { getCaptcha, register, login } from "./api/auth";
+import { toast } from "./components/ToastProvider";
 
-let toastState: { message: string; type: "success" | "error" } | null = null;
-let toastListeners: Array<() => void> = [];
-function showToast(message: string, type: "success" | "error") {
-  toastState = { message, type };
-  toastListeners.forEach((l) => l());
-  setTimeout(() => { toastState = null; toastListeners.forEach((l) => l()); }, 3000);
-}
-function useToast() {
-  const [, f] = useState(0);
-  useEffect(() => { const l = () => f((n) => n + 1); toastListeners.push(l); return () => { toastListeners = toastListeners.filter((x) => x !== l); }; }, []);
-  return toastState;
-}
+type MainTab = "login" | "register";
+
+const ROLE_TEXTS = ["需求解析", "测试设计", "用例生成", "自动化测试", "质量报告"];
+
+const ORBIT_ICONS = [FileSearch, ListChecks, PlayCircle, ClipboardCheck, LayoutDashboard];
+
+const orbitPositions = ORBIT_ICONS.map((_, i) => {
+  const angle = (i / ORBIT_ICONS.length) * 2 * Math.PI - Math.PI / 2;
+  const r = 96;
+  return { left: 128 + r * Math.cos(angle) - 24, top: 128 + r * Math.sin(angle) - 24 };
+});
 
 function LogoIcon({ size = 30 }: { size?: number }) {
   return (
@@ -26,112 +30,166 @@ function LogoIcon({ size = 30 }: { size?: number }) {
   );
 }
 
-const orbitIcons = [
-  '<rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
-  '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
-  '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
-  '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
-  '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
-  '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
-];
-const orbitCount = 6, orbitRadius = 96, orbitCenter = 130;
-const orbitPositions = Array.from({ length: orbitCount }, (_, i) => {
-  const a = (i / orbitCount) * 2 * Math.PI - Math.PI / 2;
-  return { left: Math.round(orbitCenter + orbitRadius * Math.cos(a) - 24) + 1, top: Math.round(orbitCenter + orbitRadius * Math.sin(a) - 24) + 1 };
-});
-const btnGradient = "linear-gradient(135deg, #4c1d95 0%, #7c3aed 40%, #6d28d9 60%, #5b21b6 100%)";
-const ROLE_TEXTS = ["需求解析", "测试设计", "用例生成", "自动化测试", "质量报告"];
+interface LoginPageProps {
+  onLogin: () => void;
+}
 
-export function LoginPage() {
-  const navigate = useNavigate();
-  const toast = useToast();
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const [isRegister, setIsRegister] = useState(false);
-  const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [captchaId, setCaptchaId] = useState("");
-  const [captchaCode, setCaptchaCode] = useState("");
-  const [captchaValue, setCaptchaValue] = useState("");
+export function LoginPage({ onLogin }: LoginPageProps) {
+  const [mainTab, setMainTab] = useState<MainTab>("login");
+  const [phone, setPhone] = useState(() => localStorage.getItem("lastPhone") || "");
+  const [password, setPassword] = useState(() => localStorage.getItem("lastPassword") || "");
   const [showPassword, setShowPassword] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [captchaCode, setCaptchaCode] = useState("");
+  const [captchaId, setCaptchaId] = useState("");
+  const [captchaDisplay, setCaptchaDisplay] = useState("");
   const [loading, setLoading] = useState(false);
-  const [roleIndex, setRoleIndex] = useState(0);
-  const [roleVisible, setRoleVisible] = useState(true);
+  const [tabKey, setTabKey] = useState(0);
 
-  useEffect(() => {
-    const t = setInterval(() => { setRoleVisible(false); setTimeout(() => { setRoleIndex((p) => (p + 1) % ROLE_TEXTS.length); setRoleVisible(true); }, 360); }, 2400);
-    return () => clearInterval(t);
+  const { text: roleText, visible: roleVisible } = useTypeCycle(ROLE_TEXTS);
+
+  const loadCaptcha = useCallback(async () => {
+    try {
+      const res = await getCaptcha();
+      setCaptchaId(res.captcha_id);
+      setCaptchaDisplay(res.code);
+    } catch {
+      // 静默失败
+    }
   }, []);
 
-  const loadCaptcha = async () => {
-    try { const r = await fetch(`${API_BASE}/auth/captcha`); const d = await r.json(); setCaptchaId(d.captcha_id); setCaptchaValue(d.code); } catch {}
+  useEffect(() => {
+    loadCaptcha();
+  }, [loadCaptcha]);
+
+  const switchTab = (tab: MainTab) => {
+    setMainTab(tab);
+    setConfirmPassword("");
+    setCaptchaCode("");
+    setTabKey((k) => k + 1);
+    loadCaptcha();
   };
-  useEffect(() => { loadCaptcha(); }, []);
 
-  const onBtnMove = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
-    if (loading) return; const btn = btnRef.current; if (!btn) return;
-    const rect = btn.getBoundingClientRect();
-    btn.style.background = `radial-gradient(circle at ${((e.clientX - rect.left) / rect.width) * 100}% ${((e.clientY - rect.top) / rect.height) * 100}%, rgba(167,139,250,0.5) 0%, transparent 50%), ${btnGradient}`;
-  }, [loading]);
-  const onBtnLeave = useCallback(() => { if (!loading && btnRef.current) btnRef.current.style.background = btnGradient; }, [loading]);
+  const handleSubmit = async () => {
+    if (!phone || phone.length !== 11) { toast.error("请输入正确的手机号"); return; }
+    if (!password || password.length < 8) { toast.error("密码长度不能少于8位"); return; }
+    if (!/[a-zA-Z]/.test(password)) { toast.error("密码必须包含字母"); return; }
+    if (!/\d/.test(password)) { toast.error("密码必须包含数字"); return; }
+    if (mainTab === "register" && password !== confirmPassword) { toast.error("两次密码输入不一致"); return; }
+    if (!captchaCode) { toast.error("请输入验证码"); return; }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!phone || phone.length !== 11) { showToast("请输入正确的手机号", "error"); return; }
-    if (!password || password.length < 6) { showToast("密码长度至少6位", "error"); return; }
-    if (!captchaCode) { showToast("请输入验证码", "error"); return; }
-    if (isRegister && password !== confirmPassword) { showToast("两次密码输入不一致", "error"); return; }
     setLoading(true);
     try {
-      const url = isRegister ? `${API_BASE}/auth/register` : `${API_BASE}/auth/login`;
-      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone, password, captcha_id: captchaId, captcha_code: captchaCode }) });
-      const d = await r.json();
-      if (d.ok) { showToast(d.message, "success"); if (!isRegister && d.token) { localStorage.setItem("token", d.token); localStorage.setItem("user", JSON.stringify(d.user)); setTimeout(() => navigate("/"), 500); } else { setIsRegister(false); setPassword(""); setConfirmPassword(""); setCaptchaCode(""); loadCaptcha(); } }
-      else { showToast(d.message || "操作失败", "error"); loadCaptcha(); setCaptchaCode(""); }
-    } catch { showToast("网络错误，请重试", "error"); }
-    finally { setLoading(false); }
+      if (mainTab === "register") {
+        const res = await register(phone, password, captchaId, captchaCode);
+        if (res.ok) {
+          toast.success("注册成功");
+          switchTab("login");
+        } else {
+          toast.error(res.message);
+          loadCaptcha();
+          setCaptchaCode("");
+        }
+      } else {
+        const res = await login(phone, password, captchaId, captchaCode);
+        if (res.ok) {
+          localStorage.setItem("lastPhone", phone);
+          localStorage.setItem("lastPassword", password);
+          toast.success("登录成功");
+          onLogin();
+        } else {
+          toast.error(res.message);
+          loadCaptcha();
+          setCaptchaCode("");
+        }
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "操作失败");
+      loadCaptcha();
+      setCaptchaCode("");
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const handleSkip = () => {
+    onLogin();
+  };
+
+  const ClearButton = ({ onClick }: { onClick: () => void }) => (
+    <button type="button" onClick={onClick} className="w-5 h-5 rounded-full bg-black/[0.06] hover:bg-black/[0.12] flex items-center justify-center transition-colors shrink-0">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-muted-foreground/60">
+        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
+    </button>
+  );
+
   return (
-    <div className="min-h-screen flex flex-col md:flex-row">
-      {toast && <div className={`fixed top-6 right-6 z-50 px-5 py-3 rounded-xl text-sm font-medium shadow-lg ${toast.type === "success" ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}><span>{toast.type === "success" ? "✓ " : "✕ "}{toast.message}</span></div>}
+    <div className={cn(loginStyles.shell, "login-page-root")}>
+      {/* 手机端左上角 logo */}
+      <div className="fixed top-0 left-0 z-50 md:hidden flex items-center gap-2.5 pl-5 pt-5 pr-4 pb-3">
+        <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shadow-md shadow-primary/20">
+          <LogoIcon size={22} />
+        </div>
+        <span className="text-xl font-bold text-foreground" style={{ fontFamily: '"Times New Roman", serif' }}>AITestLink</span>
+      </div>
+
       {/* 左侧视觉区 */}
-      <div className="hidden md:flex md:w-[61.8%] relative flex-col overflow-hidden" style={{ background: "linear-gradient(145deg, #160b3e 0%, #2e1278 40%, #5b21b6 100%)" }}>
-        <div className="absolute rounded-full pointer-events-none w-[420px] h-[420px] xl:w-[560px] xl:h-[560px] animate-blob-drift-1" style={{ background: "radial-gradient(circle, rgba(124,58,237,0.38) 0%, transparent 68%)", top: "-100px", right: "-80px" }} />
-        <div className="absolute rounded-full pointer-events-none w-[320px] h-[320px] xl:w-[420px] xl:h-[420px] animate-blob-drift-2" style={{ background: "radial-gradient(circle, rgba(99,102,241,0.28) 0%, transparent 70%)", bottom: "-80px", left: "-60px" }} />
-        <div className="absolute rounded-full pointer-events-none w-[240px] h-[240px] xl:w-[320px] xl:h-[320px] animate-blob-drift-3" style={{ background: "radial-gradient(circle, rgba(167,139,250,0.18) 0%, transparent 70%)", top: "48%", left: "28%" }} />
-        <div className="relative z-10 flex flex-col h-full px-10 xl:px-14 pt-6 pb-8 xl:pt-8 xl:pb-10">
+      <div className={loginStyles.visualSide} style={{ background: "linear-gradient(145deg, #160b3e 0%, #2e1278 40%, #5b21b6 100%)" }}>
+        <div className={cn(loginStyles.visualBlob, "w-[420px] h-[420px] xl:w-[560px] xl:h-[560px] animate-blob-drift-1")} style={{ background: "radial-gradient(circle, rgba(124,58,237,0.38) 0%, transparent 68%)", top: "-100px", right: "-80px" }} />
+        <div className={cn(loginStyles.visualBlob, "w-[320px] h-[320px] xl:w-[420px] xl:h-[420px] animate-blob-drift-2")} style={{ background: "radial-gradient(circle, rgba(99,102,241,0.28) 0%, transparent 70%)", bottom: "-80px", left: "-60px" }} />
+        <div className={cn(loginStyles.visualBlob, "w-[240px] h-[240px] xl:w-[320px] xl:h-[320px] animate-blob-drift-3")} style={{ background: "radial-gradient(circle, rgba(167,139,250,0.18) 0%, transparent 70%)", top: "48%", left: "28%" }} />
+
+        <div className={loginStyles.visualContent}>
           <div className="flex items-center gap-3 animate-stagger-1">
-            <div className="w-11 h-11 xl:w-12 xl:h-12 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.16)", border: "1.5px solid rgba(255,255,255,0.24)" }}><LogoIcon size={30} /></div>
-            <span className="text-2xl xl:text-[1.75rem] font-bold text-white" style={{ fontFamily: "var(--font-serif)" }}>智测通</span>
+            <div className={loginStyles.visualBrandIcon} style={{ background: "rgba(255,255,255,0.16)", border: "1.5px solid rgba(255,255,255,0.24)" }}>
+              <LogoIcon size={30} />
+            </div>
+            <span className="text-2xl xl:text-[1.75rem] font-bold text-white" style={{ fontFamily: '"Times New Roman", serif' }}>AITestLink</span>
           </div>
+
           <div className="flex-1 flex flex-col">
             <div className="flex-1 flex flex-col items-center justify-center text-center animate-stagger-1">
-              <p className="text-white/40 text-xs xl:text-sm font-bold tracking-[0.25em] uppercase mb-5">AI 智能测试平台</p>
-              <h1 className="text-5xl xl:text-6xl font-black text-white leading-tight mb-4" style={{ fontFamily: "var(--font-serif)" }}>智能测试</h1>
+              <p className={loginStyles.visualEyebrow}>AI 软件测试平台</p>
+              <h1 className="text-5xl xl:text-6xl font-black text-white leading-tight mb-4" style={{ fontFamily: '"Times New Roman", serif' }}>专业智能化测试</h1>
               <div className="flex items-baseline justify-center gap-2">
                 <span className="text-2xl xl:text-3xl text-white/55 font-bold">专为</span>
-                <span className="text-3xl xl:text-4xl font-black text-transparent bg-clip-text inline-block" style={{ backgroundImage: "linear-gradient(90deg,#c4b5fd,#f97316,#c4b5fd)", backgroundSize: "200% auto", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", animation: "gradShift 3s linear infinite", opacity: roleVisible ? 1 : 0, transform: roleVisible ? "translateY(0)" : "translateY(8px)", transition: "opacity 0.35s ease, transform 0.35s ease", display: "inline-block", minWidth: "5em", textAlign: "center" }}>{ROLE_TEXTS[roleIndex]}</span>
+                <span className={loginStyles.roleText} style={{ backgroundImage: "linear-gradient(90deg,#c4b5fd,#f97316,#c4b5fd)", backgroundSize: "200% auto", transition: "opacity 0.35s ease, transform 0.35s ease", opacity: roleVisible ? 1 : 0, transform: roleVisible ? "translateY(0)" : "translateY(8px)", display: "inline-block", minWidth: "5em", textAlign: "center" }}>{roleText}</span>
                 <span className="text-2xl xl:text-3xl text-white/55 font-bold">而生</span>
               </div>
             </div>
+
             <div className="flex-1 flex items-center justify-center animate-stagger-2">
               <div className="origin-center xl:scale-[1.23] transition-transform">
-                <div className="relative w-[260px] h-[260px] mt-4 xl:mt-6">
-                  <svg className="absolute inset-0 w-full h-full" viewBox="0 0 260 260"><circle cx="130" cy="130" r="102" stroke="rgba(255,255,255,0.13)" strokeWidth="1.5" fill="none" strokeDasharray="5 5" /></svg>
+                <div className={loginStyles.orbitWrap}>
+                  <svg className="absolute inset-0 w-full h-full" viewBox="0 0 260 260">
+                    <circle cx="130" cy="130" r="102" stroke="rgba(255,255,255,0.13)" strokeWidth="1.5" fill="none" strokeDasharray="5 5" />
+                  </svg>
                   <div className="absolute inset-0 animate-orb">
-                    {orbitIcons.map((path, i) => (<div key={i} className="absolute w-12 h-12 rounded-full flex items-center justify-center animate-orb-reverse" style={{ left: orbitPositions[i].left + 1, top: orbitPositions[i].top + 1, background: "rgba(255,255,255,0.11)", border: "1px solid rgba(255,255,255,0.3)" }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: path }} /></div>))}
+                    {ORBIT_ICONS.map((Icon, i) => (
+                      <div key={i} className={loginStyles.orbitItem} style={{ left: orbitPositions[i].left + 1, top: orbitPositions[i].top + 1, background: "rgba(255,255,255,0.11)", border: "1px solid rgba(255,255,255,0.3)", backdropFilter: "blur(40px) saturate(2.0) brightness(1.05) contrast(1.05)" }}>
+                        <Icon className="w-5 h-5 text-white" />
+                      </div>
+                    ))}
                   </div>
-                  <div className="absolute w-[72px] h-[72px] rounded-full flex items-center justify-center animate-pulse-glow" style={{ top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: "rgba(255,255,255,0.18)", border: "2px solid rgba(255,255,255,0.3)", backdropFilter: "blur(40px) saturate(2.0) brightness(1.05) contrast(1.05)" }}><LogoIcon size={32} /></div>
+                  <div className={loginStyles.orbitCore} style={{ top: "50%", left: "50%", transform: "translate(-50%,-50%)", background: "rgba(255,255,255,0.18)", border: "2px solid rgba(255,255,255,0.3)", backdropFilter: "blur(40px) saturate(2.0) brightness(1.05) contrast(1.05)" }}>
+                    <Sparkles className="w-8 h-8 text-white" />
+                  </div>
                 </div>
               </div>
             </div>
+
             <div className="flex-1 flex flex-col items-center justify-center gap-6 xl:gap-8 animate-stagger-3">
               <div className="flex justify-center">
                 <div className="grid w-full max-w-[480px] xl:max-w-[560px] grid-cols-3 gap-2 xl:gap-3">
-                  {[{ label: "AI 需求解析", icon: "M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" }, { label: "智能测试设计", icon: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }, { label: "自动化测试", icon: "M9 11l3 3L22 4" }].map(({ label, icon }) => (
-                    <div key={label} className="h-11 xl:h-12 min-w-0 rounded-full flex items-center justify-center gap-2 px-3 xl:px-4" style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)" }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={icon} /></svg>
+                  {[
+                    { label: "AI 需求解析", Icon: FileSearch },
+                    { label: "智能测试设计", Icon: ListChecks },
+                    { label: "自动化测试", Icon: PlayCircle },
+                  ].map(({ label, Icon: PillIcon }) => (
+                    <div key={label} className={loginStyles.featurePill} style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.14)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)" }}>
+                      <PillIcon className="w-4 h-4 xl:w-5 xl:h-5 text-violet-200" />
                       <span className="text-sm xl:text-base text-white/80 font-semibold whitespace-nowrap">{label}</span>
                     </div>
                   ))}
@@ -142,51 +200,119 @@ export function LoginPage() {
           </div>
         </div>
       </div>
+
       {/* 右侧表单区 */}
-      <div className="w-full md:w-[38.2%] md:min-w-[300px] flex flex-col items-center justify-center px-5 sm:px-6 py-8 sm:py-12 min-h-screen md:min-h-0" style={{ background: "#f8f7ff" }}>
-        <div className="w-full max-w-[380px]">
-          <h2 className="text-2xl font-black mb-1" style={{ color: "#1a1040", fontFamily: "var(--font-serif)" }}>{isRegister ? "注册新账号" : "欢迎使用智测通"}</h2>
-          <p className="text-sm mb-6 leading-relaxed" style={{ color: "#6b5b8a" }}>{isRegister ? "注册后即可使用 AI 测试平台" : "登录后台，管理测试平台"}</p>
-          <form onSubmit={handleSubmit}>
-            <div className="mb-4">
-              <div className="relative h-[52px] sm:h-[58px] flex items-center w-full overflow-hidden rounded-[29px]" style={{ background: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.4)", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", transition: "all 0.3s" }}>
-                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="请输入手机号" maxLength={11} className="flex-1 border-0 shadow-none bg-transparent h-full pl-5 pr-10 text-[15px] outline-none" style={{ color: "#1a1a2e" }} />
+      <div className={loginStyles.formSide}>
+        <div className={loginStyles.formPanel}>
+          <style>{`
+            @keyframes onAutoFillStart { from { opacity: 0.999; } to { opacity: 1; } }
+            .login-field input { border-color: transparent !important; background-color: transparent !important; caret-color: currentColor; }
+            .login-field input:-webkit-autofill, .login-field input:-webkit-autofill:hover, .login-field input:-webkit-autofill:focus, .login-field input:-webkit-autofill:active {
+              -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important; -webkit-text-fill-color: #1a1a2e !important;
+              background-color: #ffffff !important; background-image: none !important; caret-color: currentColor;
+              animation-name: onAutoFillStart; animation-duration: 50000s; animation-fill-mode: both;
+            }
+          `}</style>
+
+          {/* 手机端视觉区域 */}
+          <div className="md:hidden mb-4 animate-stagger-5">
+            <div className="relative -mx-5 -mt-5 px-5 pt-8 pb-0 overflow-hidden">
+              <div className="relative z-10 flex flex-col items-center">
+                <p className="text-muted-foreground text-[10px] font-bold tracking-[0.25em] uppercase mb-2 mt-4">AI 软件测试平台</p>
+                <h1 className="text-3xl font-black text-foreground leading-tight mb-3" style={{ fontFamily: '"Times New Roman", serif' }}>专业智能化测试</h1>
+                <div className="flex items-baseline justify-center gap-1.5 mb-0">
+                  <span className="text-lg text-muted-foreground font-bold">专为</span>
+                  <span className="text-lg font-bold inline-block" style={{ backgroundImage: "linear-gradient(90deg,#7c3aed,#f97316,#7c3aed)", backgroundSize: "200% auto", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", transition: "opacity 0.35s ease, transform 0.35s ease", opacity: roleVisible ? 1 : 0, transform: roleVisible ? "translateY(0)" : "translateY(8px)", minWidth: "4em", textAlign: "center" }}>{roleText}</span>
+                  <span className="text-lg text-muted-foreground font-bold">而生</span>
+                </div>
               </div>
             </div>
-            <div className="mb-4">
-              <div className="relative h-[52px] sm:h-[58px] flex items-center w-full overflow-hidden rounded-[29px]" style={{ background: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.4)", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", transition: "all 0.3s" }}>
-                <input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="请输入密码" className="flex-1 border-0 shadow-none bg-transparent h-full pl-5 pr-20 text-[15px] outline-none" style={{ color: "#1a1a2e" }} />
+          </div>
+
+          {/* 手机端特性标签 */}
+          <div className="md:hidden grid grid-cols-3 gap-2 mb-4 w-full animate-stagger-5">
+            {[{ label: "AI 需求解析", Icon: FileSearch }, { label: "智能测试设计", Icon: ListChecks }, { label: "自动化测试", Icon: PlayCircle }].map(({ label, Icon: PillIcon }) => (
+              <div key={label} className="h-8 flex items-center justify-center gap-1.5 px-2 rounded-full text-[11px] font-semibold bg-primary/5 border border-primary/10 text-primary/70">
+                <PillIcon className="w-3 h-3 shrink-0" />
+                <span className="whitespace-nowrap">{label}</span>
+              </div>
+            ))}
+          </div>
+
+          <div key={tabKey} className="animate-[fadeIn_0.3s_ease-out]">
+          <h2 className="text-2xl text-foreground mb-1">
+            {mainTab === "register" ? <span style={{ fontFamily: "var(--font-serif)" }}>注册新账号</span> : <><span style={{ fontFamily: "var(--font-serif)" }}>欢迎使用</span> <span style={{ fontFamily: '"Times New Roman", serif' }}>AITestLink</span></>}
+          </h2>
+          <p className={cn(pageStyles.bodyMuted, "mb-6 leading-relaxed animate-stagger-6")}>
+            {mainTab === "register" ? "注册后即可使用 AI 测试平台" : "登录账号，开启您的专业智能化测试"}
+          </p>
+
+          {/* 手机号 */}
+          <div className="mb-4 animate-stagger-7">
+            <div className={cn(loginStyles.glassField, "login-field relative h-[52px] sm:h-[58px] flex items-center")}>
+              <Input type="tel" maxLength={11} value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))} onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }} placeholder="请输入手机号" autoComplete="tel" className="flex-1 border-0 shadow-none focus-visible:ring-0 bg-transparent h-full pl-5 pr-10" />
+              {phone && <div className="absolute right-3 top-1/2 -translate-y-1/2"><ClearButton onClick={() => setPhone("")} /></div>}
+            </div>
+          </div>
+
+          {/* 密码 */}
+          <div className="mb-4 animate-stagger-8">
+            <div className={cn(loginStyles.glassField, "login-field relative h-[52px] sm:h-[58px] flex items-center")}>
+              <Input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }} placeholder={mainTab === "register" ? "设置密码（不少于8位，含字母和数字）" : "请输入密码"} autoComplete={mainTab === "register" ? "new-password" : "current-password"} className="flex-1 border-0 shadow-none focus-visible:ring-0 bg-transparent h-full pl-5 pr-20" />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="w-5 h-5 rounded-full flex items-center justify-center hover:bg-black/[0.06] transition-colors">
+                  {showPassword ? <EyeOff className="w-3.5 h-3.5 text-muted-foreground/60" /> : <Eye className="w-3.5 h-3.5 text-muted-foreground/60" />}
+                </button>
+                {password && <ClearButton onClick={() => setPassword("")} />}
+              </div>
+            </div>
+          </div>
+
+          {/* 确认密码（仅注册） */}
+          {mainTab === "register" && (
+            <div className="mb-4 animate-stagger-8">
+              <div className={cn(loginStyles.glassField, "login-field relative h-[52px] sm:h-[58px] flex items-center")}>
+                <Input type={showConfirmPassword ? "text" : "password"} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }} placeholder="请确认密码" autoComplete="new-password" className="flex-1 border-0 shadow-none focus-visible:ring-0 bg-transparent h-full pl-5 pr-20" />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                  <button type="button" className="w-5 h-5 rounded-full flex items-center justify-center" style={{ transition: "background 0.2s" }} onClick={() => setShowPassword(!showPassword)}>
-                    {showPassword ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(107,91,138,0.6)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(107,91,138,0.6)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>}
+                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="w-5 h-5 rounded-full flex items-center justify-center hover:bg-black/[0.06] transition-colors">
+                    {showConfirmPassword ? <EyeOff className="w-3.5 h-3.5 text-muted-foreground/60" /> : <Eye className="w-3.5 h-3.5 text-muted-foreground/60" />}
                   </button>
+                  {confirmPassword && <ClearButton onClick={() => setConfirmPassword("")} />}
                 </div>
               </div>
             </div>
-            {isRegister && <div className="mb-4"><div className="relative h-[52px] sm:h-[58px] flex items-center w-full overflow-hidden rounded-[29px]" style={{ background: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.4)", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}><input type={showPassword ? "text" : "password"} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="请确认密码" className="flex-1 border-0 shadow-none bg-transparent h-full pl-5 pr-10 text-[15px] outline-none" style={{ color: "#1a1a2e" }} /></div></div>}
-            <div className="mb-4">
-              <div className="flex gap-3 items-center w-full">
-                <div className="relative h-[52px] sm:h-[58px] flex items-center flex-1 overflow-hidden rounded-[29px]" style={{ background: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.4)", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
-                  <input type="text" value={captchaCode} onChange={(e) => setCaptchaCode(e.target.value)} placeholder="请输入验证码" maxLength={4} className="flex-1 border-0 shadow-none bg-transparent h-full pl-5 pr-4 text-[15px] outline-none" style={{ color: "#1a1a2e" }} />
-                </div>
-                <div className="h-[52px] sm:h-[58px] w-[130px] flex-shrink-0 overflow-hidden cursor-pointer flex items-center justify-center" style={{ background: "linear-gradient(135deg, #e0e7ff, #c7d2fe)", borderRadius: "8px" }} onClick={loadCaptcha} title="点击刷新验证码">
-                  <span style={{ fontSize: "24px", fontWeight: 700, color: "#4c1d95", letterSpacing: "8px", fontFamily: "'Courier New', monospace" }}>{captchaValue}</span>
-                </div>
+          )}
+
+          {/* 数字验证码 */}
+          <div className="mb-4 animate-stagger-9">
+            <div className="flex gap-3 items-center w-full">
+              <div className={cn(loginStyles.glassField, "login-field relative h-[52px] sm:h-[58px] flex items-center flex-1")}>
+                <Input type="text" value={captchaCode} onChange={(e) => setCaptchaCode(e.target.value.replace(/\D/g, ""))} onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }} placeholder="请输入验证码" maxLength={4} autoComplete="off" className="flex-1 border-0 shadow-none focus-visible:ring-0 bg-transparent h-full pl-5 pr-4" />
               </div>
+              <button type="button" onClick={loadCaptcha} className="h-[52px] sm:h-[58px] w-[130px] flex-shrink-0 overflow-hidden cursor-pointer flex items-center justify-center rounded-[29px]" style={{ background: "linear-gradient(135deg, #e0e7ff, #c7d2fe)" }} title="点击刷新验证码">
+                <span style={{ fontSize: "24px", fontWeight: 700, color: "#4c1d95", letterSpacing: "8px", fontFamily: "'Courier New', monospace" }}>{captchaDisplay}</span>
+              </button>
             </div>
-            <button ref={btnRef} type="submit" className="relative w-full h-[52px] sm:h-[58px] rounded-[29px] text-sm font-bold text-white mb-3 border transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer" style={{ borderColor: "rgba(255,255,255,0.3)", boxShadow: "0 4px 16px rgba(0,0,0,0.08)", background: loading ? "linear-gradient(to right, #a78bfa, #c4b5fd, #a78bfa)" : btnGradient }} disabled={loading} onMouseMove={onBtnMove} onMouseLeave={onBtnLeave}>
-              {!loading && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>}
-              {loading ? "处理中..." : isRegister ? "注册" : "登录"}
-            </button>
-          </form>
-          <div className="flex items-center justify-center gap-2 mt-2 mb-2">
-            {isRegister ? <button type="button" className="text-sm text-muted-foreground hover:text-primary p-0 h-auto" style={{ color: "#6b5b8a" }} onClick={() => { setIsRegister(false); setPassword(""); setCaptchaCode(""); loadCaptcha(); }}>返回登录</button> : <>
-              <button type="button" className="text-sm text-muted-foreground hover:text-primary p-0 h-auto" style={{ color: "#6b5b8a" }} onClick={() => { setIsRegister(true); setPassword(""); setCaptchaCode(""); loadCaptcha(); }}>注册新账号</button>
-              <span style={{ color: "rgba(107,91,138,0.4)" }}>|</span>
-              <button type="button" className="text-sm text-muted-foreground hover:text-primary p-0 h-auto" style={{ color: "#6b5b8a" }} onClick={() => navigate("/")}>找回密码</button>
-              <span style={{ color: "rgba(107,91,138,0.4)" }}>|</span>
-            </>}
-            <button type="button" className="text-sm text-muted-foreground hover:text-primary p-0 h-auto" style={{ color: "#6b5b8a" }} onClick={() => navigate("/")}>跳过，先体验一下 →</button>
+          </div>
+
+          {/* 提交按钮 */}
+          <div className="animate-stagger-10">
+            <Button variant="ghost" onClick={handleSubmit} disabled={loading} className={cn(`relative w-full h-[52px] sm:h-[58px] ${iosRadius.pill} text-sm font-bold text-white mb-2 border border-white/30 transition-all duration-300`, "shadow-[0_4px_16px_rgba(0,0,0,0.08)] hover:shadow-[0_8px_24px_rgba(91,33,182,0.15)] active:scale-[0.98]", "focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2", !loading ? "bg-gradient-to-r from-violet-700 via-purple-600 to-violet-700 hover:shadow-[0_8px_28px_rgba(91,33,182,0.3)] hover:scale-[1.01] active:scale-[0.98] cursor-pointer" : "bg-gradient-to-r from-violet-400 via-purple-300 to-violet-400 text-white cursor-not-allowed shadow-none hover:shadow-none hover:scale-100 opacity-100")} onMouseMove={(e) => { if (loading) return; const rect = e.currentTarget.getBoundingClientRect(); e.currentTarget.style.background = `radial-gradient(circle at ${((e.clientX - rect.left) / rect.width) * 100}% ${((e.clientY - rect.top) / rect.height) * 100}%, rgba(167,139,250,0.5) 0%, transparent 50%), linear-gradient(135deg, #4c1d95 0%, #7c3aed 40%, #6d28d9 60%, #5b21b6 100%)`; }} onMouseLeave={(e) => { if (!loading) e.currentTarget.style.background = ""; }}>
+              <span className="relative z-10 flex items-center justify-center gap-2">
+                <Sparkles className="w-4 h-4" />
+                {loading ? "处理中..." : mainTab === "register" ? "注册" : "登录"}
+              </span>
+            </Button>
+          </div>
+
+          {/* 导航链接 */}
+          <div className="flex items-center justify-center gap-2 mt-2 mb-2 animate-stagger-11">
+            {mainTab === "login" ? (
+              <Button variant="link" onClick={() => switchTab("register")} className="text-sm text-muted-foreground hover:text-primary p-0 h-auto">注册新账号</Button>
+            ) : (
+              <Button variant="link" onClick={() => switchTab("login")} className="text-sm text-muted-foreground hover:text-primary p-0 h-auto">返回登录</Button>
+            )}
+          </div>
           </div>
         </div>
       </div>

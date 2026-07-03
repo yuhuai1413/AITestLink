@@ -37,6 +37,11 @@ app.include_router(ai.router, prefix="/api", tags=["ai"])
 app.include_router(model_config.router, prefix="/api", tags=["model-config"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 
+# 静态文件服务（头像等上传文件）
+import os
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+
 
 @app.get("/api/health")
 async def health():
