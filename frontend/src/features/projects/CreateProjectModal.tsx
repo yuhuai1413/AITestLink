@@ -26,7 +26,7 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    createProject({ name, testType, description, priority }).then(() => {
+    createProject({ name, testType, description, priority, testStatus: "待测试", docStatus: "待解析" }).then(() => {
       toast.success("项目创建成功");
       setName("");
       setTestType("首轮全量测试");

@@ -3775,3 +3775,63 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+/* ─── Confirm Dialog ─── */
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.4);
+  animation: dialogOverlayIn 0.2s ease;
+}
+
+.confirm-dialog {
+  width: 400px;
+  max-width: 90vw;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l2);
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.18);
+  animation: dialogContentIn 0.2s ease;
+}
+
+.confirm-dialog__body {
+  display: flex;
+  gap: 14px;
+  padding: 24px 24px 16px;
+}
+
+.confirm-dialog__icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.confirm-dialog__text h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.confirm-dialog__text p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 20px;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 24px 20px;
+}

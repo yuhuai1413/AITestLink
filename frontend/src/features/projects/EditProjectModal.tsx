@@ -17,12 +17,17 @@ const testTypeOptions: { value: TestType; label: string }[] = [
   { value: "专项测试", label: "专项测试" },
 ];
 
+const testStatusOptions = ["待测试", "测试中", "已测试"];
+const docStatusOptions = ["待解析", "解析中", "已完成"];
+
 export function EditProjectModal({ open, onClose, project }: EditProjectModalProps) {
   const { updateProject } = useAPISync();
 
   const [name, setName] = useState("");
   const [testType, setTestType] = useState<TestType>("首轮全量测试");
   const [priority, setPriority] = useState<"高" | "中" | "低">("中");
+  const [testStatus, setTestStatus] = useState("待测试");
+  const [docStatus, setDocStatus] = useState("待解析");
   const [description, setDescription] = useState("");
 
   useEffect(() => {
@@ -30,6 +35,8 @@ export function EditProjectModal({ open, onClose, project }: EditProjectModalPro
       setName(project.name);
       setTestType(project.testType);
       setPriority(project.riskLevel);
+      setTestStatus(project.testStatus);
+      setDocStatus(project.docStatus);
       setDescription(project.description);
     }
   }, [open, project]);
@@ -37,7 +44,7 @@ export function EditProjectModal({ open, onClose, project }: EditProjectModalPro
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!project) return;
-    updateProject(project.id, { name, testType, description, riskLevel: priority }).then(() => {
+    updateProject(project.id, { name, testType, description, priority, testStatus, docStatus }).then(() => {
       toast.success("项目更新成功");
       onClose();
     }).catch((err: Error) => {
@@ -62,7 +69,6 @@ export function EditProjectModal({ open, onClose, project }: EditProjectModalPro
             </select>
           </label>
         </div>
-
         <div className="form-row">
           <label className="form-label">
             优先级
@@ -70,6 +76,22 @@ export function EditProjectModal({ open, onClose, project }: EditProjectModalPro
               <option value="高">高</option>
               <option value="中">中</option>
               <option value="低">低</option>
+            </select>
+          </label>
+        </div>
+        <div className="form-row">
+          <label className="form-label">
+            测试状态
+            <select className="form-select" value={testStatus} onChange={(e) => setTestStatus(e.target.value)}>
+              {testStatusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="form-row">
+          <label className="form-label">
+            文档状态
+            <select className="form-select" value={docStatus} onChange={(e) => setDocStatus(e.target.value)}>
+              {docStatusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>
         </div>

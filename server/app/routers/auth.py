@@ -326,3 +326,60 @@ async def list_users(token: str = None, db: AsyncSession = Depends(get_db)):
             for u in users
         ],
     }
+
+
+class UpdateUserRequest(BaseModel):
+    nickname: str | None = None
+    is_admin: bool | None = None
+    is_active: bool | None = None
+
+
+@router.put("/users/{user_id}")
+async def update_user(user_id: str, data: UpdateUserRequest, token: str = None, db: AsyncSession = Depends(get_db)):
+    """更新用户信息（管理员专用）"""
+    if not token or token not in token_store:
+        return {"ok": False, "message": "未登录"}
+
+    user_info = token_store.get(token)
+    if not user_info or not user_info.get("is_admin"):
+        return {"ok": False, "message": "无权限"}
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        return {"ok": False, "message": "用户不存在"}
+
+    if data.nickname is not None:
+        user.nickname = data.nickname
+    if data.is_admin is not None:
+        user.is_admin = data.is_admin
+    if data.is_active is not None:
+        user.is_active = data.is_active
+    user.updated_at = datetime.utcnow()
+    await db.commit()
+
+    return {"ok": True, "message": "更新成功"}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(user_id: str, token: str = None, db: AsyncSession = Depends(get_db)):
+    """删除用户（管理员专用）"""
+    if not token or token not in token_store:
+        return {"ok": False, "message": "未登录"}
+
+    user_info = token_store.get(token)
+    if not user_info or not user_info.get("is_admin"):
+        return {"ok": False, "message": "无权限"}
+
+    if user_info.get("user_id") == user_id:
+        return {"ok": False, "message": "不能删除自己的账号"}
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        return {"ok": False, "message": "用户不存在"}
+
+    await db.delete(user)
+    await db.commit()
+
+    return {"ok": True, "message": "删除成功"}
