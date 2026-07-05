@@ -13,7 +13,7 @@ export function UserManagementPage() {
   const [pageSize, setPageSize] = useState(10);
   const [nicknameFilter, setNicknameFilter] = useState("");
   const [phoneFilter, setPhoneFilter] = useState("");
-  const [roleFilter, setRoleFilter] = useState("all");
+  const [roleTab, setRoleTab] = useState<"all" | "admin" | "user">("all");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserItem | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -45,15 +45,13 @@ export function UserManagementPage() {
 
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
+      if (roleTab === "admin" && !u.is_admin) return false;
+      if (roleTab === "user" && u.is_admin) return false;
       if (nicknameFilter && !(u.nickname || "").toLowerCase().includes(nicknameFilter.toLowerCase())) return false;
       if (phoneFilter && !(u.phone || "").includes(phoneFilter)) return false;
-      if (roleFilter !== "all") {
-        if (roleFilter === "admin" && !u.is_admin) return false;
-        if (roleFilter === "user" && u.is_admin) return false;
-      }
       return true;
     });
-  }, [users, nicknameFilter, phoneFilter, roleFilter]);
+  }, [users, nicknameFilter, phoneFilter, roleTab]);
 
   const paginatedUsers = useMemo(() => {
     const start = (page - 1) * pageSize;
@@ -63,7 +61,7 @@ export function UserManagementPage() {
   const resetFilters = () => {
     setNicknameFilter("");
     setPhoneFilter("");
-    setRoleFilter("all");
+    setRoleTab("all");
     setPage(1);
   };
 
@@ -180,8 +178,8 @@ export function UserManagementPage() {
         <label className="search-form__label">角色</label>
         <select
           className="search-form__select"
-          value={roleFilter}
-          onChange={(e) => { setRoleFilter(e.target.value); setPage(1); }}
+          value={roleTab}
+          onChange={(e) => { setRoleTab(e.target.value as "all" | "admin" | "user"); setPage(1); }}
         >
           <option value="all">全部角色</option>
           <option value="admin">管理员</option>
@@ -249,8 +247,8 @@ export function UserManagementPage() {
                 width: "6%",
                 align: "center",
                 render: (row) => (
-                  <label className="toggle-switch" onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" checked={row.is_active} onChange={() => handleToggleStatus(row)} />
+                  <label className="toggle-switch" style={{ opacity: row.is_admin ? 0.5 : 1, cursor: row.is_admin ? "not-allowed" : "pointer" }} onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={row.is_active} disabled={row.is_admin} onChange={() => handleToggleStatus(row)} />
                     <span className="toggle-switch__slider" />
                   </label>
                 ),
@@ -279,13 +277,15 @@ export function UserManagementPage() {
                     <button className="text-button" type="button" onClick={() => handleEditClick(row)}>
                       编辑
                     </button>
-                    <button
-                      className="text-button text-button--danger"
-                      type="button"
-                      onClick={() => handleDeleteClick(row)}
-                    >
-                      删除
-                    </button>
+                    {!row.is_admin && (
+                      <button
+                        className="text-button text-button--danger"
+                        type="button"
+                        onClick={() => handleDeleteClick(row)}
+                      >
+                        删除
+                      </button>
+                    )}
                   </div>
                 ),
               },

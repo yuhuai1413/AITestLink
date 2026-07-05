@@ -354,6 +354,8 @@ async def update_user(user_id: str, data: UpdateUserRequest, token: str = None, 
     if data.is_admin is not None:
         user.is_admin = data.is_admin
     if data.is_active is not None:
+        if user.is_admin and not data.is_active:
+            return {"ok": False, "message": "不能禁用管理员账号"}
         user.is_active = data.is_active
     user.updated_at = datetime.utcnow()
     await db.commit()
@@ -378,6 +380,9 @@ async def delete_user(user_id: str, token: str = None, db: AsyncSession = Depend
     user = result.scalar_one_or_none()
     if not user:
         return {"ok": False, "message": "用户不存在"}
+
+    if user.is_admin:
+        return {"ok": False, "message": "不能删除管理员账号"}
 
     await db.delete(user)
     await db.commit()

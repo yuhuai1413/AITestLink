@@ -375,6 +375,7 @@ button {
 .content {
   width: 100%;
   padding: 14px;
+  align-self: start;
 }
 
 .page-stack {
@@ -594,7 +595,7 @@ button {
 
 .work-panel {
   border: 1px solid var(--line);
-  border-radius: var(--radius-l1);
+  border-radius: var(--radius-l2);
   background: var(--surface);
   padding: 18px;
   display: flex;
@@ -1419,11 +1420,18 @@ button {
   border-bottom-color: var(--blue);
 }
 
+.tab-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 /* ─── Detail Header ─── */
 
 .detail-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 16px;
 }
 
@@ -1441,7 +1449,7 @@ button {
 
 .overview-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 14px;
 }
 
@@ -1453,7 +1461,7 @@ button {
   align-items: center;
   gap: 8px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-l4);
+  border-radius: var(--radius-l2);
   background: var(--surface);
   padding: 16px;
 }

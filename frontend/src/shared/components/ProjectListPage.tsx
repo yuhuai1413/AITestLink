@@ -84,9 +84,9 @@ export function ProjectListPage({ mode }: ProjectListPageProps) {
 
   const handleViewProject = (project: Project) => {
     if (mode === "testCenter") {
-      navigate(`/projects/${project.id}?tab=testPoints`);
+      navigate(`/test-center/${project.id}`);
     } else if (mode === "documentCenter") {
-      navigate(`/projects/${project.id}?tab=files`);
+      navigate(`/document-center/${project.id}`);
     } else {
       navigate(`/projects/${project.id}`);
     }

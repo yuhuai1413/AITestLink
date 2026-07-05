@@ -6,8 +6,10 @@ import type { ViewKey } from "../shared/types/platform";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { ProjectsPage } from "../features/projects/ProjectsPage";
 import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
-import { TestCenterPage } from "../features/test-center/TestCenterPage";
-import { DocumentCenterPage } from "../features/document-center/DocumentCenterPage";
+import { TestCenterListPage } from "../features/test-center/TestCenterListPage";
+import { TestCenterProjectPage } from "../features/test-center/TestCenterProjectPage";
+import { DocumentCenterListPage } from "../features/document-center/DocumentCenterListPage";
+import { DocumentCenterProjectPage } from "../features/document-center/DocumentCenterProjectPage";
 import { ModelConfigPage } from "../features/model-config/ModelConfigPage";
 import { UserManagementPage } from "../features/user-management/UserManagementPage";
 import { LoginPage } from "../features/auth/LoginPage";
@@ -16,7 +18,9 @@ import { useAPISync } from "../api/useAPISync";
 
 function pathnameToView(pathname: string): ViewKey {
   if (pathname.startsWith("/projects")) return "projects";
+  if (pathname.match(/^\/test-center\/[a-f0-9-]+/)) return "testCenter";
   if (pathname.startsWith("/test-center")) return "testCenter";
+  if (pathname.match(/^\/document-center\/[a-f0-9-]+/)) return "documentCenter";
   if (pathname.startsWith("/document-center")) return "documentCenter";
   if (pathname.startsWith("/model-config")) return "modelConfig";
   if (pathname.startsWith("/user-management")) return "userManagement";
@@ -83,8 +87,10 @@ export function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/projects" element={<ProjectsPage />} />
               <Route path="/projects/:id/*" element={<ProjectDetailPage />} />
-              <Route path="/test-center" element={<TestCenterPage />} />
-              <Route path="/document-center" element={<DocumentCenterPage />} />
+              <Route path="/test-center" element={<TestCenterListPage />} />
+              <Route path="/test-center/:id" element={<TestCenterProjectPage />} />
+              <Route path="/document-center" element={<DocumentCenterListPage />} />
+              <Route path="/document-center/:id" element={<DocumentCenterProjectPage />} />
               <Route path="/model-config" element={<ModelConfigPage />} />
               <Route path="/user-management" element={<UserManagementPage />} />
             </Routes>
