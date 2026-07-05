@@ -1,45 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Eye, EyeOff, Pencil, TestTube, Loader2, Check, X, Save } from "lucide-react";
 import { Modal } from "../../shared/components/Modal";
-import { SectionHeader } from "../../shared/components/SectionHeader";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { DataTable } from "../../shared/components/DataTable";
+import { DataPanel } from "../../shared/components/DataPanel";
 import { modelConfigApi, type ApiModelConfig } from "../../api/client";
-
-// Toast 提示组件
-function Toast({ message, type, onClose }: { message: string; type: "success" | "error"; onClose: () => void }) {
-  return (
-    <div className={`toast toast--${type}`}>
-      {type === "success" ? <Check size={16} /> : <X size={16} />}
-      <span>{message}</span>
-    </div>
-  );
-}
-
-// 全局 toast 状态
-let toastState: { message: string; type: "success" | "error" } | null = null;
-let toastListeners: Array<() => void> = [];
-
-function showToast(message: string, type: "success" | "error") {
-  toastState = { message, type };
-  toastListeners.forEach((l) => l());
-  setTimeout(() => {
-    toastState = null;
-    toastListeners.forEach((l) => l());
-  }, 3000);
-}
-
-function useToast() {
-  const [, forceUpdate] = useState(0);
-  useEffect(() => {
-    const listener = () => forceUpdate((n) => n + 1);
-    toastListeners.push(listener);
-    return () => {
-      toastListeners = toastListeners.filter((l) => l !== listener);
-    };
-  }, []);
-  return toastState;
-}
+import { toast } from "sonner";
 
 const nodeColors: Record<string, string> = {
   "需求解析节点": "green",
@@ -152,7 +118,8 @@ export function ModelConfigPage() {
   const [testResults, setTestResults] = useState<Record<string, "success" | "error" | null>>({});
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
-  const toast = useToast();
+  const [nodeFilter, setNodeFilter] = useState("all");
+  const [providerFilter, setProviderFilter] = useState("all");
 
   // 加载配置
   useEffect(() => {
@@ -174,6 +141,14 @@ export function ModelConfigPage() {
       setLoading(false);
     }
   };
+
+  const filteredConfigs = useMemo(() => {
+    return configs.filter((c) => {
+      if (nodeFilter !== "all" && c.aiNode !== nodeFilter) return false;
+      if (providerFilter !== "all" && c.provider !== providerFilter) return false;
+      return true;
+    });
+  }, [configs, nodeFilter, providerFilter]);
 
   const saveConfigs = async (newConfigs: ApiModelConfig[]) => {
     setSaving(true);
@@ -198,15 +173,15 @@ export function ModelConfigPage() {
       if (result.ok) {
         setTestResults(prev => ({ ...prev, [config.id]: "success" }));
         // 显示成功提示
-        showToast(result.message || "连通正常", "success");
+        toast.success(result.message || "连通正常");
       } else {
         setTestResults(prev => ({ ...prev, [config.id]: "error" }));
-        showToast(result.message || "测试失败", "error");
+        toast.error(result.message || "测试失败");
       }
     } catch (error: any) {
       console.error("Test connection error:", error);
       setTestResults(prev => ({ ...prev, [config.id]: "error" }));
-      showToast(error.message || "测试失败", "error");
+      toast.error(error.message || "测试失败");
     } finally {
       setTestingId(null);
       // 3秒后清除测试结果
@@ -243,11 +218,6 @@ export function ModelConfigPage() {
   if (loading) {
     return (
       <div className="page-stack">
-        <SectionHeader
-          eyebrow="系统设置"
-          title="模型配置"
-          description="为每个 AI 节点配置模型供应商、API Key 和参数。"
-        />
         <div className="work-panel" style={{ textAlign: "center", padding: "40px" }}>
           <Loader2 size={24} className="animate-spin" style={{ marginBottom: 8 }} />
           <p>加载配置中...</p>
@@ -258,54 +228,78 @@ export function ModelConfigPage() {
 
   return (
     <div className="page-stack">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => {}} />}
-      <SectionHeader
-        eyebrow="系统设置"
-        title="模型配置"
-        description="为每个 AI 节点配置模型供应商、API Key 和参数。配置会自动保存到后端。"
-        actions={
-          <StatusPill tone={saving ? "amber" : "green"}>
-            {saving ? "保存中..." : "已同步"}
-          </StatusPill>
+      <DataPanel
+        toolbar={
+          <div className="search-form">
+            <div className="search-form__field">
+              <label className="search-form__label">AI 节点</label>
+              <select
+                className="search-form__select"
+                value={nodeFilter}
+                onChange={(e) => setNodeFilter(e.target.value)}
+              >
+                <option value="all">全部节点</option>
+                {Object.keys(nodeColors).map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+            <div className="search-form__field">
+              <label className="search-form__label">供应商</label>
+              <select
+                className="search-form__select"
+                value={providerFilter}
+                onChange={(e) => setProviderFilter(e.target.value)}
+              >
+                <option value="all">全部供应商</option>
+                {Object.keys(providerModels).map((p) => (
+                  <option key={p} value={p}>{p.split("-")[0]}</option>
+                ))}
+              </select>
+            </div>
+          </div>
         }
-      />
-
-      <section className="work-panel">
+        total={filteredConfigs.length}
+      >
         <DataTable
-          rows={configs}
-          getRowKey={(row) => row.id}
-          columns={[
+        rows={filteredConfigs}
+        getRowKey={(row) => row.id}
+        columns={[
             {
               key: "aiNode",
               label: "AI 节点",
-              width: "110px",
+              width: "10%",
               render: (row) => (
                 <StatusPill tone={(nodeColors[row.aiNode] || "slate") as any}>{row.aiNode}</StatusPill>
               ),
             },
-            { key: "description", label: "说明", align: "left", width: "15%", render: (row) => <span style={{ fontSize: 13 }}>{row.description}</span> },
-            { key: "provider", label: "供应商", width: "80px", render: (row) => <span className="provider-tag">{row.provider.split("-")[0]}</span> },
-            { key: "modelName", label: "模型", width: "110px", render: (row) => row.modelName },
+            { key: "description", label: "说明", align: "left", width: "20%", render: (row) => <span style={{ fontSize: 13 }}>{row.description}</span> },
+            { key: "provider", label: "供应商", width: "8%", render: (row) => <span className="provider-tag">{row.provider.split("-")[0]}</span> },
+            { key: "modelName", label: "模型", width: "10%", render: (row) => row.modelName },
             {
               key: "apiKey",
               label: "API Key",
-              width: "140px",
+              width: "12%",
               render: (row) => <span className="api-key-masked">{maskKey(row.apiKey)}</span>,
             },
             {
               key: "endpoint",
               label: "Endpoint",
-              width: "18%",
-              render: (row) => (
-                <span className="text-muted" style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }} title={row.endpoint}>
-                  {row.endpoint}
-                </span>
-              ),
+              width: "20%",
+              render: (row) => {
+                const ep = row.endpoint;
+                const display = ep.length > 35 ? ep.slice(0, 35) + "..." : ep;
+                return (
+                  <span className="text-muted" style={{ fontSize: 12 }} title={ep}>
+                    {display}
+                  </span>
+                );
+              },
             },
             {
               key: "enabled",
               label: "状态",
-              width: "70px",
+              width: "6%",
               align: "center",
               render: (row) => (
                 <label className="toggle-switch">
@@ -317,49 +311,34 @@ export function ModelConfigPage() {
             {
               key: "actions",
               label: "操作",
-              width: "120px",
+              width: "10%",
+              align: "center",
               render: (row) => (
-                <div className="inline-actions" style={{ whiteSpace: "nowrap" }}>
-                  <button className="text-button" type="button" style={{ color: "var(--blue)", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 4 }} onClick={() => setEditingConfig({ ...row })}>
-                    <Pencil size={13} strokeWidth={2.5} /> 编辑
+                <div className="inline-actions">
+                  <button className="text-button" type="button" onClick={() => setEditingConfig({ ...row })}>
+                    编辑
                   </button>
-                  <button 
-                    className="text-button" 
-                    type="button" 
-                    style={{ 
-                      color: testResults[row.id] === "success" ? "var(--green)" : testResults[row.id] === "error" ? "var(--red)" : "var(--green)", 
-                      fontSize: 13, 
-                      display: "inline-flex", 
-                      alignItems: "center", 
-                      gap: 4 
-                    }} 
+                  <button
+                    className="text-button"
+                    type="button"
                     onClick={() => testConnection(row)}
                     disabled={testingId === row.id}
                   >
-                    {testingId === row.id ? (
-                      <Loader2 size={13} strokeWidth={2.5} className="animate-spin" />
-                    ) : testResults[row.id] === "success" ? (
-                      <Check size={13} strokeWidth={2.5} />
-                    ) : testResults[row.id] === "error" ? (
-                      <X size={13} strokeWidth={2.5} />
-                    ) : (
-                      <TestTube size={13} strokeWidth={2.5} />
-                    )}
-                    {testingId === row.id ? "测试中" : testResults[row.id] === "success" ? "成功" : testResults[row.id] === "error" ? "失败" : "测试"}
+                    测试
                   </button>
                 </div>
               ),
             },
           ]}
         />
-      </section>
+      </DataPanel>
 
       {/* 编辑弹窗 */}
       <Modal
         open={!!editingConfig}
         onClose={() => { setEditingConfig(null); setShowApiKey(false); }}
         title={`编辑配置 - ${editingConfig?.name}`}
-        width={560}
+        width={520}
       >
         {editingConfig && (
           <form className="form-stack" onSubmit={(e) => { e.preventDefault(); handleSaveEdit(); }}>

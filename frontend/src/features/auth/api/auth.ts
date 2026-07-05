@@ -82,3 +82,14 @@ export async function getMeWithAdmin() {
   const token = getToken();
   return api.get<{ ok: boolean; user: { user_id: string; phone: string; nickname: string; avatar: string; is_admin: boolean } }>("/auth/me?token=" + (token || ""));
 }
+
+
+export async function deleteUser(userId: string) {
+  const token = getToken();
+  return api.delete<{ ok: boolean; message: string }>(`/auth/users/${userId}?token=` + (token || ""));
+}
+
+export async function updateUser(userId: string, data: Record<string, unknown>) {
+  const token = getToken();
+  return api.put<{ ok: boolean; message: string }>(`/auth/users/${userId}?token=` + (token || ""), data);
+}

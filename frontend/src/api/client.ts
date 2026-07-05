@@ -3,13 +3,22 @@ const API_BASE = "http://localhost:8001/api";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${path}`;
-  const res = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    ...options,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      ...options,
+    });
+  } catch {
+    throw new Error("网络连接失败，请检查后端服务是否启动");
+  }
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`API Error ${res.status}: ${err}`);
+    // 404 静默处理：资源可能不存在于后端（如本地创建的项目）
+    if (res.status === 404) return null as T;
+    const errText = await res.text();
+    let detail = errText;
+    try { const j = JSON.parse(errText); detail = j.detail || errText; } catch {}
+    throw new Error(detail);
   }
   return res.json();
 }
@@ -20,13 +29,13 @@ export interface ApiProject {
   id: string;
   name: string;
   version: string;
-  owner: string;
   testType: string;
-  status: string;
+  testStatus: string;
+  docStatus: string;
   description: string;
   caseCount: number;
   passRate: number;
-  riskLevel: string;
+  priority: string;
   createdAt: string;
   updatedAt: string;
 }

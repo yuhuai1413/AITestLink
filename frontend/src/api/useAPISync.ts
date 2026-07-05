@@ -21,12 +21,9 @@ export function useAPISync() {
     if (initialized.current) return;
     initialized.current = true;
 
-    const settle = async <T>(fn: () => Promise<T>): Promise<T[]> => {
+    const safe = async <T>(fn: () => Promise<T>): Promise<T[]> => {
       try {
-        const result = await Promise.race([
-          fn(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 3000)),
-        ]);
+        const result = await fn();
         return Array.isArray(result) ? result : [];
       } catch {
         return [];
@@ -35,11 +32,11 @@ export function useAPISync() {
 
     async function loadAll() {
       const [projects, files, requirements, testPoints, testCases] = await Promise.all([
-        settle(() => projectsApi.list()),
-        settle(() => loadAllFiles()),
-        settle(() => loadAllRequirements()),
-        settle(() => loadAllTestPoints()),
-        settle(() => loadAllTestCases()),
+        safe(() => projectsApi.list()),
+        safe(() => loadAllFiles()),
+        safe(() => loadAllRequirements()),
+        safe(() => loadAllTestPoints()),
+        safe(() => loadAllTestCases()),
       ]);
 
       projects.forEach((p) => dispatch({ type: "ADD_PROJECT", payload: apiToProject(p) }));
@@ -67,13 +64,22 @@ export function useAPISync() {
     }, [dispatch]),
 
     deleteProject: useCallback(async (id: string) => {
-      await projectsApi.delete(id);
+      try {
+        await projectsApi.delete(id);
+      } catch {
+        // 项目可能只存在于本地 store，忽略后端错误
+      }
       dispatch({ type: "DELETE_PROJECT", payload: id });
     }, [dispatch]),
 
     uploadFile: useCallback(async (projectId: string, file: File) => {
       const apiFile = await filesApi.upload(projectId, file);
       dispatch({ type: "ADD_FILE", payload: apiToFile(apiFile) });
+    }, [dispatch]),
+
+    deleteFile: useCallback(async (id: string) => {
+      await filesApi.delete(id);
+      dispatch({ type: "DELETE_FILE", payload: id });
     }, [dispatch]),
 
     updateRequirement: useCallback(async (id: string, data: Record<string, unknown>) => {
@@ -214,11 +220,20 @@ async function pollAITask(taskId: string, projectId: string, dispatch: React.Dis
 // ─── API → Store type converters ───
 
 function apiToProject(p: ApiProject): Project {
+  const statusMap: Record<string, string> = {
+    "待测试": "设计中",
+    "测试中": "执行中",
+    "已测试": "已完成",
+  };
   return {
-    id: p.id, name: p.name, version: p.version, owner: p.owner,
-    testType: p.testType as any, status: p.status as any,
+    id: p.id, name: p.name, version: p.version,
+    testType: p.testType as any,
+    testStatus: p.testStatus as any,
+    docStatus: p.docStatus as any,
+    status: (statusMap[p.testStatus] || "设计中") as any,
     description: p.description, caseCount: p.caseCount, passRate: p.passRate,
-    riskLevel: p.riskLevel as any, createdAt: p.createdAt, updatedAt: p.updatedAt,
+    priority: p.priority as any, riskLevel: p.priority as any,
+    createdAt: p.createdAt, updatedAt: p.updatedAt,
   };
 }
 

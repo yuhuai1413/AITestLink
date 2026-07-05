@@ -42,7 +42,7 @@ export function TestPointEditModal({ open, testPoint, onClose }: TestPointEditMo
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="编辑测试点" width={560}>
+    <Modal open={open} onClose={onClose} title="编辑测试点" width={520}>
       <form className="form-stack" onSubmit={handleSubmit}>
         <div className="form-row">
           <label className="form-label">

@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Modal } from "../../shared/components/Modal";
 import { useAPISync } from "../../api/useAPISync";
-import type { TestType } from "../../shared/types/platform";
+import type { Project, TestType } from "../../shared/types/platform";
 
-interface CreateProjectModalProps {
+interface EditProjectModalProps {
   open: boolean;
   onClose: () => void;
+  project: Project | null;
 }
 
 const testTypeOptions: { value: TestType; label: string }[] = [
@@ -16,38 +17,43 @@ const testTypeOptions: { value: TestType; label: string }[] = [
   { value: "专项测试", label: "专项测试" },
 ];
 
-export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
-  const { createProject } = useAPISync();
+export function EditProjectModal({ open, onClose, project }: EditProjectModalProps) {
+  const { updateProject } = useAPISync();
 
   const [name, setName] = useState("");
   const [testType, setTestType] = useState<TestType>("首轮全量测试");
   const [priority, setPriority] = useState<"高" | "中" | "低">("中");
   const [description, setDescription] = useState("");
 
+  useEffect(() => {
+    if (open && project) {
+      setName(project.name);
+      setTestType(project.testType);
+      setPriority(project.riskLevel);
+      setDescription(project.description);
+    }
+  }, [open, project]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    createProject({ name, testType, description, priority }).then(() => {
-      toast.success("项目创建成功");
-      setName("");
-      setTestType("首轮全量测试");
-      setPriority("中");
-      setDescription("");
+    if (!project) return;
+    updateProject(project.id, { name, testType, description, riskLevel: priority }).then(() => {
+      toast.success("项目更新成功");
       onClose();
-    }).catch((err) => {
-      toast.error(err.message || "创建失败，请重试");
+    }).catch((err: Error) => {
+      toast.error(err.message || "更新失败");
     });
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="新建项目" width={520}>
+    <Modal open={open} onClose={onClose} title="编辑项目" width={520}>
       <form className="form-stack" onSubmit={handleSubmit}>
         <div className="form-row">
           <label className="form-label">
             项目名称 *
-            <input className="form-input" type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="输入项目名称" required autoFocus />
+            <input className="form-input" type="text" value={name} onChange={(e) => setName(e.target.value)} required />
           </label>
         </div>
-
         <div className="form-row">
           <label className="form-label">
             测试类型 *
@@ -67,17 +73,15 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
             </select>
           </label>
         </div>
-
         <div className="form-row">
           <label className="form-label">
             项目说明
-            <textarea className="form-textarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="简要描述项目背景和测试目标" rows={3} />
+            <textarea className="form-textarea" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
           </label>
         </div>
-
         <div className="form-actions">
           <button className="ghost-button" type="button" onClick={onClose}>取消</button>
-          <button className="primary-button" type="submit">创建项目</button>
+          <button className="primary-button" type="submit">保存</button>
         </div>
       </form>
     </Modal>

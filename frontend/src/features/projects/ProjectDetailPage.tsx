@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
   Download,
@@ -79,8 +79,8 @@ function OverviewTab({ projectId }: { projectId: string }) {
         </div>
         <div className="overview-stat">
           <span className="overview-stat__label">风险等级</span>
-          <StatusPill tone={project.riskLevel === "高" ? "red" : project.riskLevel === "中" ? "amber" : "green"}>
-            {project.riskLevel}
+          <StatusPill tone={project.priority === "高" ? "red" : project.priority === "中" ? "amber" : "green"}>
+            {project.priority}
           </StatusPill>
         </div>
         <div className="overview-stat">
@@ -765,9 +765,12 @@ function TestCasesTab({ projectId }: { projectId: string }) {
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const project = useProject(id);
   const { dispatch } = useStore();
-  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+
+  const initialTab = (searchParams.get("tab") as TabKey) || "overview";
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
   const [editingProject, setEditingProject] = useState(false);
   const [editName, setEditName] = useState("");
   const [editVersion, setEditVersion] = useState("");

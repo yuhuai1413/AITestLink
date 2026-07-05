@@ -60,7 +60,7 @@ export function TestCaseEditModal({ open, testCase, onClose }: TestCaseEditModal
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="编辑测试用例" width={640}>
+    <Modal open={open} onClose={onClose} title="编辑测试用例" width={520}>
       <form className="form-stack" onSubmit={handleSubmit}>
         <div className="form-row">
           <label className="form-label">

@@ -35,14 +35,23 @@ async def list_projects(db: AsyncSession = Depends(get_db)):
 
 @router.post("", status_code=201)
 async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db)):
+    # Uniqueness check: name + test_type
+    existing = await db.execute(
+        select(Project).where(
+            Project.name == data.name,
+            Project.test_type == data.testType,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail=f"项目「{data.name}」已存在同类型「{data.testType}」的记录，请勿重复创建")
+
     project = Project(
         name=data.name,
-        version=data.version,
-        owner=data.owner,
         test_type=data.testType,
-        status=data.status,
+        test_status=data.testStatus,
+        doc_status=data.docStatus,
+        priority=data.priority,
         description=data.description,
-        risk_level=data.riskLevel,
     )
     db.add(project)
     await db.commit()
@@ -76,9 +85,10 @@ async def update_project(project_id: str, data: ProjectUpdate, db: AsyncSession 
 
     update_data = data.model_dump(exclude_unset=True)
     field_map = {
-        "name": "name", "version": "version", "owner": "owner",
-        "testType": "test_type", "status": "status",
-        "description": "description", "riskLevel": "risk_level",
+        "name": "name",
+        "testType": "test_type",
+        "testStatus": "test_status", "docStatus": "doc_status",
+        "priority": "priority", "description": "description",
     }
     for schema_key, db_key in field_map.items():
         if schema_key in update_data:
@@ -96,6 +106,9 @@ async def delete_project(project_id: str, db: AsyncSession = Depends(get_db)):
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    if project.test_status == "测试中":
+        raise HTTPException(status_code=400, detail="项目正在测试中，无法删除")
 
     await db.delete(project)
     await db.commit()

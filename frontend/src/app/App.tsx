@@ -1,14 +1,13 @@
 import { useState } from "react";
+import { Toaster } from "sonner";
 import { Routes, Route, useNavigate, useLocation, Navigate } from "react-router-dom";
 import { AppShell } from "../shared/components/AppShell";
 import type { ViewKey } from "../shared/types/platform";
-import { AutomationPage } from "../features/automation/AutomationPage";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { ProjectsPage } from "../features/projects/ProjectsPage";
 import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
-import { ReportsPage } from "../features/reports/ReportsPage";
-import { RequirementAnalysisPage } from "../features/requirements/RequirementAnalysisPage";
-import { TestDesignPage } from "../features/test-design/TestDesignPage";
+import { TestCenterPage } from "../features/test-center/TestCenterPage";
+import { DocumentCenterPage } from "../features/document-center/DocumentCenterPage";
 import { ModelConfigPage } from "../features/model-config/ModelConfigPage";
 import { UserManagementPage } from "../features/user-management/UserManagementPage";
 import { LoginPage } from "../features/auth/LoginPage";
@@ -17,10 +16,8 @@ import { useAPISync } from "../api/useAPISync";
 
 function pathnameToView(pathname: string): ViewKey {
   if (pathname.startsWith("/projects")) return "projects";
-  if (pathname.startsWith("/requirements")) return "requirements";
-  if (pathname.startsWith("/test-design")) return "testDesign";
-  if (pathname.startsWith("/automation")) return "automation";
-  if (pathname.startsWith("/reports")) return "reports";
+  if (pathname.startsWith("/test-center")) return "testCenter";
+  if (pathname.startsWith("/document-center")) return "documentCenter";
   if (pathname.startsWith("/model-config")) return "modelConfig";
   if (pathname.startsWith("/user-management")) return "userManagement";
   return "dashboard";
@@ -35,10 +32,8 @@ function AppShellLayout({ children }: { children: React.ReactNode }) {
     const map: Record<ViewKey, string> = {
       dashboard: "/",
       projects: "/projects",
-      requirements: "/requirements",
-      testDesign: "/test-design",
-      automation: "/automation",
-      reports: "/reports",
+      testCenter: "/test-center",
+      documentCenter: "/document-center",
       modelConfig: "/model-config",
       userManagement: "/user-management",
     };
@@ -66,6 +61,18 @@ export function App() {
   }
 
   return (
+    <>
+    <Toaster
+      position="top-center"
+      richColors
+      toastOptions={{
+        style: {
+          borderRadius: "16px",
+          fontSize: "14px",
+          fontWeight: 500,
+        },
+      }}
+    />
     <Routes>
       <Route path="/login" element={<Navigate to="/" replace />} />
       <Route
@@ -76,10 +83,8 @@ export function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/projects" element={<ProjectsPage />} />
               <Route path="/projects/:id/*" element={<ProjectDetailPage />} />
-              <Route path="/requirements" element={<RequirementAnalysisPage />} />
-              <Route path="/test-design" element={<TestDesignPage />} />
-              <Route path="/automation" element={<AutomationPage />} />
-              <Route path="/reports" element={<ReportsPage />} />
+              <Route path="/test-center" element={<TestCenterPage />} />
+              <Route path="/document-center" element={<DocumentCenterPage />} />
               <Route path="/model-config" element={<ModelConfigPage />} />
               <Route path="/user-management" element={<UserManagementPage />} />
             </Routes>
@@ -87,5 +92,6 @@ export function App() {
         }
       />
     </Routes>
+    </>
   );
 }

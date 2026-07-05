@@ -1,179 +1,395 @@
 import { useMemo } from "react";
-import { ArrowRight, FileText, ShieldAlert, WandSparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import {
+  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  AreaChart, Area, CartesianGrid, RadialBarChart, RadialBar,
+} from "recharts";
 import { useStore } from "../../app/store";
-import { DataTable } from "../../shared/components/DataTable";
-import { MetricCard } from "../../shared/components/MetricCard";
-import { SectionHeader } from "../../shared/components/SectionHeader";
 import { StatusPill } from "../../shared/components/StatusPill";
 import {
-  qualityWarnings,
-  roadmap,
-} from "../../shared/data/platformData";
-import type { Metric, Project, RoadmapPhase } from "../../shared/types/platform";
+  FolderOpen, FileText, ShieldCheck, AlertTriangle, TrendingUp, ArrowRight,
+} from "lucide-react";
 
-function riskTone(risk: Project["riskLevel"]) {
-  if (risk === "高") return "red" as const;
-  if (risk === "中") return "amber" as const;
-  return "green" as const;
-}
+/* ─── colour tokens ─── */
+const C = {
+  blue: "#6366f1",
+  green: "#22c55e",
+  amber: "#f59e0b",
+  red: "#ef4444",
+  slate: "#94a3b8",
+  purple: "#a855f7",
+  cyan: "#06b6d4",
+  surface: "#ffffff",
+  surfaceAlt: "#f8fafc",
+  border: "#e2e8f0",
+  text: "#0f172a",
+  muted: "#64748b",
+};
 
-function phaseTone(status: RoadmapPhase["status"]) {
-  if (status === "当前") return "blue" as const;
-  if (status === "下一步") return "amber" as const;
-  return "slate" as const;
+const STATUS_COLORS: Record<string, string> = {
+  设计中: C.amber,
+  执行中: C.blue,
+  阻塞: C.red,
+  已完成: C.green,
+};
+
+const PRIORITY_COLORS: Record<string, string> = {
+  P0: C.red,
+  P1: C.amber,
+  P2: C.blue,
+  P3: C.slate,
+};
+
+const NODE_COLORS: Record<string, string> = {
+  "需求解析节点": C.cyan,
+  "测试设计节点": C.blue,
+  "测试点生成节点": C.purple,
+  "用例生成节点": C.green,
+  "用例评审节点": C.amber,
+};
+
+/* ─── Custom tooltip ─── */
+function ChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{
+      background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8,
+      padding: "8px 14px", fontSize: 13, boxShadow: "0 4px 12px rgba(0,0,0,.08)",
+    }}>
+      {label && <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>}
+      {payload.map((p: any, i: number) => (
+        <div key={i} style={{ color: p.color || C.text }}>
+          {p.name}: <strong>{p.value}</strong>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function DashboardPage() {
   const { state } = useStore();
   const navigate = useNavigate();
 
-  // 从 store 实时计算指标
-  const metrics: Metric[] = useMemo(() => {
-    const totalRequirements = state.requirements.length;
-    const totalCases = state.testCases.length;
-    const p0Cases = state.testCases.filter((c) => c.priority === "P0").length;
-    const automatable = state.testCases.filter((c) => c.automation === "适合").length;
+  /* ─── derived data ─── */
+  const stats = useMemo(() => {
+    const projects = state.projects;
+    const cases = state.testCases;
+    const requirements = state.requirements;
+    const totalCases = cases.length;
+    const p0Cases = cases.filter((c) => c.priority === "P0").length;
+    const passed = cases.filter((c) => c.reviewStatus === "已通过").length;
+    const passRate = totalCases > 0 ? Math.round((passed / totalCases) * 100) : 0;
+    const blocked = projects.filter((p) => p.status === "阻塞").length;
+    const automatable = cases.filter((c) => c.automation === "适合").length;
     const autoRate = totalCases > 0 ? Math.round((automatable / totalCases) * 100) : 0;
-    const blockedProjects = state.projects.filter((p) => p.status === "阻塞").length;
 
-    return [
-      { label: "AI 解析需求", value: String(totalRequirements), trend: `共 ${state.projects.length} 个项目`, tone: "blue" },
-      { label: "测试用例", value: String(totalCases), trend: `P0 用例 ${p0Cases} 条`, tone: "green" },
-      { label: "自动化覆盖", value: `${autoRate}%`, trend: `目标 60%`, tone: "amber" },
-      { label: "阻塞项目", value: String(blockedProjects), trend: blockedProjects > 0 ? "需今日处理" : "无阻塞", tone: "red" },
-    ];
+    return {
+      projectCount: projects.length,
+      requirementCount: requirements.length,
+      caseCount: totalCases,
+      p0Cases,
+      passRate,
+      blocked,
+      autoRate,
+    };
   }, [state]);
 
+  /* ─── chart data ─── */
+  const statusData = useMemo(() => {
+    const map: Record<string, number> = {};
+    state.projects.forEach((p) => { map[p.status] = (map[p.status] || 0) + 1; });
+    return Object.entries(map).map(([name, value]) => ({ name, value, fill: STATUS_COLORS[name] || C.slate }));
+  }, [state.projects]);
+
+  const priorityData = useMemo(() => {
+    const map: Record<string, number> = {};
+    state.testCases.forEach((c) => { map[c.priority] = (map[c.priority] || 0) + 1; });
+    return ["P0", "P1", "P2", "P3"].map((p) => ({
+      name: p,
+      value: map[p] || 0,
+      fill: PRIORITY_COLORS[p],
+    }));
+  }, [state.testCases]);
+
+  const moduleData = useMemo(() => {
+    const map: Record<string, number> = {};
+    state.testCases.forEach((c) => { map[c.module] = (map[c.module] || 0) + 1; });
+    return Object.entries(map)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([name, value]) => ({ name, value }));
+  }, [state.testCases]);
+
+  const reviewData = useMemo(() => {
+    const map: Record<string, number> = {};
+    state.testCases.forEach((c) => { map[c.reviewStatus] = (map[c.reviewStatus] || 0) + 1; });
+    return Object.entries(map).map(([name, value]) => {
+      const colors: Record<string, string> = { "已通过": C.green, "待评审": C.amber, "需修改": C.red };
+      return { name, value, fill: colors[name] || C.slate };
+    });
+  }, [state.testCases]);
+
+  const autoBarData = useMemo(() => {
+    const map: Record<string, number> = {};
+    state.testCases.forEach((c) => { map[c.automation] = (map[c.automation] || 0) + 1; });
+    return Object.entries(map).map(([name, value]) => {
+      const colors: Record<string, string> = { "适合": C.green, "不适合": C.red, "待评估": C.amber };
+      return { name, value, fill: colors[name] || C.slate };
+    });
+  }, [state.testCases]);
+
+  const radialData = useMemo(() => [
+    { name: "自动化覆盖", value: stats.autoRate, fill: C.blue },
+  ], [stats.autoRate]);
+
+  const recentProjects = useMemo(() =>
+    [...state.projects].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5),
+  [state.projects]);
+
+  /* ─── stat cards ─── */
+  const cards = [
+    { icon: FolderOpen, label: "项目总数", value: stats.projectCount, sub: `${stats.blocked} 个阻塞`, color: C.blue },
+    { icon: FileText, label: "测试用例", value: stats.caseCount, sub: `P0 用例 ${stats.p0Cases} 条`, color: C.green },
+    { icon: ShieldCheck, label: "用例通过率", value: `${stats.passRate}%`, sub: `共 ${stats.requirementCount} 条需求`, color: C.purple },
+    { icon: AlertTriangle, label: "阻塞项目", value: stats.blocked, sub: stats.blocked > 0 ? "需及时处理" : "运行正常", color: stats.blocked > 0 ? C.red : C.green },
+  ];
+
   return (
-    <div className="page-stack">
-      <section className="hero-panel">
-        <div className="hero-panel__copy">
-          <span className="hero-panel__eyebrow">AI 测试全流程工作台</span>
-          <h2>从需求解析到用例设计、执行分析和质量报告的闭环框架</h2>
-          <p>
-            第一版聚焦 MVP 链路：文档上传、AI 需求解析、测试点生成、用例生成、人工评审和 Excel 导出。
-          </p>
-        </div>
-        <div className="hero-panel__actions">
-          <button className="primary-button" type="button" onClick={() => navigate("/projects")}>
-            <WandSparkles size={17} />
-            发起 AI 解析
-          </button>
-          <button className="ghost-button" type="button" onClick={() => navigate("/reports")}>
-            <FileText size={17} />
-            查看报告
-          </button>
-        </div>
-      </section>
-
-      <section className="metric-grid" aria-label="核心指标">
-        {metrics.map((metric) => (
-          <MetricCard key={metric.label} metric={metric} />
-        ))}
-      </section>
-
-      <section className="two-column-layout">
-        <div className="work-panel">
-          <SectionHeader
-            eyebrow="项目概览"
-            title="当前测试项目"
-            description="按风险、状态和更新时间跟踪项目质量推进情况。"
-          />
-          <DataTable<Project>
-            rows={state.projects}
-            getRowKey={(row) => row.id}
-            columns={[
-              {
-                key: "name",
-                label: "项目",
-                render: (row) => (
-                  <button
-                    type="button"
-                    className="text-button table-link"
-                    onClick={() => navigate(`/projects/${row.id}`)}
-                  >
-                    <div className="table-title">
-                      <strong>{row.name}</strong>
-                      <span>{row.version} · {row.testType}</span>
-                    </div>
-                  </button>
-                ),
-              },
-              {
-                key: "status",
-                label: "状态",
-                align: "center",
-                render: (row) => <StatusPill tone={row.status === "阻塞" ? "red" : "blue"}>{row.status}</StatusPill>,
-              },
-              {
-                key: "risk",
-                label: "风险",
-                align: "center",
-                render: (row) => <StatusPill tone={riskTone(row.riskLevel)}>{row.riskLevel}</StatusPill>,
-              },
-              {
-                key: "caseCount",
-                label: "用例",
-                align: "center",
-                render: (row) => row.caseCount,
-              },
-            ]}
-          />
-        </div>
-
-        <div className="work-panel">
-          <SectionHeader
-            eyebrow="风险提醒"
-            title="AI 质量建议"
-            description="由平台规则和历史质量经验生成的待关注事项。"
-          />
-          <div className="warning-list">
-            {qualityWarnings.map((warning) => {
-              const Icon = warning.icon;
-              return (
-                <article className="warning-item" key={warning.title}>
-                  <Icon size={20} />
-                  <div>
-                    <strong>{warning.title}</strong>
-                    <p>{warning.detail}</p>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-          <div className="inline-note">
-            <ShieldAlert size={17} />
-            <span>AI 输出必须经过评审后进入正式用例库。</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="work-panel">
-        <SectionHeader
-          eyebrow="产品路线"
-          title="平台演进节奏"
-          description="先打通测试设计价值，再逐步扩展执行、自动化和智能质量分析。"
-          actions={
-            <button className="text-button" type="button" onClick={() => navigate("/automation")}>
-              查看详情
-              <ArrowRight size={16} />
-            </button>
-          }
-        />
-        <div className="roadmap-grid">
-          {roadmap.map((item) => (
-            <article className="roadmap-item" key={item.phase}>
-              <div className="roadmap-item__top">
-                <strong>{item.phase}</strong>
-                <StatusPill tone={phaseTone(item.status)}>{item.status}</StatusPill>
+    <div className="dashboard">
+      {/* ── Stats row ── */}
+      <div className="dash-stats">
+        {cards.map((c) => {
+          const Icon = c.icon;
+          return (
+            <div className="dash-stat-card" key={c.label}>
+              <div className="dash-stat-icon" style={{ background: `${c.color}14`, color: c.color }}>
+                <Icon size={22} />
               </div>
-              <h3>{item.goal}</h3>
-              <p>{item.capabilities}</p>
-            </article>
-          ))}
+              <div className="dash-stat-body">
+                <span className="dash-stat-label">{c.label}</span>
+                <strong className="dash-stat-value">{c.value}</strong>
+                <span className="dash-stat-sub">{c.sub}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Charts row 1 ── */}
+      <div className="dash-charts-row">
+        {/* 项目状态分布 */}
+        <div className="dash-card">
+          <h3 className="dash-card-title">项目状态分布</h3>
+          <div className="dash-chart-wrap">
+            {statusData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie
+                    data={statusData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    paddingAngle={3}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {statusData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                  </Pie>
+                  <Tooltip content={<ChartTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="dash-empty">暂无数据</div>
+            )}
+            <div className="dash-legend">
+              {statusData.map((d) => (
+                <span key={d.name} className="dash-legend-item">
+                  <span className="dash-legend-dot" style={{ background: d.fill }} />
+                  {d.name} ({d.value})
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
-      </section>
+
+        {/* 用例优先级分布 */}
+        <div className="dash-card">
+          <h3 className="dash-card-title">用例优先级分布</h3>
+          <div className="dash-chart-wrap">
+            {priorityData.some((d) => d.value > 0) ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={priorityData} barSize={36}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 12, fill: C.muted }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 12, fill: C.muted }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Bar dataKey="value" name="用例数" radius={[6, 6, 0, 0]}>
+                    {priorityData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="dash-empty">暂无数据</div>
+            )}
+          </div>
+        </div>
+
+        {/* 自动化覆盖率 */}
+        <div className="dash-card">
+          <h3 className="dash-card-title">自动化覆盖率</h3>
+          <div className="dash-chart-wrap dash-chart-center">
+            {stats.caseCount > 0 ? (
+              <ResponsiveContainer width="100%" height={180}>
+                <RadialBarChart
+                  cx="50%"
+                  cy="50%"
+                  innerRadius="60%"
+                  outerRadius="90%"
+                  barSize={18}
+                  startAngle={90}
+                  endAngle={-270}
+                  data={radialData}
+                >
+                  <RadialBar
+                    background={{ fill: `${C.blue}18` }}
+                    dataKey="value"
+                    cornerRadius={90}
+                  />
+                </RadialBarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="dash-empty">暂无数据</div>
+            )}
+            <div className="dash-radial-label">
+              <strong>{stats.autoRate}%</strong>
+              <span>自动化用例 {stats.caseCount > 0 ? Math.round(stats.caseCount * stats.autoRate / 100) : 0} 条</span>
+            </div>
+          </div>
+          <div className="dash-auto-bars">
+            {autoBarData.map((d) => (
+              <div key={d.name} className="dash-auto-bar-row">
+                <span>{d.name}</span>
+                <div className="dash-auto-bar-track">
+                  <div className="dash-auto-bar-fill" style={{
+                    width: stats.caseCount > 0 ? `${(d.value / stats.caseCount) * 100}%` : "0%",
+                    background: d.fill,
+                  }} />
+                </div>
+                <span className="dash-auto-bar-val">{d.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Charts row 2 ── */}
+      <div className="dash-charts-row">
+        {/* 模块用例分布 */}
+        <div className="dash-card dash-card--wide">
+          <h3 className="dash-card-title">模块用例分布</h3>
+          <div className="dash-chart-wrap">
+            {moduleData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={moduleData} layout="vertical" barSize={20}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={C.border} horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 12, fill: C.muted }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 12, fill: C.muted }} axisLine={false} tickLine={false} width={100} />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Bar dataKey="value" name="用例数" radius={[0, 6, 6, 0]} fill={C.blue} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="dash-empty">暂无数据</div>
+            )}
+          </div>
+        </div>
+
+        {/* 用例评审状态 */}
+        <div className="dash-card">
+          <h3 className="dash-card-title">用例评审状态</h3>
+          <div className="dash-chart-wrap">
+            {reviewData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie
+                    data={reviewData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    paddingAngle={3}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {reviewData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                  </Pie>
+                  <Tooltip content={<ChartTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="dash-empty">暂无数据</div>
+            )}
+            <div className="dash-legend">
+              {reviewData.map((d) => (
+                <span key={d.name} className="dash-legend-item">
+                  <span className="dash-legend-dot" style={{ background: d.fill }} />
+                  {d.name} ({d.value})
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Recent projects ── */}
+      <div className="dash-card">
+        <div className="dash-card-header">
+          <h3 className="dash-card-title">最近项目</h3>
+          <button className="text-button" onClick={() => navigate("/projects")}>
+            查看全部 <ArrowRight size={14} />
+          </button>
+        </div>
+        <div className="dash-recent-table">
+          <table>
+            <thead>
+              <tr>
+                <th>项目名称</th>
+                <th>测试类型</th>
+                <th>状态</th>
+                <th>优先级</th>
+                <th>用例数</th>
+                <th>通过率</th>
+                <th>创建时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentProjects.map((p) => (
+                <tr key={p.id} className="dash-recent-row" onClick={() => navigate(`/projects/${p.id}`)}>
+                  <td><strong>{p.name}</strong></td>
+                  <td>{p.testType}</td>
+                  <td>
+                    <StatusPill tone={p.status === "阻塞" ? "red" : p.status === "已完成" ? "green" : p.status === "执行中" ? "blue" : "amber"}>
+                      {p.status}
+                    </StatusPill>
+                  </td>
+                  <td>
+                    <StatusPill tone={p.priority === "高" ? "red" : p.priority === "中" ? "amber" : "green"}>
+                      {p.priority}
+                    </StatusPill>
+                  </td>
+                  <td>{p.caseCount}</td>
+                  <td>{p.passRate}%</td>
+                  <td>{new Date(p.createdAt).toLocaleDateString("zh-CN")}</td>
+                </tr>
+              ))}
+              {recentProjects.length === 0 && (
+                <tr><td colSpan={7} className="dash-empty">暂无项目</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

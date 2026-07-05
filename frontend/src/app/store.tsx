@@ -90,6 +90,7 @@ type Action =
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case "ADD_PROJECT":
+      if (state.projects.some((p) => p.id === action.payload.id)) return state;
       return { ...state, projects: [...state.projects, action.payload] };
 
     case "UPDATE_PROJECT":

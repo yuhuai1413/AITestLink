@@ -5,10 +5,8 @@ import type { LucideIcon } from "lucide-react";
 export type ViewKey =
   | "dashboard"
   | "projects"
-  | "requirements"
-  | "testDesign"
-  | "automation"
-  | "reports"
+  | "testCenter"
+  | "documentCenter"
   | "modelConfig"
   | "userManagement";
 
@@ -41,10 +39,13 @@ export interface Project {
   version: string;
   owner: string;
   testType: TestType;
+  testStatus: string;
+  docStatus: string;
   status: ProjectStatus;
   description: string;
   caseCount: number;
   passRate: number;
+  priority: "高" | "中" | "低";
   riskLevel: "高" | "中" | "低";
   createdAt: string;
   updatedAt: string;
