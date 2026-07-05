@@ -113,6 +113,7 @@ export function reducer(state: AppState, action: Action): AppState {
       };
 
     case "ADD_FILE":
+      if (state.files.some((f) => f.id === action.payload.id)) return state;
       return { ...state, files: [...state.files, action.payload] };
 
     case "UPDATE_FILE":

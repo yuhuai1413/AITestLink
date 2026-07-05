@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Toaster } from "sonner";
 import { Routes, Route, useNavigate, useLocation, Navigate } from "react-router-dom";
 import { AppShell } from "../shared/components/AppShell";
@@ -16,6 +16,8 @@ import { LoginPage } from "../features/auth/LoginPage";
 import { isLoggedIn } from "../features/auth/api/auth";
 import { useAPISync } from "../api/useAPISync";
 
+const LAST_PATH_KEY = "aitestlink-last-path";
+
 function pathnameToView(pathname: string): ViewKey {
   if (pathname.startsWith("/projects")) return "projects";
   if (pathname.match(/^\/test-center\/[a-f0-9-]+/)) return "testCenter";
@@ -31,6 +33,13 @@ function AppShellLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const activeView = pathnameToView(location.pathname);
+
+  // 保存当前路径到 localStorage
+  useEffect(() => {
+    if (location.pathname !== "/login") {
+      localStorage.setItem(LAST_PATH_KEY, location.pathname);
+    }
+  }, [location.pathname]);
 
   const handleChangeView = (view: ViewKey) => {
     const map: Record<ViewKey, string> = {
@@ -49,6 +58,26 @@ function AppShellLayout({ children }: { children: React.ReactNode }) {
       {children}
     </AppShell>
   );
+}
+
+// 恢复上次路径
+function RestorePath() {
+  const location = useLocation();
+  const [redirected, setRedirected] = useState(false);
+
+  useEffect(() => {
+    if (location.pathname === "/") {
+      const lastPath = localStorage.getItem(LAST_PATH_KEY);
+      if (lastPath && lastPath !== "/" && lastPath !== "/login") {
+        window.location.replace(lastPath);
+        return;
+      }
+    }
+    setRedirected(true);
+  }, []);
+
+  if (!redirected) return null;
+  return null;
 }
 
 export function App() {
@@ -77,6 +106,7 @@ export function App() {
         },
       }}
     />
+    <RestorePath />
     <Routes>
       <Route path="/login" element={<Navigate to="/" replace />} />
       <Route

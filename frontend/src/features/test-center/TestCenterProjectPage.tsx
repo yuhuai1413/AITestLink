@@ -228,17 +228,16 @@ function ScriptsTab({ projectId }: { projectId: string }) {
 // ─── 测试汇总 Tab ───
 
 function SummaryTab({ projectId }: { projectId: string }) {
-  const requirements = useProjectRequirements(projectId);
+  const files = useProjectFiles(projectId);
   const testPoints = useProjectTestPoints(projectId);
   const testCases = useProjectTestCases(projectId);
 
-  const confirmed = requirements.filter((r) => r.confirmed).length;
   const passedTP = testPoints.filter((tp) => tp.reviewStatus === "已通过").length;
   const passedTC = testCases.filter((tc) => tc.reviewStatus === "已通过").length;
   const autoCount = testCases.filter((tc) => tc.automation === "适合").length;
 
   const stats = [
-    { label: "需求总数", value: requirements.length, sub: `已确认 ${confirmed}` },
+    { label: "文档总数", value: files.length },
     { label: "测试点总数", value: testPoints.length, sub: `已通过 ${passedTP}` },
     { label: "用例总数", value: testCases.length, sub: `已通过 ${passedTC}` },
     { label: "自动化用例", value: autoCount, sub: `覆盖率 ${testCases.length > 0 ? Math.round(autoCount / testCases.length * 100) : 0}%` },
