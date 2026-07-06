@@ -113,6 +113,7 @@ export const requirementsApi = {
   list: (projectId: string) => request<ApiRequirement[]>(`/projects/${projectId}/requirements`),
   update: (id: string, data: Partial<ApiRequirement>) =>
     request<ApiRequirement>(`/requirements/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  delete: (id: string) => request<{ ok: boolean }>(`/requirements/${id}`, { method: "DELETE" }),
 };
 
 // ─── Test Points ───

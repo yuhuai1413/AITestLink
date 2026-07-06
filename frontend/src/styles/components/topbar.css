@@ -72,6 +72,9 @@
 .page-stack {
   display: grid;
   gap: var(--sp-sm);
+}
+
+.page-stack--spaced {
   padding-top: var(--sp-sm);
 }
 

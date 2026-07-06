@@ -78,6 +78,7 @@ type Action =
   | { type: "ADD_REQUIREMENT"; payload: Requirement }
   | { type: "ADD_REQUIREMENTS"; payload: Requirement[] }
   | { type: "UPDATE_REQUIREMENT"; payload: Requirement }
+  | { type: "DELETE_REQUIREMENT"; payload: string }
   | { type: "CONFIRM_REQUIREMENT"; payload: string }
   | { type: "ADD_TEST_POINT"; payload: TestPoint }
   | { type: "ADD_TEST_POINTS"; payload: TestPoint[] }
@@ -158,6 +159,12 @@ export function reducer(state: AppState, action: Action): AppState {
         requirements: state.requirements.map((r) =>
           r.id === action.payload.id ? action.payload : r,
         ),
+      };
+
+    case "DELETE_REQUIREMENT":
+      return {
+        ...state,
+        requirements: state.requirements.filter((r) => r.id !== action.payload),
       };
 
     case "CONFIRM_REQUIREMENT":

@@ -42,3 +42,18 @@ async def update_requirement(
     await db.commit()
     await db.refresh(req)
     return model_to_dict(req)
+
+
+@router.delete("/requirements/{req_id}")
+async def delete_requirement(
+    req_id: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Requirement).where(Requirement.id == req_id))
+    req = result.scalar_one_or_none()
+    if not req:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+    await db.delete(req)
+    await db.commit()
+    return {"ok": True}
