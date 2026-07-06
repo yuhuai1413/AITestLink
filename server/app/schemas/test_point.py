@@ -1,5 +1,6 @@
 from typing import Optional
-from pydantic import BaseModel
+
+from pydantic import BaseModel, Field
 
 
 class TestPointCreate(BaseModel):
@@ -15,20 +16,6 @@ class TestPointUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     priority: Optional[str] = None
-    reviewStatus: Optional[str] = None
+    review_status: Optional[str] = Field(default=None, alias="reviewStatus")
 
-
-class TestPointResponse(BaseModel):
-    id: str
-    projectId: str
-    requirementId: Optional[str]
-    module: str
-    type: str
-    title: str
-    description: str
-    priority: str
-    automatable: bool
-    reviewStatus: str
-
-    class Config:
-        from_attributes = True
+    model_config = {"populate_by_name": True}

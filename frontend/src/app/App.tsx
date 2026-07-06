@@ -82,7 +82,7 @@ function RestorePath() {
 
 export function App() {
   const [authed, setAuthed] = useState(isLoggedIn());
-  useAPISync();
+  useAPISync(authed);
 
   if (!authed) {
     return (

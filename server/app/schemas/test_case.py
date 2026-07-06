@@ -1,22 +1,25 @@
 from typing import Optional
-from pydantic import BaseModel
+
+from pydantic import BaseModel, Field
 
 
 class TestCaseCreate(BaseModel):
-    caseCode: str
+    case_code: str = Field(alias="caseCode")
     module: str
     feature: str = ""
     title: str
     priority: str = "P1"
     precondition: str = ""
     steps: str = ""
-    testData: str = ""
-    expectedResult: str = ""
+    test_data: str = Field(default="", alias="testData")
+    expected_result: str = Field(default="", alias="expectedResult")
     automation: str = "待评估"
-    reviewStatus: str = "待评审"
+    review_status: str = Field(default="待评审", alias="reviewStatus")
     remark: str = ""
-    testPointId: Optional[str] = None
-    requirementId: Optional[str] = None
+    test_point_id: Optional[str] = Field(default=None, alias="testPointId")
+    requirement_id: Optional[str] = Field(default=None, alias="requirementId")
+
+    model_config = {"populate_by_name": True}
 
 
 class TestCaseUpdate(BaseModel):
@@ -24,32 +27,10 @@ class TestCaseUpdate(BaseModel):
     priority: Optional[str] = None
     precondition: Optional[str] = None
     steps: Optional[str] = None
-    testData: Optional[str] = None
-    expectedResult: Optional[str] = None
+    test_data: Optional[str] = Field(default=None, alias="testData")
+    expected_result: Optional[str] = Field(default=None, alias="expectedResult")
     automation: Optional[str] = None
-    reviewStatus: Optional[str] = None
+    review_status: Optional[str] = Field(default=None, alias="reviewStatus")
     remark: Optional[str] = None
 
-
-class TestCaseResponse(BaseModel):
-    id: str
-    projectId: str
-    testPointId: Optional[str]
-    requirementId: Optional[str]
-    caseCode: str
-    module: str
-    feature: str
-    title: str
-    priority: str
-    precondition: str
-    steps: str
-    testData: str
-    expectedResult: str
-    automation: str
-    reviewStatus: str
-    remark: str
-    createdAt: str
-    updatedAt: str
-
-    class Config:
-        from_attributes = True
+    model_config = {"populate_by_name": True}

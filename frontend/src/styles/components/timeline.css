@@ -1,0 +1,31 @@
+.timeline-list {
+  display: grid;
+  gap: 12px;
+}
+
+.timeline-item {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  border-left: 3px solid var(--line-strong);
+  padding-left: 14px;
+}
+
+.timeline-item span {
+  color: var(--blue);
+  font-weight: 800;
+}
+
+.timeline-item strong {
+  display: block;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.timeline-item p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 20px;
+}

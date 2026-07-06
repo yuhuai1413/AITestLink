@@ -1,0 +1,223 @@
+/* ─── Dashboard ─── */
+
+.dashboard {
+  display: grid;
+  gap: var(--sp-sm);
+}
+
+.dash-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-sm);
+}
+
+.dash-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l2);
+  background: var(--surface);
+  padding: 18px;
+  min-height: 88px;
+}
+
+.dash-stat-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-l3);
+  flex-shrink: 0;
+}
+
+.dash-stat-body {
+  display: grid;
+  gap: 2px;
+}
+
+.dash-stat-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.dash-stat-value {
+  font-size: 24px;
+  line-height: 30px;
+}
+
+.dash-stat-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dash-charts-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-sm);
+}
+
+.dash-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l2);
+  background: var(--surface);
+  padding: 18px;
+}
+
+.dash-card--wide {
+  grid-column: span 2;
+}
+
+.dash-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.dash-card-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.dash-chart-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.dash-chart-center {
+  justify-content: center;
+}
+
+.dash-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.dash-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dash-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dash-empty {
+  text-align: center;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.dash-radial-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.dash-radial-label strong {
+  font-size: 28px;
+  line-height: 34px;
+}
+
+.dash-radial-label span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dash-auto-bars {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.dash-auto-bar-row {
+  display: grid;
+  grid-template-columns: 48px 1fr 32px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dash-auto-bar-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--slate-soft);
+  overflow: hidden;
+}
+
+.dash-auto-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.dash-auto-bar-val {
+  text-align: right;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dash-recent-table {
+  overflow-x: auto;
+}
+
+.dash-recent-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.dash-recent-table th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+
+.dash-recent-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.dash-recent-row {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.dash-recent-row:hover {
+  background: var(--blue-soft);
+}
+
+@media (max-width: 1180px) {
+  .dash-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dash-charts-row {
+    grid-template-columns: 1fr;
+  }
+  .dash-card--wide {
+    grid-column: span 1;
+  }
+}
+
+@media (max-width: 860px) {
+  .dash-stats {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,38 +1,25 @@
-from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
+
+from pydantic import BaseModel, Field
 
 
 class ProjectCreate(BaseModel):
     name: str
-    testType: str
-    testStatus: str = "待测试"
-    docStatus: str = "待解析"
+    test_type: str = Field(alias="testType")
+    test_status: str = Field(default="待测试", alias="testStatus")
+    doc_status: str = Field(default="待解析", alias="docStatus")
     priority: str = "中"
     description: str = ""
+
+    model_config = {"populate_by_name": True}
 
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
-    testType: Optional[str] = None
-    testStatus: Optional[str] = None
-    docStatus: Optional[str] = None
+    test_type: Optional[str] = Field(default=None, alias="testType")
+    test_status: Optional[str] = Field(default=None, alias="testStatus")
+    doc_status: Optional[str] = Field(default=None, alias="docStatus")
     priority: Optional[str] = None
     description: Optional[str] = None
 
-
-class ProjectResponse(BaseModel):
-    id: str
-    name: str
-    testType: str
-    testStatus: str
-    docStatus: str
-    priority: str
-    description: str
-    caseCount: int
-    passRate: int
-    createdAt: str
-    updatedAt: str
-
-    class Config:
-        from_attributes = True
+    model_config = {"populate_by_name": True}

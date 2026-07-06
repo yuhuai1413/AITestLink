@@ -35,29 +35,27 @@ export function isLoggedIn(): boolean {
 }
 
 export async function getMe() {
-  const token = getToken();
-  return api.get<{ ok: boolean; user: { user_id: string; phone: string; nickname: string; avatar: string } }>("/auth/me?token=" + (token || ""));
+  return api.get<{ ok: boolean; user: { id: string; phone: string; nickname: string; avatar: string; is_admin: boolean } }>("/auth/me");
 }
 
 export async function updateProfile(nickname: string) {
-  const token = getToken();
-  return api.put<{ ok: boolean; message: string; nickname: string }>("/auth/profile?token=" + (token || ""), { nickname });
+  return api.put<{ ok: boolean; message: string }>("/auth/profile", { nickname });
 }
 
 export async function uploadAvatar(file: File) {
   const token = getToken();
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`/api/auth/avatar?token=${token || ""}`, {
+  const res = await fetch("/api/auth/avatar", {
     method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
   });
   return res.json() as Promise<{ ok: boolean; message: string; avatar: string }>;
 }
 
 export async function changePassword(oldPassword: string, newPassword: string) {
-  const token = getToken();
-  return api.put<{ ok: boolean; message: string }>("/auth/password?token=" + (token || ""), {
+  return api.put<{ ok: boolean; message: string }>("/auth/password", {
     old_password: oldPassword,
     new_password: newPassword,
   });
@@ -74,22 +72,17 @@ export interface UserItem {
 }
 
 export async function listUsers() {
-  const token = getToken();
-  return api.get<{ ok: boolean; users: UserItem[] }>("/auth/users?token=" + (token || ""));
+  return api.get<{ ok: boolean; users: UserItem[] }>("/auth/users");
 }
 
 export async function getMeWithAdmin() {
-  const token = getToken();
-  return api.get<{ ok: boolean; user: { user_id: string; phone: string; nickname: string; avatar: string; is_admin: boolean } }>("/auth/me?token=" + (token || ""));
+  return api.get<{ ok: boolean; user: { id: string; phone: string; nickname: string; avatar: string; is_admin: boolean } }>("/auth/me");
 }
 
-
 export async function deleteUser(userId: string) {
-  const token = getToken();
-  return api.delete<{ ok: boolean; message: string }>(`/auth/users/${userId}?token=` + (token || ""));
+  return api.delete<{ ok: boolean; message: string }>(`/auth/users/${userId}`);
 }
 
 export async function updateUser(userId: string, data: Record<string, unknown>) {
-  const token = getToken();
-  return api.put<{ ok: boolean; message: string }>(`/auth/users/${userId}?token=` + (token || ""), data);
+  return api.put<{ ok: boolean; message: string }>(`/auth/users/${userId}`, data);
 }

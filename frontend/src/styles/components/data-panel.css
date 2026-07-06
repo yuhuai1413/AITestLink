@@ -1,0 +1,48 @@
+/* ─── Data Panel ─── */
+
+.data-panel {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 100px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l3);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.data-panel__search {
+  padding: 16px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.data-panel__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.data-panel__content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.data-panel__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 12px 20px;
+  background: var(--surface-soft);
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
+}

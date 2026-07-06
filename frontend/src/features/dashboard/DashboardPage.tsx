@@ -2,15 +2,16 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  AreaChart, Area, CartesianGrid, RadialBarChart, RadialBar,
+  CartesianGrid, RadialBarChart, RadialBar,
 } from "recharts";
 import { useStore } from "../../app/store";
 import { StatusPill } from "../../shared/components/StatusPill";
+import { ChartTooltip } from "../../shared/components/ChartTooltip";
 import {
-  FolderOpen, FileText, ShieldCheck, AlertTriangle, TrendingUp, ArrowRight,
+  FolderOpen, FileText, ShieldCheck, AlertTriangle, ArrowRight,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-/* ─── colour tokens ─── */
 const C = {
   blue: "#6366f1",
   green: "#22c55e",
@@ -18,9 +19,6 @@ const C = {
   red: "#ef4444",
   slate: "#94a3b8",
   purple: "#a855f7",
-  cyan: "#06b6d4",
-  surface: "#ffffff",
-  surfaceAlt: "#f8fafc",
   border: "#e2e8f0",
   text: "#0f172a",
   muted: "#64748b",
@@ -34,33 +32,58 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
-  P0: C.red,
-  P1: C.amber,
-  P2: C.blue,
-  P3: C.slate,
+  P0: C.red, P1: C.amber, P2: C.blue, P3: C.slate,
 };
 
-const NODE_COLORS: Record<string, string> = {
-  "需求解析节点": C.cyan,
-  "测试设计节点": C.blue,
-  "测试点生成节点": C.purple,
-  "用例生成节点": C.green,
-  "用例评审节点": C.amber,
-};
+interface ChartDataItem {
+  name: string;
+  value: number;
+  fill?: string;
+}
 
-/* ─── Custom tooltip ─── */
-function ChartTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
+interface DashboardStats {
+  projectCount: number;
+  requirementCount: number;
+  caseCount: number;
+  p0Cases: number;
+  passRate: number;
+  blocked: number;
+  autoRate: number;
+}
+
+function StatCard({ icon: Icon, label, value, sub, color }: {
+  icon: LucideIcon;
+  label: string;
+  value: string | number;
+  sub: string;
+  color: string;
+}) {
   return (
-    <div style={{
-      background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8,
-      padding: "8px 14px", fontSize: 13, boxShadow: "0 4px 12px rgba(0,0,0,.08)",
-    }}>
-      {label && <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>}
-      {payload.map((p: any, i: number) => (
-        <div key={i} style={{ color: p.color || C.text }}>
-          {p.name}: <strong>{p.value}</strong>
-        </div>
+    <div className="dash-stat-card">
+      <div className="dash-stat-icon" style={{ background: `${color}14`, color }}>
+        <Icon size={22} />
+      </div>
+      <div className="dash-stat-body">
+        <span className="dash-stat-label">{label}</span>
+        <strong className="dash-stat-value">{value}</strong>
+        <span className="dash-stat-sub">{sub}</span>
+      </div>
+    </div>
+  );
+}
+
+function EmptyChart() {
+  return <div className="dash-empty">暂无数据</div>;
+}
+
+function Legend({ data }: { data: ChartDataItem[] }) {
+  return (
+    <div className="dash-legend">
+      {data.map((d) => (
+        <span key={d.name} className="dash-legend-item">
+          <span className="dash-legend-dot" style={{ background: d.fill }} />
+          {d.name} ({d.value})
+        </span>
       ))}
     </div>
   );
@@ -70,84 +93,61 @@ export function DashboardPage() {
   const { state } = useStore();
   const navigate = useNavigate();
 
-  /* ─── derived data ─── */
-  const stats = useMemo(() => {
-    const projects = state.projects;
+  const stats = useMemo<DashboardStats>(() => {
     const cases = state.testCases;
-    const requirements = state.requirements;
     const totalCases = cases.length;
-    const p0Cases = cases.filter((c) => c.priority === "P0").length;
     const passed = cases.filter((c) => c.reviewStatus === "已通过").length;
-    const passRate = totalCases > 0 ? Math.round((passed / totalCases) * 100) : 0;
-    const blocked = projects.filter((p) => p.status === "阻塞").length;
     const automatable = cases.filter((c) => c.automation === "适合").length;
-    const autoRate = totalCases > 0 ? Math.round((automatable / totalCases) * 100) : 0;
-
     return {
-      projectCount: projects.length,
-      requirementCount: requirements.length,
+      projectCount: state.projects.length,
+      requirementCount: state.requirements.length,
       caseCount: totalCases,
-      p0Cases,
-      passRate,
-      blocked,
-      autoRate,
+      p0Cases: cases.filter((c) => c.priority === "P0").length,
+      passRate: totalCases > 0 ? Math.round((passed / totalCases) * 100) : 0,
+      blocked: state.projects.filter((p) => p.status === "阻塞").length,
+      autoRate: totalCases > 0 ? Math.round((automatable / totalCases) * 100) : 0,
     };
   }, [state]);
 
-  /* ─── chart data ─── */
-  const statusData = useMemo(() => {
+  const statusData = useMemo<ChartDataItem[]>(() => {
     const map: Record<string, number> = {};
     state.projects.forEach((p) => { map[p.status] = (map[p.status] || 0) + 1; });
     return Object.entries(map).map(([name, value]) => ({ name, value, fill: STATUS_COLORS[name] || C.slate }));
   }, [state.projects]);
 
-  const priorityData = useMemo(() => {
+  const priorityData = useMemo<ChartDataItem[]>(() => {
     const map: Record<string, number> = {};
     state.testCases.forEach((c) => { map[c.priority] = (map[c.priority] || 0) + 1; });
-    return ["P0", "P1", "P2", "P3"].map((p) => ({
-      name: p,
-      value: map[p] || 0,
-      fill: PRIORITY_COLORS[p],
-    }));
+    return ["P0", "P1", "P2", "P3"].map((p) => ({ name: p, value: map[p] || 0, fill: PRIORITY_COLORS[p] }));
   }, [state.testCases]);
 
   const moduleData = useMemo(() => {
     const map: Record<string, number> = {};
     state.testCases.forEach((c) => { map[c.module] = (map[c.module] || 0) + 1; });
-    return Object.entries(map)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 6)
-      .map(([name, value]) => ({ name, value }));
+    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, value]) => ({ name, value }));
   }, [state.testCases]);
 
-  const reviewData = useMemo(() => {
+  const reviewData = useMemo<ChartDataItem[]>(() => {
     const map: Record<string, number> = {};
+    const colors: Record<string, string> = { "已通过": C.green, "待评审": C.amber, "需修改": C.red };
     state.testCases.forEach((c) => { map[c.reviewStatus] = (map[c.reviewStatus] || 0) + 1; });
-    return Object.entries(map).map(([name, value]) => {
-      const colors: Record<string, string> = { "已通过": C.green, "待评审": C.amber, "需修改": C.red };
-      return { name, value, fill: colors[name] || C.slate };
-    });
+    return Object.entries(map).map(([name, value]) => ({ name, value, fill: colors[name] || C.slate }));
   }, [state.testCases]);
 
-  const autoBarData = useMemo(() => {
+  const autoBarData = useMemo<ChartDataItem[]>(() => {
     const map: Record<string, number> = {};
+    const colors: Record<string, string> = { "适合": C.green, "不适合": C.red, "待评估": C.amber };
     state.testCases.forEach((c) => { map[c.automation] = (map[c.automation] || 0) + 1; });
-    return Object.entries(map).map(([name, value]) => {
-      const colors: Record<string, string> = { "适合": C.green, "不适合": C.red, "待评估": C.amber };
-      return { name, value, fill: colors[name] || C.slate };
-    });
+    return Object.entries(map).map(([name, value]) => ({ name, value, fill: colors[name] || C.slate }));
   }, [state.testCases]);
 
-  const radialData = useMemo(() => [
-    { name: "自动化覆盖", value: stats.autoRate, fill: C.blue },
-  ], [stats.autoRate]);
+  const radialData = useMemo(() => [{ name: "自动化覆盖", value: stats.autoRate, fill: C.blue }], [stats.autoRate]);
 
   const recentProjects = useMemo(() =>
     [...state.projects].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5),
   [state.projects]);
 
-  /* ─── stat cards ─── */
-  const cards = [
+  const cards: { icon: LucideIcon; label: string; value: string | number; sub: string; color: string }[] = [
     { icon: FolderOpen, label: "项目总数", value: stats.projectCount, sub: `${stats.blocked} 个阻塞`, color: C.blue },
     { icon: FileText, label: "测试用例", value: stats.caseCount, sub: `P0 用例 ${stats.p0Cases} 条`, color: C.green },
     { icon: ShieldCheck, label: "用例通过率", value: `${stats.passRate}%`, sub: `共 ${stats.requirementCount} 条需求`, color: C.purple },
@@ -156,64 +156,28 @@ export function DashboardPage() {
 
   return (
     <div className="dashboard">
-      {/* ── Stats row ── */}
       <div className="dash-stats">
-        {cards.map((c) => {
-          const Icon = c.icon;
-          return (
-            <div className="dash-stat-card" key={c.label}>
-              <div className="dash-stat-icon" style={{ background: `${c.color}14`, color: c.color }}>
-                <Icon size={22} />
-              </div>
-              <div className="dash-stat-body">
-                <span className="dash-stat-label">{c.label}</span>
-                <strong className="dash-stat-value">{c.value}</strong>
-                <span className="dash-stat-sub">{c.sub}</span>
-              </div>
-            </div>
-          );
-        })}
+        {cards.map((c) => <StatCard key={c.label} {...c} />)}
       </div>
 
-      {/* ── Charts row 1 ── */}
       <div className="dash-charts-row">
-        {/* 项目状态分布 */}
         <div className="dash-card">
           <h3 className="dash-card-title">项目状态分布</h3>
           <div className="dash-chart-wrap">
             {statusData.length > 0 ? (
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie
-                    data={statusData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={85}
-                    paddingAngle={3}
-                    dataKey="value"
-                    stroke="none"
-                  >
+                  <Pie data={statusData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" stroke="none">
                     {statusData.map((d, i) => <Cell key={i} fill={d.fill} />)}
                   </Pie>
                   <Tooltip content={<ChartTooltip />} />
                 </PieChart>
               </ResponsiveContainer>
-            ) : (
-              <div className="dash-empty">暂无数据</div>
-            )}
-            <div className="dash-legend">
-              {statusData.map((d) => (
-                <span key={d.name} className="dash-legend-item">
-                  <span className="dash-legend-dot" style={{ background: d.fill }} />
-                  {d.name} ({d.value})
-                </span>
-              ))}
-            </div>
+            ) : <EmptyChart />}
+            <Legend data={statusData} />
           </div>
         </div>
 
-        {/* 用例优先级分布 */}
         <div className="dash-card">
           <h3 className="dash-card-title">用例优先级分布</h3>
           <div className="dash-chart-wrap">
@@ -229,38 +193,20 @@ export function DashboardPage() {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            ) : (
-              <div className="dash-empty">暂无数据</div>
-            )}
+            ) : <EmptyChart />}
           </div>
         </div>
 
-        {/* 自动化覆盖率 */}
         <div className="dash-card">
           <h3 className="dash-card-title">自动化覆盖率</h3>
           <div className="dash-chart-wrap dash-chart-center">
             {stats.caseCount > 0 ? (
               <ResponsiveContainer width="100%" height={180}>
-                <RadialBarChart
-                  cx="50%"
-                  cy="50%"
-                  innerRadius="60%"
-                  outerRadius="90%"
-                  barSize={18}
-                  startAngle={90}
-                  endAngle={-270}
-                  data={radialData}
-                >
-                  <RadialBar
-                    background={{ fill: `${C.blue}18` }}
-                    dataKey="value"
-                    cornerRadius={90}
-                  />
+                <RadialBarChart cx="50%" cy="50%" innerRadius="60%" outerRadius="90%" barSize={18} startAngle={90} endAngle={-270} data={radialData}>
+                  <RadialBar background={{ fill: `${C.blue}18` }} dataKey="value" cornerRadius={90} />
                 </RadialBarChart>
               </ResponsiveContainer>
-            ) : (
-              <div className="dash-empty">暂无数据</div>
-            )}
+            ) : <EmptyChart />}
             <div className="dash-radial-label">
               <strong>{stats.autoRate}%</strong>
               <span>自动化用例 {stats.caseCount > 0 ? Math.round(stats.caseCount * stats.autoRate / 100) : 0} 条</span>
@@ -283,9 +229,7 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Charts row 2 ── */}
       <div className="dash-charts-row">
-        {/* 模块用例分布 */}
         <div className="dash-card dash-card--wide">
           <h3 className="dash-card-title">模块用例分布</h3>
           <div className="dash-chart-wrap">
@@ -299,50 +243,28 @@ export function DashboardPage() {
                   <Bar dataKey="value" name="用例数" radius={[0, 6, 6, 0]} fill={C.blue} />
                 </BarChart>
               </ResponsiveContainer>
-            ) : (
-              <div className="dash-empty">暂无数据</div>
-            )}
+            ) : <EmptyChart />}
           </div>
         </div>
 
-        {/* 用例评审状态 */}
         <div className="dash-card">
           <h3 className="dash-card-title">用例评审状态</h3>
           <div className="dash-chart-wrap">
             {reviewData.length > 0 ? (
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie
-                    data={reviewData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={85}
-                    paddingAngle={3}
-                    dataKey="value"
-                    stroke="none"
-                  >
+                  <Pie data={reviewData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" stroke="none">
                     {reviewData.map((d, i) => <Cell key={i} fill={d.fill} />)}
                   </Pie>
                   <Tooltip content={<ChartTooltip />} />
                 </PieChart>
               </ResponsiveContainer>
-            ) : (
-              <div className="dash-empty">暂无数据</div>
-            )}
-            <div className="dash-legend">
-              {reviewData.map((d) => (
-                <span key={d.name} className="dash-legend-item">
-                  <span className="dash-legend-dot" style={{ background: d.fill }} />
-                  {d.name} ({d.value})
-                </span>
-              ))}
-            </div>
+            ) : <EmptyChart />}
+            <Legend data={reviewData} />
           </div>
         </div>
       </div>
 
-      {/* ── Recent projects ── */}
       <div className="dash-card">
         <div className="dash-card-header">
           <h3 className="dash-card-title">最近项目</h3>

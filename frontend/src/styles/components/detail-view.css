@@ -1,0 +1,64 @@
+/* ─── Detail Grid ─── */
+
+.detail-grid {
+  display: grid;
+  gap: 0;
+}
+
+.detail-row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 12px;
+  min-height: 36px;
+  align-items: start;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 4px;
+}
+
+.detail-row:last-child {
+  border-bottom: 0;
+}
+
+.detail-row--full {
+  grid-template-columns: 100px 1fr;
+}
+
+.detail-label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  padding-top: 2px;
+}
+
+.detail-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--text);
+}
+
+/* ─── Detail Header ─── */
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.detail-header h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 28px;
+}
+
+.detail-header .text-muted {
+  font-size: 13px;
+}
+
+@media (max-width: 860px) {
+  .detail-header {
+    flex-wrap: wrap;
+  }
+}

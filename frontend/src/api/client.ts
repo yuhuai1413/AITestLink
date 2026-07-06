@@ -1,19 +1,30 @@
-// 后端API地址 - 直连后端服务
-const API_BASE = "http://localhost:8001/api";
+// 后端API地址 - 通过环境变量配置
+const API_BASE = import.meta.env.VITE_API_BASE || "/api";
+
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem("token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${path}`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...getAuthHeaders(),
+    ...(options?.headers as Record<string, string> || {}),
+  };
   let res: Response;
   try {
-    res = await fetch(url, {
-      headers: { "Content-Type": "application/json", ...options?.headers },
-      ...options,
-    });
+    res = await fetch(url, { ...options, headers });
   } catch {
     throw new Error("网络连接失败，请检查后端服务是否启动");
   }
   if (!res.ok) {
-    // 404 静默处理：资源可能不存在于后端（如本地创建的项目）
+    if (res.status === 401) {
+      localStorage.removeItem("token");
+      window.location.href = "/login";
+      throw new Error("登录已过期");
+    }
     if (res.status === 404) return null as T;
     const errText = await res.text();
     let detail = errText;
@@ -70,9 +81,15 @@ export const filesApi = {
     formData.append("file", file);
     const res = await fetch(`${API_BASE}/projects/${projectId}/files`, {
       method: "POST",
+      headers: getAuthHeaders(),
       body: formData,
     });
-    if (!res.ok) throw new Error("Upload failed");
+    if (!res.ok) {
+      const errText = await res.text();
+      let detail = errText;
+      try { detail = JSON.parse(errText).detail || errText; } catch { /* keep raw */ }
+      throw new Error(detail);
+    }
     return res.json() as Promise<ApiFile>;
   },
   delete: (id: string) => request<{ ok: boolean }>(`/files/${id}`, { method: "DELETE" }),

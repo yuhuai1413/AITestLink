@@ -1,0 +1,31 @@
+/* ─── Utility ─── */
+
+.text-muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.inline-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.table-link {
+  text-align: left;
+  padding: 0;
+  min-height: auto;
+}
+
+.editable-cell {
+  cursor: pointer;
+  border-bottom: 1px dashed var(--line);
+  padding-bottom: 1px;
+  transition: border-color 0.15s;
+}
+
+.editable-cell:hover {
+  border-color: var(--blue);
+  color: var(--text);
+}

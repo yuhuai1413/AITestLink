@@ -11,64 +11,59 @@ import {
 import type { ApiProject, ApiFile, ApiRequirement, ApiTestPoint, ApiTestCase, ApiAITask } from "../api/client";
 import type { Project, FileAsset, Requirement, TestPoint, TestCase, AITask } from "../shared/types/platform";
 
-/** Sync frontend store with backend API (non-blocking) */
-export function useAPISync() {
+/** Sync frontend store with backend API (non-blocking). Pass enabled=false to skip (e.g. before login). */
+export function useAPISync(enabled = true) {
   const { state, dispatch } = useStore();
   const initialized = useRef(false);
 
-  // Non-blocking: fetch API data in background, don't block rendering
   useEffect(() => {
-    if (initialized.current) return;
+    if (!enabled || initialized.current) return;
     initialized.current = true;
 
-    const safe = async <T>(fn: () => Promise<T>): Promise<T[]> => {
+    const safe = async <T,>(fn: () => Promise<T>): Promise<T | null> => {
       try {
-        const result = await fn();
-        return Array.isArray(result) ? result : [];
+        return await fn();
       } catch {
-        return [];
+        return null;
       }
     };
 
     async function loadAll() {
-      const [projects, files, requirements, testPoints, testCases] = await Promise.all([
-        safe(() => projectsApi.list()),
-        safe(() => loadAllFiles()),
-        safe(() => loadAllRequirements()),
-        safe(() => loadAllTestPoints()),
-        safe(() => loadAllTestCases()),
+      const projects = await safe(() => projectsApi.list());
+      if (!projects || !Array.isArray(projects)) return;
+
+      // Batch-load related data by project in parallel
+      const [allFiles, allReqs, allTps, allTcs] = await Promise.all([
+        safe(() => loadByProject(projects, (id) => filesApi.list(id))),
+        safe(() => loadByProject(projects, (id) => requirementsApi.list(id))),
+        safe(() => loadByProject(projects, (id) => testPointsApi.list(id))),
+        safe(() => loadByProject(projects, (id) => testCasesApi.list(id))),
       ]);
 
       projects.forEach((p) => dispatch({ type: "ADD_PROJECT", payload: apiToProject(p) }));
-      files.forEach((f) => dispatch({ type: "ADD_FILE", payload: apiToFile(f) }));
-      requirements.forEach((r) => dispatch({ type: "ADD_REQUIREMENT", payload: apiToRequirement(r) }));
-      testPoints.forEach((tp) => dispatch({ type: "ADD_TEST_POINT", payload: apiToTestPoint(tp) }));
-      testCases.forEach((tc) => dispatch({ type: "ADD_TEST_CASE", payload: apiToTestCase(tc) }));
+      (allFiles ?? []).forEach((f) => dispatch({ type: "ADD_FILE", payload: apiToFile(f) }));
+      (allReqs ?? []).forEach((r) => dispatch({ type: "ADD_REQUIREMENT", payload: apiToRequirement(r) }));
+      (allTps ?? []).forEach((tp) => dispatch({ type: "ADD_TEST_POINT", payload: apiToTestPoint(tp) }));
+      (allTcs ?? []).forEach((tc) => dispatch({ type: "ADD_TEST_CASE", payload: apiToTestCase(tc) }));
     }
 
-    // Fire and forget — don't block app rendering
     loadAll();
   }, [dispatch]);
 
   return {
-    // API wrappers that also update store
     createProject: useCallback(async (data: Record<string, unknown>) => {
-      const apiProject = await projectsApi.create(data as any);
+      const apiProject = await projectsApi.create(data as Record<string, unknown>);
       dispatch({ type: "ADD_PROJECT", payload: apiToProject(apiProject) });
       return apiProject;
     }, [dispatch]),
 
     updateProject: useCallback(async (id: string, data: Record<string, unknown>) => {
-      const apiProject = await projectsApi.update(id, data as any);
+      const apiProject = await projectsApi.update(id, data as Record<string, unknown>);
       dispatch({ type: "UPDATE_PROJECT", payload: apiToProject(apiProject) });
     }, [dispatch]),
 
     deleteProject: useCallback(async (id: string) => {
-      try {
-        await projectsApi.delete(id);
-      } catch {
-        // 项目可能只存在于本地 store，忽略后端错误
-      }
+      try { await projectsApi.delete(id); } catch { /* local-only project */ }
       dispatch({ type: "DELETE_PROJECT", payload: id });
     }, [dispatch]),
 
@@ -83,20 +78,20 @@ export function useAPISync() {
     }, [dispatch]),
 
     updateRequirement: useCallback(async (id: string, data: Record<string, unknown>) => {
-      const apiReq = await requirementsApi.update(id, data as any);
+      await requirementsApi.update(id, data as Record<string, unknown>);
       const localReq = state.requirements.find((r) => r.id === id);
       if (localReq) {
         dispatch({ type: "UPDATE_REQUIREMENT", payload: { ...localReq, ...data } });
       }
-    }, [dispatch, state.requirements]),
+    }, [dispatch, state.requirements.length]),
 
     updateTestPoint: useCallback(async (id: string, data: Record<string, unknown>) => {
-      const apiTp = await testPointsApi.update(id, data as any);
+      await testPointsApi.update(id, data as Record<string, unknown>);
       const localTp = state.testPoints.find((tp) => tp.id === id);
       if (localTp) {
-        dispatch({ type: "UPDATE_TEST_POINT", payload: { ...localTp, ...data } as any });
+        dispatch({ type: "UPDATE_TEST_POINT", payload: { ...localTp, ...data } });
       }
-    }, [dispatch, state.testPoints]),
+    }, [dispatch, state.testPoints.length]),
 
     deleteTestPoint: useCallback(async (id: string) => {
       await testPointsApi.delete(id);
@@ -104,23 +99,21 @@ export function useAPISync() {
     }, [dispatch]),
 
     updateTestCase: useCallback(async (id: string, data: Record<string, unknown>) => {
-      const apiTc = await testCasesApi.update(id, data as any);
+      await testCasesApi.update(id, data as Record<string, unknown>);
       const localTc = state.testCases.find((tc) => tc.id === id);
       if (localTc) {
-        dispatch({ type: "UPDATE_TEST_CASE", payload: { ...localTc, ...data } as any });
+        dispatch({ type: "UPDATE_TEST_CASE", payload: { ...localTc, ...data } });
       }
-    }, [dispatch, state.testCases]),
+    }, [dispatch, state.testCases.length]),
 
     deleteTestCase: useCallback(async (id: string) => {
       await testCasesApi.delete(id);
       dispatch({ type: "DELETE_TEST_CASE", payload: id });
     }, [dispatch]),
 
-    // AI operations
     parseRequirements: useCallback(async (projectId: string) => {
       const task = await aiApi.parseRequirements(projectId);
       dispatch({ type: "ADD_AI_TASK", payload: apiToAITask(task) });
-      // Poll for completion
       return pollAITask(task.id, projectId, dispatch);
     }, [dispatch]),
 
@@ -140,55 +133,21 @@ export function useAPISync() {
 
 // ─── Helpers ───
 
-async function loadAllFiles(): Promise<ApiFile[]> {
-  const projects = await projectsApi.list();
-  const allFiles: ApiFile[] = [];
-  for (const p of projects) {
-    try {
-      const files = await filesApi.list(p.id);
-      allFiles.push(...files);
-    } catch {}
+async function loadByProject<T>(
+  projects: ApiProject[],
+  loader: (projectId: string) => Promise<T[]>,
+): Promise<T[]> {
+  const results = await Promise.allSettled(projects.map((p) => loader(p.id)));
+  const items: T[] = [];
+  for (const r of results) {
+    if (r.status === "fulfilled" && Array.isArray(r.value)) {
+      items.push(...r.value);
+    }
   }
-  return allFiles;
+  return items;
 }
 
-async function loadAllRequirements(): Promise<ApiRequirement[]> {
-  const projects = await projectsApi.list();
-  const all: ApiRequirement[] = [];
-  for (const p of projects) {
-    try {
-      const items = await requirementsApi.list(p.id);
-      all.push(...items);
-    } catch {}
-  }
-  return all;
-}
-
-async function loadAllTestPoints(): Promise<ApiTestPoint[]> {
-  const projects = await projectsApi.list();
-  const all: ApiTestPoint[] = [];
-  for (const p of projects) {
-    try {
-      const items = await testPointsApi.list(p.id);
-      all.push(...items);
-    } catch {}
-  }
-  return all;
-}
-
-async function loadAllTestCases(): Promise<ApiTestCase[]> {
-  const projects = await projectsApi.list();
-  const all: ApiTestCase[] = [];
-  for (const p of projects) {
-    try {
-      const items = await testCasesApi.list(p.id);
-      all.push(...items);
-    } catch {}
-  }
-  return all;
-}
-
-async function pollAITask(taskId: string, projectId: string, dispatch: React.Dispatch<any>) {
+async function pollAITask(taskId: string, projectId: string, dispatch: React.Dispatch<Action>) {
   for (let i = 0; i < 60; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     try {
@@ -197,7 +156,6 @@ async function pollAITask(taskId: string, projectId: string, dispatch: React.Dis
       if (task && (task.status === "成功" || task.status === "失败")) {
         dispatch({ type: "UPDATE_AI_TASK", payload: apiToAITask(task) });
 
-        // Reload data after successful AI task
         if (task.status === "成功") {
           if (task.type === "需求解析") {
             const reqs = await requirementsApi.list(projectId);
@@ -212,27 +170,29 @@ async function pollAITask(taskId: string, projectId: string, dispatch: React.Dis
         }
         return task;
       }
-    } catch {}
+    } catch { /* retry */ }
   }
   return null;
 }
 
 // ─── API → Store type converters ───
 
+const STATUS_MAP: Record<string, Project["status"]> = {
+  "待测试": "设计中",
+  "测试中": "执行中",
+  "已测试": "已完成",
+};
+
 function apiToProject(p: ApiProject): Project {
-  const statusMap: Record<string, string> = {
-    "待测试": "设计中",
-    "测试中": "执行中",
-    "已测试": "已完成",
-  };
   return {
     id: p.id, name: p.name, version: p.version,
-    testType: p.testType as any,
-    testStatus: p.testStatus as any,
-    docStatus: p.docStatus as any,
-    status: (statusMap[p.testStatus] || "设计中") as any,
+    testType: p.testType as Project["testType"],
+    testStatus: p.testStatus,
+    docStatus: p.docStatus,
+    status: STATUS_MAP[p.testStatus] ?? "设计中",
     description: p.description, caseCount: p.caseCount, passRate: p.passRate,
-    priority: p.priority as any, riskLevel: p.priority as any,
+    priority: p.priority as Project["priority"],
+    riskLevel: p.priority as Project["riskLevel"],
     createdAt: p.createdAt, updatedAt: p.updatedAt,
   };
 }
@@ -240,25 +200,27 @@ function apiToProject(p: ApiProject): Project {
 function apiToFile(f: ApiFile): FileAsset {
   return {
     id: f.id, projectId: f.projectId, name: f.name,
-    fileType: f.fileType as any, size: f.size,
-    parseStatus: f.parseStatus as any, uploadedAt: f.uploadedAt,
+    fileType: f.fileType as FileAsset["fileType"],
+    size: f.size, parseStatus: f.parseStatus as FileAsset["parseStatus"],
+    uploadedAt: f.uploadedAt,
   };
 }
 
 function apiToRequirement(r: ApiRequirement): Requirement {
   return {
     id: r.id, projectId: r.projectId, module: r.module, feature: r.feature,
-    source: r.source, risk: r.risk as any, rule: r.rule,
-    question: r.question, confirmed: r.confirmed,
+    source: r.source, risk: r.risk as Requirement["risk"],
+    rule: r.rule, question: r.question, confirmed: r.confirmed,
   };
 }
 
 function apiToTestPoint(tp: ApiTestPoint): TestPoint {
   return {
     id: tp.id, projectId: tp.projectId, requirementId: tp.requirementId,
-    module: tp.module, type: tp.type as any, title: tp.title,
-    description: tp.description, priority: tp.priority as any,
-    automatable: tp.automatable, reviewStatus: tp.reviewStatus as any,
+    module: tp.module, type: tp.type as TestPoint["type"],
+    title: tp.title, description: tp.description,
+    priority: tp.priority as TestPoint["priority"],
+    automatable: tp.automatable, reviewStatus: tp.reviewStatus as TestPoint["reviewStatus"],
   };
 }
 
@@ -266,19 +228,42 @@ function apiToTestCase(tc: ApiTestCase): TestCase {
   return {
     id: tc.id, projectId: tc.projectId, testPointId: tc.testPointId,
     requirementId: tc.requirementId, caseCode: tc.caseCode, module: tc.module,
-    feature: tc.feature, title: tc.title, priority: tc.priority as any,
+    feature: tc.feature, title: tc.title, priority: tc.priority as TestCase["priority"],
     precondition: tc.precondition, steps: tc.steps, testData: tc.testData,
-    expectedResult: tc.expectedResult, automation: tc.automation as any,
-    reviewStatus: tc.reviewStatus as any, remark: tc.remark,
-    createdAt: tc.createdAt, updatedAt: tc.updatedAt,
+    expectedResult: tc.expectedResult, automation: tc.automation as TestCase["automation"],
+    reviewStatus: tc.reviewStatus as TestCase["reviewStatus"],
+    remark: tc.remark, createdAt: tc.createdAt, updatedAt: tc.updatedAt,
   };
 }
 
 function apiToAITask(t: ApiAITask): AITask {
   return {
-    id: t.id, projectId: t.projectId, type: t.type as any,
-    status: t.status as any, modelName: t.modelName,
+    id: t.id, projectId: t.projectId, type: t.type as AITask["type"],
+    status: t.status as AITask["status"], modelName: t.modelName,
     errorMessage: t.errorMessage ?? undefined,
     createdAt: t.createdAt, finishedAt: t.finishedAt ?? undefined,
   };
 }
+
+// Re-export Action type for pollAITask
+type Action =
+  | { type: "ADD_PROJECT"; payload: Project }
+  | { type: "UPDATE_PROJECT"; payload: Project }
+  | { type: "DELETE_PROJECT"; payload: string }
+  | { type: "ADD_FILE"; payload: FileAsset }
+  | { type: "UPDATE_FILE"; payload: FileAsset }
+  | { type: "DELETE_FILE"; payload: string }
+  | { type: "ADD_REQUIREMENT"; payload: Requirement }
+  | { type: "ADD_REQUIREMENTS"; payload: Requirement[] }
+  | { type: "UPDATE_REQUIREMENT"; payload: Requirement }
+  | { type: "CONFIRM_REQUIREMENT"; payload: string }
+  | { type: "ADD_TEST_POINT"; payload: TestPoint }
+  | { type: "ADD_TEST_POINTS"; payload: TestPoint[] }
+  | { type: "UPDATE_TEST_POINT"; payload: TestPoint }
+  | { type: "DELETE_TEST_POINT"; payload: string }
+  | { type: "ADD_TEST_CASE"; payload: TestCase }
+  | { type: "ADD_TEST_CASES"; payload: TestCase[] }
+  | { type: "UPDATE_TEST_CASE"; payload: TestCase }
+  | { type: "DELETE_TEST_CASE"; payload: string }
+  | { type: "ADD_AI_TASK"; payload: AITask }
+  | { type: "UPDATE_AI_TASK"; payload: AITask };

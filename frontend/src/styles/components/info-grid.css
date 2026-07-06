@@ -1,0 +1,30 @@
+/* ─── Info Grid ─── */
+
+.info-grid {
+  display: grid;
+  gap: 0;
+}
+
+.info-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+  min-height: 40px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding: 0 4px;
+}
+
+.info-row:last-child {
+  border-bottom: 0;
+}
+
+.info-row--full {
+  grid-template-columns: 120px 1fr;
+}
+
+.info-label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}

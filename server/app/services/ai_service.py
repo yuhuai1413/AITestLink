@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import async_session
 from app.models.model_config import ModelConfig
+from app.utils import decrypt_value
 
 logger = logging.getLogger(__name__)
 
@@ -30,20 +31,20 @@ async def _get_config_for_task(task_type: str) -> dict:
             config = result.scalar_one_or_none()
             if config and config.enabled and config.api_key:
                 return {
-                    "api_key": config.api_key,
+                    "api_key": decrypt_value(config.api_key),
                     "endpoint": config.endpoint,
                     "model": config.model_name,
                 }
 
         # 尝试获取任意一个启用的配置
         result = await db.execute(
-            select(ModelConfig).where(ModelConfig.enabled == True, ModelConfig.api_key != "")
+            select(ModelConfig).where(ModelConfig.enabled.is_(True), ModelConfig.api_key != "")
         )
         configs = result.scalars().all()
         if configs:
             config = configs[0]
             return {
-                "api_key": config.api_key,
+                "api_key": decrypt_value(config.api_key),
                 "endpoint": config.endpoint,
                 "model": config.model_name,
             }

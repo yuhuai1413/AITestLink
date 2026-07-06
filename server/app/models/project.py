@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy import Column, DateTime, String, Text
 
 from app.database import Base
 
@@ -16,7 +16,5 @@ class Project(Base):
     doc_status = Column(String(50), nullable=False, default="待解析")
     priority = Column(String(10), default="中")
     description = Column(Text, default="")
-    case_count = Column(Integer, default=0)
-    pass_rate = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.test_point import TestPoint
+from app.routers.auth import get_current_user
 from app.schemas.test_point import TestPointCreate, TestPointUpdate
 from app.utils import model_to_dict
 
@@ -13,7 +14,11 @@ router = APIRouter()
 
 
 @router.get("/projects/{project_id}/test-points")
-async def list_test_points(project_id: str, db: AsyncSession = Depends(get_db)):
+async def list_test_points(
+    project_id: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(
         select(TestPoint).where(TestPoint.project_id == project_id)
     )
@@ -21,7 +26,12 @@ async def list_test_points(project_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/projects/{project_id}/test-points", status_code=201)
-async def create_test_point(project_id: str, data: TestPointCreate, db: AsyncSession = Depends(get_db)):
+async def create_test_point(
+    project_id: str,
+    data: TestPointCreate,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     tp = TestPoint(
         id=str(uuid.uuid4()),
         project_id=project_id,
@@ -39,14 +49,24 @@ async def create_test_point(project_id: str, data: TestPointCreate, db: AsyncSes
 
 
 @router.put("/test-points/{tp_id}")
-async def update_test_point(tp_id: str, data: TestPointUpdate, db: AsyncSession = Depends(get_db)):
+async def update_test_point(
+    tp_id: str,
+    data: TestPointUpdate,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(TestPoint).where(TestPoint.id == tp_id))
     tp = result.scalar_one_or_none()
     if not tp:
         raise HTTPException(status_code=404, detail="Test point not found")
 
     update_data = data.model_dump(exclude_unset=True)
-    field_map = {"title": "title", "description": "description", "priority": "priority", "reviewStatus": "review_status"}
+    field_map = {
+        "title": "title",
+        "description": "description",
+        "priority": "priority",
+        "review_status": "review_status",
+    }
     for schema_key, db_key in field_map.items():
         if schema_key in update_data:
             setattr(tp, db_key, update_data[schema_key])
@@ -57,7 +77,11 @@ async def update_test_point(tp_id: str, data: TestPointUpdate, db: AsyncSession 
 
 
 @router.delete("/test-points/{tp_id}")
-async def delete_test_point(tp_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_test_point(
+    tp_id: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(TestPoint).where(TestPoint.id == tp_id))
     tp = result.scalar_one_or_none()
     if not tp:

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func
@@ -7,26 +7,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.project import Project
 from app.models.test_case import TestCase
-from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse
+from app.routers.auth import get_current_user
+from app.schemas.project import ProjectCreate, ProjectUpdate
 from app.utils import model_to_dict
 
 router = APIRouter()
 
 
 @router.get("")
-async def list_projects(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Project).order_by(Project.updated_at.desc()))
-    projects = result.scalars().all()
+async def list_projects(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # Use subquery to avoid N+1
+    count_subq = (
+        select(TestCase.project_id, func.count(TestCase.id).label("case_count"))
+        .group_by(TestCase.project_id)
+        .subquery()
+    )
+    result = await db.execute(
+        select(Project, func.coalesce(count_subq.c.case_count, 0).label("case_count"))
+        .outerjoin(count_subq, Project.id == count_subq.c.project_id)
+        .order_by(Project.updated_at.desc())
+    )
+    rows = result.all()
 
     response = []
-    for p in projects:
-        # Count test cases
-        count_result = await db.execute(
-            select(func.count(TestCase.id)).where(TestCase.project_id == p.id)
-        )
-        case_count = count_result.scalar() or 0
-
-        d = model_to_dict(p)
+    for project, case_count in rows:
+        d = model_to_dict(project)
         d["caseCount"] = case_count
         response.append(d)
 
@@ -34,8 +42,11 @@ async def list_projects(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("", status_code=201)
-async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db)):
-    # Uniqueness check: name + test_type
+async def create_project(
+    data: ProjectCreate,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     existing = await db.execute(
         select(Project).where(
             Project.name == data.name,
@@ -60,7 +71,11 @@ async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db)
 
 
 @router.get("/{project_id}")
-async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
+async def get_project(
+    project_id: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project:
@@ -77,7 +92,12 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/{project_id}")
-async def update_project(project_id: str, data: ProjectUpdate, db: AsyncSession = Depends(get_db)):
+async def update_project(
+    project_id: str,
+    data: ProjectUpdate,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project:
@@ -87,21 +107,27 @@ async def update_project(project_id: str, data: ProjectUpdate, db: AsyncSession 
     field_map = {
         "name": "name",
         "testType": "test_type",
-        "testStatus": "test_status", "docStatus": "doc_status",
-        "priority": "priority", "description": "description",
+        "testStatus": "test_status",
+        "docStatus": "doc_status",
+        "priority": "priority",
+        "description": "description",
     }
     for schema_key, db_key in field_map.items():
         if schema_key in update_data:
             setattr(project, db_key, update_data[schema_key])
 
-    project.updated_at = datetime.utcnow()
+    project.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(project)
     return model_to_dict(project)
 
 
 @router.delete("/{project_id}")
-async def delete_project(project_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_project(
+    project_id: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project:

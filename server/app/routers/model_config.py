@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.model_config import ModelConfig
+from app.routers.auth import get_current_user
+from app.utils import encrypt_value, decrypt_value
 
 router = APIRouter()
 
@@ -25,14 +27,14 @@ class ModelConfigUpdate(BaseModel):
     configs: list[ModelConfigSchema]
 
 
-def model_to_dict(m: ModelConfig) -> dict:
+def _to_dict(m: ModelConfig) -> dict:
     return {
         "id": m.id,
         "name": m.name,
         "aiNode": m.ai_node,
         "provider": m.provider,
         "modelName": m.model_name,
-        "apiKey": m.api_key,
+        "apiKey": decrypt_value(m.api_key) if m.api_key else "",
         "endpoint": m.endpoint,
         "description": m.description,
         "enabled": m.enabled,
@@ -40,51 +42,56 @@ def model_to_dict(m: ModelConfig) -> dict:
 
 
 @router.get("/model-configs")
-async def list_model_configs(db: AsyncSession = Depends(get_db)):
-    """获取所有模型配置"""
+async def list_model_configs(
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(ModelConfig).order_by(ModelConfig.id))
     configs = result.scalars().all()
-    return [model_to_dict(c) for c in configs]
+    return [_to_dict(c) for c in configs]
 
 
 @router.get("/model-configs/{config_id}")
-async def get_model_config(config_id: str, db: AsyncSession = Depends(get_db)):
-    """获取指定模型配置"""
+async def get_model_config(
+    config_id: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(ModelConfig).where(ModelConfig.id == config_id))
     config = result.scalar_one_or_none()
     if not config:
         raise HTTPException(status_code=404, detail="配置不存在")
-    return model_to_dict(config)
+    return _to_dict(config)
 
 
 @router.put("/model-configs")
-async def update_model_configs(data: ModelConfigUpdate, db: AsyncSession = Depends(get_db)):
-    """更新所有模型配置"""
-    # 获取现有配置
+async def update_model_configs(
+    data: ModelConfigUpdate,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(ModelConfig))
     existing = {c.id: c for c in result.scalars().all()}
 
     for cfg in data.configs:
         if cfg.id in existing:
-            # 更新现有配置
             m = existing[cfg.id]
             m.name = cfg.name
             m.ai_node = cfg.aiNode
             m.provider = cfg.provider
             m.model_name = cfg.modelName
-            m.api_key = cfg.apiKey
+            m.api_key = encrypt_value(cfg.apiKey) if cfg.apiKey else ""
             m.endpoint = cfg.endpoint
             m.description = cfg.description
             m.enabled = cfg.enabled
         else:
-            # 创建新配置
             m = ModelConfig(
                 id=cfg.id,
                 name=cfg.name,
                 ai_node=cfg.aiNode,
                 provider=cfg.provider,
                 model_name=cfg.modelName,
-                api_key=cfg.apiKey,
+                api_key=encrypt_value(cfg.apiKey) if cfg.apiKey else "",
                 endpoint=cfg.endpoint,
                 description=cfg.description,
                 enabled=cfg.enabled,
@@ -96,8 +103,11 @@ async def update_model_configs(data: ModelConfigUpdate, db: AsyncSession = Depen
 
 
 @router.post("/model-configs/{config_id}/test")
-async def test_model_config(config_id: str, db: AsyncSession = Depends(get_db)):
-    """测试模型配置连接"""
+async def test_model_config(
+    config_id: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     import httpx
 
     result = await db.execute(select(ModelConfig).where(ModelConfig.id == config_id))
@@ -109,7 +119,7 @@ async def test_model_config(config_id: str, db: AsyncSession = Depends(get_db)):
     if not config.enabled:
         return {"ok": False, "message": "该配置已禁用，请先启用"}
 
-    api_key = config.api_key or ""
+    api_key = decrypt_value(config.api_key) if config.api_key else ""
     endpoint = config.endpoint or ""
     model = config.model_name or ""
 

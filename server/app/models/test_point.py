@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text
 
@@ -19,4 +19,4 @@ class TestPoint(Base):
     priority = Column(String(10), default="P1")
     automatable = Column(Boolean, default=False)
     review_status = Column(String(50), default="待评审")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

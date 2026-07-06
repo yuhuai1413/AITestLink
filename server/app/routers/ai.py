@@ -1,40 +1,114 @@
+import logging
+import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import async_session, get_db
 from app.models.ai_task import AITask
 from app.models.file_asset import FileAsset
-from app.models.project import Project
 from app.models.requirement import Requirement
-from app.models.test_case import TestCase
 from app.models.test_point import TestPoint
+from app.models.test_case import TestCase
 from app.services.ai_service import AIService
 from app.utils import model_to_dict
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 ai_service = AIService()
 
 
+# ─── 工具函数 ───
+
+async def _update_task_status(db: AsyncSession, task_id: str, status: str, error: str | None = None):
+    result = await db.execute(select(AITask).where(AITask.id == task_id))
+    task = result.scalar_one_or_none()
+    if task:
+        task.status = status
+        task.finished_at = datetime.now(timezone.utc)
+        if error:
+            task.error_message = error[:2000]  # 截断过长的错误信息
+        await db.commit()
+
+
+def _module_counter(items: list[dict], prefix: str) -> list[tuple[str, str]]:
+    """为按模块分组的项目生成编号。返回 [(id, module), ...]"""
+    counters: dict[str, int] = {}
+    result = []
+    for item in items:
+        module = item["module"]
+        counters[module] = counters.get(module, 0) + 1
+        short = module[:4] if len(module) >= 4 else module
+        result.append((f"{prefix}_{short}_{counters[module]:03d}", module))
+    return result
+
+
+def _read_file_content(file_obj: FileAsset) -> str:
+    """读取单个文件的内容，返回文本。"""
+    if not file_obj.storage_path or not os.path.exists(file_obj.storage_path):
+        return ""
+
+    ext = file_obj.name.rsplit(".", 1)[-1].lower() if "." in file_obj.name else ""
+
+    try:
+        if ext in ("docx", "doc"):
+            from docx import Document
+            doc = Document(file_obj.storage_path)
+            text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            return text[:5000]
+
+        if ext in ("xlsx", "xls"):
+            import openpyxl
+            wb = openpyxl.load_workbook(file_obj.storage_path, read_only=True, data_only=True)
+            parts = []
+            for sheet in wb.sheetnames:
+                ws = wb[sheet]
+                rows = [
+                    " | ".join(str(c) if c is not None else "" for c in row)
+                    for row in ws.iter_rows(values_only=True)
+                ]
+                rows = [r for r in rows if r.strip()]
+                if rows:
+                    parts.append(f"Sheet: {sheet}\n" + "\n".join(rows[:100]))
+            wb.close()
+            return "\n".join(parts)[:5000]
+
+        if ext == "pdf":
+            import PyPDF2
+            reader = PyPDF2.PdfReader(file_obj.storage_path)
+            text = "\n".join(page.extract_text() or "" for page in reader.pages[:20])
+            return text[:5000]
+
+        if ext in ("md", "txt", "json", "yaml", "yml", "csv"):
+            with open(file_obj.storage_path, "r", errors="ignore") as fh:
+                return fh.read()[:5000]
+
+        return f"(不支持的格式: {ext})"
+
+    except Exception as e:
+        return f"(读取失败: {str(e)[:100]})"
+
+
+# ─── 后台任务 ───
+
 async def run_parse_requirements(task_id: str, project_id: str, file_content: str):
-    from app.database import async_session
     async with async_session() as db:
         try:
             # 更新文件状态为"解析中"
             file_result = await db.execute(
                 select(FileAsset).where(FileAsset.project_id == project_id)
             )
-            files = file_result.scalars().all()
-            for f in files:
+            for f in file_result.scalars().all():
                 f.parse_status = "解析中"
             await db.commit()
 
             requirements = await ai_service.parse_requirements(file_content)
             for req in requirements:
-                r = Requirement(
+                db.add(Requirement(
                     id=str(uuid.uuid4()),
                     project_id=project_id,
                     module=req["module"],
@@ -43,20 +117,16 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
                     risk=req.get("risk", "中"),
                     rule=req.get("rule", ""),
                     question=req.get("question", ""),
-                )
-                db.add(r)
+                ))
 
             # 更新文件状态为"已完成"
-            for f in files:
+            for f in file_result.scalars().all():
                 f.parse_status = "已完成"
 
-            result = await db.execute(select(AITask).where(AITask.id == task_id))
-            task = result.scalar_one()
-            task.status = "成功"
-            task.finished_at = datetime.utcnow()
-            await db.commit()
+            await _update_task_status(db, task_id, "成功")
+
         except Exception as e:
-            # 解析失败时更新文件状态为"失败"
+            logger.exception("run_parse_requirements failed")
             try:
                 file_result = await db.execute(
                     select(FileAsset).where(FileAsset.project_id == project_id)
@@ -64,19 +134,12 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
                 for f in file_result.scalars().all():
                     f.parse_status = "失败"
                 await db.commit()
-            except:
-                pass
-
-            result = await db.execute(select(AITask).where(AITask.id == task_id))
-            task = result.scalar_one()
-            task.status = "失败"
-            task.error_message = str(e)
-            task.finished_at = datetime.utcnow()
-            await db.commit()
+            except Exception:
+                logger.exception("Failed to update file status on error")
+            await _update_task_status(db, task_id, "失败", str(e))
 
 
 async def run_generate_test_points(task_id: str, project_id: str):
-    from app.database import async_session
     async with async_session() as db:
         try:
             result = await db.execute(
@@ -88,44 +151,26 @@ async def run_generate_test_points(task_id: str, project_id: str):
             )
             points = await ai_service.generate_test_points(req_text)
 
-            # 按模块分组，生成 TP_模块_序号 格式编号
-            module_counters: dict[str, int] = {}
-            for pt in points:
-                module = pt["module"]
-                module_counters[module] = module_counters.get(module, 0) + 1
-                seq = module_counters[module]
-                # 模块名取前4个字符作为缩写
-                module_short = module[:4] if len(module) >= 4 else module
-                tp_id = f"TP_{module_short}_{seq:03d}"
-
-                tp = TestPoint(
+            for (tp_id, _), pt in zip(_module_counter(points, "TP"), points):
+                db.add(TestPoint(
                     id=tp_id,
                     project_id=project_id,
-                    module=module,
+                    module=pt["module"],
                     type=pt["type"],
                     title=pt["title"],
                     description=pt.get("description", ""),
                     priority=pt.get("priority", "P1"),
                     automatable=pt.get("automatable", False),
-                )
-                db.add(tp)
+                ))
 
-            result = await db.execute(select(AITask).where(AITask.id == task_id))
-            task = result.scalar_one()
-            task.status = "成功"
-            task.finished_at = datetime.utcnow()
-            await db.commit()
+            await _update_task_status(db, task_id, "成功")
+
         except Exception as e:
-            result = await db.execute(select(AITask).where(AITask.id == task_id))
-            task = result.scalar_one()
-            task.status = "失败"
-            task.error_message = str(e)
-            task.finished_at = datetime.utcnow()
-            await db.commit()
+            logger.exception("run_generate_test_points failed")
+            await _update_task_status(db, task_id, "失败", str(e))
 
 
 async def run_generate_test_cases(task_id: str, project_id: str):
-    from app.database import async_session
     async with async_session() as db:
         try:
             tp_result = await db.execute(
@@ -138,20 +183,12 @@ async def run_generate_test_cases(task_id: str, project_id: str):
             )
             cases = await ai_service.generate_test_cases(pt_text)
 
-            # 按模块分组，生成 TC_模块_序号 格式编号
-            module_counters: dict[str, int] = {}
-            for c in cases:
-                module = c["module"]
-                module_counters[module] = module_counters.get(module, 0) + 1
-                seq = module_counters[module]
-                module_short = module[:4] if len(module) >= 4 else module
-                case_code = f"TC_{module_short}_{seq:03d}"
-
-                tc = TestCase(
+            for (case_code, _), c in zip(_module_counter(cases, "TC"), cases):
+                db.add(TestCase(
                     id=str(uuid.uuid4()),
                     project_id=project_id,
                     case_code=case_code,
-                    module=module,
+                    module=c["module"],
                     feature=c.get("feature", ""),
                     title=c["title"],
                     priority=c.get("priority", "P1"),
@@ -160,30 +197,16 @@ async def run_generate_test_cases(task_id: str, project_id: str):
                     test_data=c.get("testData", ""),
                     expected_result=c.get("expectedResult", ""),
                     automation=c.get("automation", "待评估"),
-                )
-                db.add(tc)
+                ))
 
-            # Update project case count
-            count_result = await db.execute(
-                select(TestCase).where(TestCase.project_id == project_id)
-            )
-            project_result = await db.execute(select(Project).where(Project.id == project_id))
-            project = project_result.scalar_one()
-            project.case_count = len(count_result.scalars().all())
+            await _update_task_status(db, task_id, "成功")
 
-            result = await db.execute(select(AITask).where(AITask.id == task_id))
-            task = result.scalar_one()
-            task.status = "成功"
-            task.finished_at = datetime.utcnow()
-            await db.commit()
         except Exception as e:
-            result = await db.execute(select(AITask).where(AITask.id == task_id))
-            task = result.scalar_one()
-            task.status = "失败"
-            task.error_message = str(e)
-            task.finished_at = datetime.utcnow()
-            await db.commit()
+            logger.exception("run_generate_test_cases failed")
+            await _update_task_status(db, task_id, "失败", str(e))
 
+
+# ─── 路由 ───
 
 @router.get("/projects/{project_id}/ai/tasks")
 async def list_ai_tasks(project_id: str, db: AsyncSession = Depends(get_db)):
@@ -194,8 +217,11 @@ async def list_ai_tasks(project_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/projects/{project_id}/ai/parse-requirements")
-async def parse_requirements(project_id: str, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
-    # Get project files content
+async def parse_requirements(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     file_result = await db.execute(
         select(FileAsset).where(FileAsset.project_id == project_id)
     )
@@ -203,48 +229,11 @@ async def parse_requirements(project_id: str, background_tasks: BackgroundTasks,
     if not files:
         return {"error": "No files found. Please upload files first."}
 
-    # Read file contents - 支持多种格式
     content_parts = []
     for f in files:
-        if not f.storage_path or not __import__("os").path.exists(f.storage_path):
-            continue
-        ext = f.name.rsplit(".", 1)[-1].lower() if "." in f.name else ""
-        try:
-            if ext in ("docx", "doc"):
-                from docx import Document
-                doc = Document(f.storage_path)
-                text = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
-                content_parts.append(f"[{f.name}]\n{text[:5000]}")
-            elif ext in ("xlsx", "xls"):
-                import openpyxl
-                wb = openpyxl.load_workbook(f.storage_path, read_only=True, data_only=True)
-                text_parts = []
-                for sheet in wb.sheetnames:
-                    ws = wb[sheet]
-                    rows = []
-                    for row in ws.iter_rows(values_only=True):
-                        row_text = " | ".join([str(c) if c is not None else "" for c in row])
-                        if row_text.strip():
-                            rows.append(row_text)
-                    if rows:
-                        text_parts.append(f"Sheet: {sheet}\n" + "\n".join(rows[:100]))
-                wb.close()
-                content_parts.append(f"[{f.name}]\n" + "\n".join(text_parts)[:5000])
-            elif ext == "pdf":
-                try:
-                    import PyPDF2
-                    reader = PyPDF2.PdfReader(f.storage_path)
-                    text = "\n".join([page.extract_text() or "" for page in reader.pages[:20]])
-                    content_parts.append(f"[{f.name}]\n{text[:5000]}")
-                except:
-                    content_parts.append(f"[{f.name}] (PDF读取失败)")
-            elif ext in ("md", "txt", "json", "yaml", "yml", "csv"):
-                with open(f.storage_path, "r", errors="ignore") as fh:
-                    content_parts.append(f"[{f.name}]\n{fh.read()[:5000]}")
-            else:
-                content_parts.append(f"[{f.name}] (不支持的格式: {ext})")
-        except Exception as e:
-            content_parts.append(f"[{f.name}] (读取失败: {str(e)[:100]})")
+        text = _read_file_content(f)
+        if text:
+            content_parts.append(f"[{f.name}]\n{text}")
 
     file_content = "\n---\n".join(content_parts) if content_parts else "No readable content"
 
@@ -259,12 +248,15 @@ async def parse_requirements(project_id: str, background_tasks: BackgroundTasks,
     await db.commit()
 
     background_tasks.add_task(run_parse_requirements, task.id, project_id, file_content)
-
     return model_to_dict(task)
 
 
 @router.post("/projects/{project_id}/ai/generate-test-points")
-async def generate_test_points(project_id: str, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+async def generate_test_points(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     task = AITask(
         id=str(uuid.uuid4()),
         project_id=project_id,
@@ -276,12 +268,15 @@ async def generate_test_points(project_id: str, background_tasks: BackgroundTask
     await db.commit()
 
     background_tasks.add_task(run_generate_test_points, task.id, project_id)
-
     return model_to_dict(task)
 
 
 @router.post("/projects/{project_id}/ai/generate-test-cases")
-async def generate_test_cases(project_id: str, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+async def generate_test_cases(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     task = AITask(
         id=str(uuid.uuid4()),
         project_id=project_id,
@@ -293,5 +288,4 @@ async def generate_test_cases(project_id: str, background_tasks: BackgroundTasks
     await db.commit()
 
     background_tasks.add_task(run_generate_test_cases, task.id, project_id)
-
     return model_to_dict(task)

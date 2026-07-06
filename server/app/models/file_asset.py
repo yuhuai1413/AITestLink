@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, ForeignKey, String
 
@@ -16,4 +16,4 @@ class FileAsset(Base):
     size = Column(String(50), default="")
     storage_path = Column(String(500), default="")
     parse_status = Column(String(50), default="待解析")
-    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
