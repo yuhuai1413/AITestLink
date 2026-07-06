@@ -10,9 +10,15 @@
   grid-template-columns: 100px 1fr;
   gap: 12px;
   min-height: 36px;
-  align-items: start;
+  align-items: center;
   border-bottom: 1px solid var(--line);
   padding: 8px 4px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.detail-row .status-pill {
+  width: fit-content;
 }
 
 .detail-row:last-child {
@@ -34,8 +40,8 @@
   margin: 0;
   white-space: pre-wrap;
   font: inherit;
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 14px;
+  line-height: 22px;
   color: var(--text);
 }
 

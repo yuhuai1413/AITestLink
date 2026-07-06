@@ -128,6 +128,7 @@ export interface ApiTestPoint {
   priority: string;
   automatable: boolean;
   reviewStatus: string;
+  createdAt: string;
 }
 
 export const testPointsApi = {
@@ -220,4 +221,30 @@ export const modelConfigApi = {
     request<{ ok: boolean; message: string; detail?: string }>(`/model-configs/${id}/test`, {
       method: "POST",
     }),
+};
+
+// ─── Automation Scripts ───
+
+export interface ApiScript {
+  id: string;
+  projectId: string;
+  testCaseId: string | null;
+  scriptType: string;
+  framework: string;
+  language: string;
+  code: string;
+  status: string;
+  generatedByAi: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const scriptsApi = {
+  list: (projectId: string) => request<ApiScript[]>(`/projects/${projectId}/scripts`),
+  get: (id: string) => request<ApiScript>(`/scripts/${id}`),
+  update: (id: string, data: Partial<ApiScript>) =>
+    request<ApiScript>(`/scripts/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  delete: (id: string) => request<{ ok: boolean }>(`/scripts/${id}`, { method: "DELETE" }),
+  generate: (projectId: string) =>
+    request<{ ok: boolean; count: number; scripts: ApiScript[] }>(`/projects/${projectId}/scripts/generate`, { method: "POST" }),
 };

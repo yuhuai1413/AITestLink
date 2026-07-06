@@ -6,10 +6,10 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import init_db
-from app.routers import projects, files, requirements, test_points, test_cases, ai, model_config, auth
+from app.routers import projects, files, requirements, test_points, test_cases, ai, model_config, auth, automation
 
 # 导入所有模型，确保表被创建
-from app.models import project, requirement, test_point, test_case, file_asset, ai_task, model_config as mc_model, user
+from app.models import project, requirement, test_point, test_case, file_asset, ai_task, model_config as mc_model, user, automation_script
 
 
 @asynccontextmanager
@@ -36,6 +36,7 @@ app.include_router(test_cases.router, prefix="/api", tags=["test-cases"])
 app.include_router(ai.router, prefix="/api", tags=["ai"])
 app.include_router(model_config.router, prefix="/api", tags=["model-config"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(automation.router, prefix="/api", tags=["automation"])
 
 # 静态文件服务（头像等上传文件）
 import os

@@ -21,11 +21,19 @@ function reviewTone(s: string) {
   return "amber" as const;
 }
 
+function formatTime(iso: string | undefined): string {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 export function TestCaseDetailModal({ open, testCase, onClose }: TestCaseDetailModalProps) {
   if (!testCase) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title={`用例详情 — ${testCase.caseCode}`} width={520}>
+    <Modal open={open} onClose={onClose} title="用例详情" width={520}>
       <div className="detail-grid">
         <div className="detail-row">
           <span className="detail-label">用例编号</span>
@@ -52,8 +60,8 @@ export function TestCaseDetailModal({ open, testCase, onClose }: TestCaseDetailM
           <StatusPill tone={reviewTone(testCase.reviewStatus)}>{testCase.reviewStatus}</StatusPill>
         </div>
         <div className="detail-row">
-          <span className="detail-label">自动化标识</span>
-          <span>{testCase.automation}</span>
+          <span className="detail-label">是否自动化</span>
+          <span>{testCase.automation === "适合" ? "是" : "否"}</span>
         </div>
         <div className="detail-row detail-row--full">
           <span className="detail-label">前置条件</span>
@@ -79,11 +87,11 @@ export function TestCaseDetailModal({ open, testCase, onClose }: TestCaseDetailM
         )}
         <div className="detail-row">
           <span className="detail-label">创建时间</span>
-          <span>{testCase.createdAt}</span>
+          <span>{formatTime(testCase.createdAt)}</span>
         </div>
         <div className="detail-row">
           <span className="detail-label">更新时间</span>
-          <span>{testCase.updatedAt}</span>
+          <span>{formatTime(testCase.updatedAt)}</span>
         </div>
       </div>
     </Modal>

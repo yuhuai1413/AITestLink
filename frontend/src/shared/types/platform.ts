@@ -103,6 +103,7 @@ export interface TestPoint {
   priority: Priority;
   automatable: boolean;
   reviewStatus: "待评审" | "已通过" | "需修改";
+  createdAt: string;
 }
 
 // ─── 测试用例 ───
@@ -137,7 +138,8 @@ export type AITaskType =
   | "需求解析"
   | "测试点生成"
   | "用例生成"
-  | "用例评审";
+  | "用例评审"
+  | "脚本生成";
 export type AITaskStatus = "等待" | "执行中" | "成功" | "失败";
 
 export interface AITask {
@@ -149,6 +151,26 @@ export interface AITask {
   createdAt: string;
   finishedAt?: string;
   errorMessage?: string;
+}
+
+// ─── 自动化脚本 ───
+
+export type ScriptType = "UI" | "API";
+export type ScriptFramework = "Playwright" | "pytest";
+export type ScriptStatus = "待执行" | "执行中" | "成功" | "失败";
+
+export interface AutomationScript {
+  id: string;
+  projectId: string;
+  testCaseId: string | null;
+  scriptType: ScriptType;
+  framework: ScriptFramework;
+  language: string;
+  code: string;
+  status: ScriptStatus;
+  generatedByAi: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ─── Agent 能力（展示用） ───

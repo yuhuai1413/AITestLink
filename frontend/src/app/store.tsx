@@ -8,6 +8,7 @@ import {
 } from "react";
 import type {
   AITask,
+  AutomationScript,
   FileAsset,
   Project,
   Requirement,
@@ -31,6 +32,7 @@ export interface AppState {
   testPoints: TestPoint[];
   testCases: TestCase[];
   aiTasks: AITask[];
+  scripts: AutomationScript[];
 }
 
 const STORAGE_KEY = "aitestlink-store";
@@ -41,7 +43,7 @@ function loadState(): AppState {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed.projects && Array.isArray(parsed.projects)) {
-        return parsed;
+        return { ...initialState, ...parsed };
       }
     }
   } catch {}
@@ -61,6 +63,7 @@ const initialState: AppState = {
   testPoints: initialTestPoints,
   testCases: initialTestCases,
   aiTasks: [],
+  scripts: [],
 };
 
 // ─── Actions ───
@@ -85,7 +88,11 @@ type Action =
   | { type: "UPDATE_TEST_CASE"; payload: TestCase }
   | { type: "DELETE_TEST_CASE"; payload: string }
   | { type: "ADD_AI_TASK"; payload: AITask }
-  | { type: "UPDATE_AI_TASK"; payload: AITask };
+  | { type: "UPDATE_AI_TASK"; payload: AITask }
+  | { type: "ADD_SCRIPT"; payload: AutomationScript }
+  | { type: "ADD_SCRIPTS"; payload: AutomationScript[] }
+  | { type: "UPDATE_SCRIPT"; payload: AutomationScript }
+  | { type: "DELETE_SCRIPT"; payload: string };
 
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -237,6 +244,29 @@ export function reducer(state: AppState, action: Action): AppState {
         ),
       };
 
+    case "ADD_SCRIPT":
+      if (state.scripts.some((s) => s.id === action.payload.id)) return state;
+      return { ...state, scripts: [...state.scripts, action.payload] };
+
+    case "ADD_SCRIPTS":
+      const existingScriptIds = new Set(state.scripts.map((s) => s.id));
+      const newScripts = action.payload.filter((s) => !existingScriptIds.has(s.id));
+      return { ...state, scripts: [...state.scripts, ...newScripts] };
+
+    case "UPDATE_SCRIPT":
+      return {
+        ...state,
+        scripts: state.scripts.map((s) =>
+          s.id === action.payload.id ? action.payload : s,
+        ),
+      };
+
+    case "DELETE_SCRIPT":
+      return {
+        ...state,
+        scripts: state.scripts.filter((s) => s.id !== action.payload),
+      };
+
     default:
       return state;
   }
@@ -317,5 +347,13 @@ export function useProjectAITasks(projectId: string | undefined) {
   return useMemo(
     () => state.aiTasks.filter((t) => t.projectId === projectId),
     [state.aiTasks, projectId],
+  );
+}
+
+export function useProjectScripts(projectId: string | undefined) {
+  const { state } = useStore();
+  return useMemo(
+    () => state.scripts.filter((s) => s.projectId === projectId),
+    [state.scripts, projectId],
   );
 }

@@ -7,9 +7,10 @@ import {
   testPointsApi,
   testCasesApi,
   aiApi,
+  scriptsApi,
 } from "../api/client";
-import type { ApiProject, ApiFile, ApiRequirement, ApiTestPoint, ApiTestCase, ApiAITask } from "../api/client";
-import type { Project, FileAsset, Requirement, TestPoint, TestCase, AITask } from "../shared/types/platform";
+import type { ApiProject, ApiFile, ApiRequirement, ApiTestPoint, ApiTestCase, ApiAITask, ApiScript } from "../api/client";
+import type { Project, FileAsset, Requirement, TestPoint, TestCase, AITask, AutomationScript } from "../shared/types/platform";
 
 /** Sync frontend store with backend API (non-blocking). Pass enabled=false to skip (e.g. before login). */
 export function useAPISync(enabled = true) {
@@ -33,11 +34,12 @@ export function useAPISync(enabled = true) {
       if (!projects || !Array.isArray(projects)) return;
 
       // Batch-load related data by project in parallel
-      const [allFiles, allReqs, allTps, allTcs] = await Promise.all([
+      const [allFiles, allReqs, allTps, allTcs, allScripts] = await Promise.all([
         safe(() => loadByProject(projects, (id) => filesApi.list(id))),
         safe(() => loadByProject(projects, (id) => requirementsApi.list(id))),
         safe(() => loadByProject(projects, (id) => testPointsApi.list(id))),
         safe(() => loadByProject(projects, (id) => testCasesApi.list(id))),
+        safe(() => loadByProject(projects, (id) => scriptsApi.list(id))),
       ]);
 
       projects.forEach((p) => dispatch({ type: "ADD_PROJECT", payload: apiToProject(p) }));
@@ -45,6 +47,7 @@ export function useAPISync(enabled = true) {
       (allReqs ?? []).forEach((r) => dispatch({ type: "ADD_REQUIREMENT", payload: apiToRequirement(r) }));
       (allTps ?? []).forEach((tp) => dispatch({ type: "ADD_TEST_POINT", payload: apiToTestPoint(tp) }));
       (allTcs ?? []).forEach((tc) => dispatch({ type: "ADD_TEST_CASE", payload: apiToTestCase(tc) }));
+      (allScripts ?? []).forEach((s) => dispatch({ type: "ADD_SCRIPT", payload: apiToScript(s) }));
     }
 
     loadAll();
@@ -221,6 +224,7 @@ function apiToTestPoint(tp: ApiTestPoint): TestPoint {
     title: tp.title, description: tp.description,
     priority: tp.priority as TestPoint["priority"],
     automatable: tp.automatable, reviewStatus: tp.reviewStatus as TestPoint["reviewStatus"],
+    createdAt: tp.createdAt,
   };
 }
 
@@ -245,6 +249,18 @@ function apiToAITask(t: ApiAITask): AITask {
   };
 }
 
+function apiToScript(s: ApiScript): AutomationScript {
+  return {
+    id: s.id, projectId: s.projectId, testCaseId: s.testCaseId ?? undefined,
+    scriptType: s.scriptType as AutomationScript["scriptType"],
+    framework: s.framework as AutomationScript["framework"],
+    language: s.language, code: s.code,
+    status: s.status as AutomationScript["status"],
+    generatedByAi: s.generatedByAi,
+    createdAt: s.createdAt, updatedAt: s.updatedAt,
+  };
+}
+
 // Re-export Action type for pollAITask
 type Action =
   | { type: "ADD_PROJECT"; payload: Project }
@@ -266,4 +282,8 @@ type Action =
   | { type: "UPDATE_TEST_CASE"; payload: TestCase }
   | { type: "DELETE_TEST_CASE"; payload: string }
   | { type: "ADD_AI_TASK"; payload: AITask }
-  | { type: "UPDATE_AI_TASK"; payload: AITask };
+  | { type: "UPDATE_AI_TASK"; payload: AITask }
+  | { type: "ADD_SCRIPT"; payload: AutomationScript }
+  | { type: "ADD_SCRIPTS"; payload: AutomationScript[] }
+  | { type: "UPDATE_SCRIPT"; payload: AutomationScript }
+  | { type: "DELETE_SCRIPT"; payload: string };

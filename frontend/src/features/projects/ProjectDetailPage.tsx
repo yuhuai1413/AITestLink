@@ -1,20 +1,29 @@
-import { useCallback, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, WandSparkles, Loader2, FileUp, Upload, Trash2, Download, CheckCircle2 } from "lucide-react";
-import { useStore, useProject, useProjectFiles, useProjectTestPoints, useProjectTestCases } from "../../app/store";
+import { ArrowLeft, WandSparkles, Loader2, FileUp, Upload, Trash2, Download, CheckCircle2, Play, Code, Eye } from "lucide-react";
+import { useStore, useProject, useProjectFiles, useProjectTestPoints, useProjectTestCases, useProjectScripts } from "../../app/store";
 import { useAPISync } from "../../api/useAPISync";
 import { useAIAction } from "../../shared/hooks/useAIAction";
-import { aiApi } from "../../api/client";
+import { aiApi, scriptsApi, testCasesApi } from "../../api/client";
 import { DataTable } from "../../shared/components/DataTable";
 import { SectionHeader } from "../../shared/components/SectionHeader";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { ConfirmDialog } from "../../shared/components/ConfirmDialog";
+import { Modal } from "../../shared/components/Modal";
 import { TestCaseDetailModal } from "../test-design/TestCaseDetailModal";
 import { toast } from "sonner";
-import type { Priority, TestCase } from "../../shared/types/platform";
+import type { Priority, TestCase, AutomationScript } from "../../shared/types/platform";
+
+function formatTime(iso: string | undefined): string {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
 
 type TabKey =
-  | "overview" | "files" | "testPoints" | "testCases" | "scripts" | "summary"
+  | "overview" | "files" | "testPoints" | "testCases" | "scripts" | "executeScripts" | "summary"
   | "docManage" | "docFusion" | "docGenerate" | "docVerify";
 
 const allTabs: { key: TabKey; label: string }[] = [
@@ -23,6 +32,7 @@ const allTabs: { key: TabKey; label: string }[] = [
   { key: "testPoints", label: "测试点" },
   { key: "testCases", label: "测试用例" },
   { key: "scripts", label: "自动化脚本" },
+  { key: "executeScripts", label: "执行脚本" },
   { key: "summary", label: "测试汇总" },
   { key: "docManage", label: "文档管理" },
   { key: "docFusion", label: "数据融合" },
@@ -224,7 +234,7 @@ function FilesTab({ projectId }: { projectId: string }) {
             { key: "size", label: "文件大小", render: (r) => r.size },
             { key: "parseStatus", label: "解析状态", align: "center", render: (r) => <StatusPill tone={r.parseStatus === "已完成" ? "green" : r.parseStatus === "解析中" ? "blue" : r.parseStatus === "失败" ? "red" : "slate"}>{r.parseStatus}</StatusPill> },
             { key: "date", label: "上传时间", render: (r) => { const d = new Date(r.uploadedAt); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`; } },
-            { key: "actions", label: "操作", align: "center", render: (r) => <button className="text-button text-button--danger" type="button" onClick={() => setDeletingFile({ id: r.id, name: r.name })}><Trash2 size={14} /> 删除</button> },
+            { key: "actions", label: "操作", align: "center", render: (r) => <button className="text-button text-button--danger" type="button" onClick={() => setDeletingFile({ id: r.id, name: r.name })}>删除</button> },
           ]} />
         )}
       </section>
@@ -245,6 +255,10 @@ function TestPointsTab({ projectId }: { projectId: string }) {
   const [moduleFilter, setModuleFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
+  const [viewTP, setViewTP] = useState<typeof testPoints[0] | null>(null);
+  const [editTP, setEditTP] = useState<typeof testPoints[0] | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDesc, setEditDesc] = useState("");
 
   const handleGenerate = () => {
     if (testPoints.length > 0) { setShowGenerateConfirm(true); return; }
@@ -264,6 +278,18 @@ function TestPointsTab({ projectId }: { projectId: string }) {
     });
     toast.success(`已通过 ${selectedIds.size} 个测试点`);
     setSelectedIds(new Set());
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editTP) return;
+    try {
+      await testPointsApi.update(editTP.id, { title: editTitle, description: editDesc } as any);
+      dispatch({ type: "UPDATE_TEST_POINT", payload: { ...editTP, title: editTitle, description: editDesc } });
+      toast.success("保存成功");
+      setEditTP(null);
+    } catch {
+      toast.error("保存失败");
+    }
   };
 
   return (
@@ -286,10 +312,53 @@ function TestPointsTab({ projectId }: { projectId: string }) {
             { key: "title", label: "测试点", align: "left", render: (r) => r.title },
             { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
             { key: "reviewStatus", label: "评审", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus}</StatusPill></button> },
-            { key: "actions", label: "操作", align: "center", render: (r) => <button className="text-button text-button--danger" type="button" onClick={() => dispatch({ type: "DELETE_TEST_POINT", payload: r.id })}><Trash2 size={14} /> 删除</button> },
+            { key: "createdAt", label: "生成时间", render: (r) => formatTime(r.createdAt) },
+            { key: "actions", label: "操作", align: "center", render: (r) => (
+              <div className="inline-actions">
+                <button className="text-button" type="button" onClick={() => setViewTP(r)}>查看</button>
+                <button className="text-button" type="button" onClick={() => { setEditTP(r); setEditTitle(r.title); setEditDesc(r.description); }}>编辑</button>
+                <button className="text-button text-button--danger" type="button" onClick={() => dispatch({ type: "DELETE_TEST_POINT", payload: r.id })}>删除</button>
+              </div>
+            )},
           ]} />
         )}
       </section>
+
+      {/* 查看测试点弹窗 */}
+      <Modal open={!!viewTP} onClose={() => setViewTP(null)} title="测试点详情" width={520}>
+        {viewTP && (
+          <div className="detail-grid">
+            <div className="detail-row"><span className="detail-label">编号</span><span>{viewTP.id}</span></div>
+            <div className="detail-row"><span className="detail-label">模块</span><span>{viewTP.module}</span></div>
+            <div className="detail-row"><span className="detail-label">类型</span><span>{viewTP.type}</span></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">测试点</span><span>{viewTP.title}</span></div>
+            <div className="detail-row"><span className="detail-label">优先级</span><StatusPill tone={priorityTone(viewTP.priority)}>{viewTP.priority}</StatusPill></div>
+            <div className="detail-row"><span className="detail-label">评审状态</span><StatusPill tone={reviewTone(viewTP.reviewStatus)}>{viewTP.reviewStatus}</StatusPill></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">描述</span><pre className="detail-pre">{viewTP.description || "无"}</pre></div>
+            <div className="detail-row"><span className="detail-label">生成时间</span><span>{formatTime(viewTP.createdAt)}</span></div>
+          </div>
+        )}
+      </Modal>
+
+      {/* 编辑测试点弹窗 */}
+      <Modal open={!!editTP} onClose={() => setEditTP(null)} title="编辑测试点" width={520}>
+        {editTP && (
+          <div className="detail-grid">
+            <div className="detail-row"><span className="detail-label">编号</span><span>{editTP.id}</span></div>
+            <div className="detail-row"><span className="detail-label">模块</span><span>{editTP.module}</span></div>
+            <div className="detail-row"><span className="detail-label">类型</span><span>{editTP.type}</span></div>
+            <div className="detail-row"><span className="detail-label">优先级</span><StatusPill tone={priorityTone(editTP.priority)}>{editTP.priority}</StatusPill></div>
+            <div className="detail-row"><span className="detail-label">评审状态</span><StatusPill tone={reviewTone(editTP.reviewStatus)}>{editTP.reviewStatus}</StatusPill></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">测试点</span><input className="form-input" style={{ flex: 1 }} value={editTitle} onChange={(e) => setEditTitle(e.target.value)} /></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">描述</span><textarea className="form-textarea" style={{ flex: 1 }} rows={4} value={editDesc} onChange={(e) => setEditDesc(e.target.value)} /></div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 12 }}>
+              <button className="ghost-button" type="button" onClick={() => setEditTP(null)}>取消</button>
+              <button className="primary-button" type="button" onClick={handleSaveEdit}>保存</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       <ConfirmDialog open={showGenerateConfirm} title="重新生成测试点" message={`当前已有 ${testPoints.length} 个测试点，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={() => { setShowGenerateConfirm(false); generateTestPoints(); }} onCancel={() => setShowGenerateConfirm(false)} />
     </div>
   );
@@ -304,6 +373,10 @@ function TestCasesTab({ projectId }: { projectId: string }) {
   const { dispatch } = useStore();
   const { loading, error, generateTestCases } = useAIAction(projectId);
   const [detailCase, setDetailCase] = useState<TestCase | null>(null);
+  const [editCase, setEditCase] = useState<TestCase | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editSteps, setEditSteps] = useState("");
+  const [editExpected, setEditExpected] = useState("");
   const [moduleFilter, setModuleFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
@@ -328,6 +401,18 @@ function TestCasesTab({ projectId }: { projectId: string }) {
     setSelectedIds(new Set());
   };
 
+  const handleSaveEdit = async () => {
+    if (!editCase) return;
+    try {
+      await testCasesApi.update(editCase.id, { title: editTitle, steps: editSteps, expectedResult: editExpected } as any);
+      dispatch({ type: "UPDATE_TEST_CASE", payload: { ...editCase, title: editTitle, steps: editSteps, expectedResult: editExpected } });
+      toast.success("保存成功");
+      setEditCase(null);
+    } catch {
+      toast.error("保存失败");
+    }
+  };
+
   return (
     <div className="page-stack">
       <SectionHeader title="用例生成" description="从测试点生成可执行用例，支持评审和删除。"
@@ -344,15 +429,41 @@ function TestCasesTab({ projectId }: { projectId: string }) {
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "caseCode", label: "编号", render: (r) => r.caseCode },
             { key: "module", label: "模块", render: (r) => r.module },
-            { key: "title", label: "用例标题", align: "left", render: (r) => <button type="button" className="text-button table-link" onClick={() => setDetailCase(r)}>{r.title}</button> },
+            { key: "title", label: "用例标题", align: "left", render: (r) => r.title },
             { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
             { key: "reviewStatus", label: "评审", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus}</StatusPill></button> },
-            { key: "automation", label: "自动化", align: "center", render: (r) => r.automation },
-            { key: "actions", label: "操作", align: "center", render: (r) => <button className="text-button text-button--danger" type="button" onClick={() => dispatch({ type: "DELETE_TEST_CASE", payload: r.id })}><Trash2 size={14} /> 删除</button> },
+            { key: "automation", label: "是否自动化", align: "center", render: (r) => r.automation === "适合" ? "是" : "否" },
+            { key: "actions", label: "操作", align: "center", render: (r) => (
+              <div className="inline-actions">
+                <button className="text-button" type="button" onClick={() => setDetailCase(r)}>查看</button>
+                <button className="text-button" type="button" onClick={() => { setEditCase(r); setEditTitle(r.title); setEditSteps(r.steps); setEditExpected(r.expectedResult); }}>编辑</button>
+                <button className="text-button text-button--danger" type="button" onClick={() => dispatch({ type: "DELETE_TEST_CASE", payload: r.id })}>删除</button>
+              </div>
+            )},
           ]} />
         )}
       </section>
       <TestCaseDetailModal open={!!detailCase} testCase={detailCase} onClose={() => setDetailCase(null)} />
+
+      {/* 编辑用例弹窗 */}
+      <Modal open={!!editCase} onClose={() => setEditCase(null)} title="编辑用例" width={520}>
+        {editCase && (
+          <div className="detail-grid">
+            <div className="detail-row"><span className="detail-label">用例编号</span><span>{editCase.caseCode}</span></div>
+            <div className="detail-row"><span className="detail-label">所属模块</span><span>{editCase.module}</span></div>
+            <div className="detail-row"><span className="detail-label">优先级</span><StatusPill tone={priorityTone(editCase.priority)}>{editCase.priority}</StatusPill></div>
+            <div className="detail-row"><span className="detail-label">评审状态</span><StatusPill tone={reviewTone(editCase.reviewStatus)}>{editCase.reviewStatus}</StatusPill></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">用例标题</span><input className="form-input" style={{ flex: 1 }} value={editTitle} onChange={(e) => setEditTitle(e.target.value)} /></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">测试步骤</span><textarea className="form-textarea" style={{ flex: 1 }} rows={4} value={editSteps} onChange={(e) => setEditSteps(e.target.value)} /></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">预期结果</span><textarea className="form-textarea" style={{ flex: 1 }} rows={4} value={editExpected} onChange={(e) => setEditExpected(e.target.value)} /></div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 12 }}>
+              <button className="ghost-button" type="button" onClick={() => setEditCase(null)}>取消</button>
+              <button className="primary-button" type="button" onClick={handleSaveEdit}>保存</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       <ConfirmDialog open={showGenerateConfirm} title="重新生成用例" message={`当前已有 ${testCases.length} 条用例，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={() => { setShowGenerateConfirm(false); generateTestCases(); }} onCancel={() => setShowGenerateConfirm(false)} />
     </div>
   );
@@ -364,21 +475,281 @@ function TestCasesTab({ projectId }: { projectId: string }) {
 
 function ScriptsTab({ projectId }: { projectId: string }) {
   const testCases = useProjectTestCases(projectId);
+  const scripts = useProjectScripts(projectId);
+  const { dispatch } = useStore();
+  const [generating, setGenerating] = useState(false);
+  const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [viewScript, setViewScript] = useState<AutomationScript | null>(null);
+  const [editScript, setEditScript] = useState<AutomationScript | null>(null);
+  const [editCode, setEditCode] = useState("");
+  const [deletingScript, setDeletingScript] = useState<{ id: string; name: string } | null>(null);
+
   const automatable = useMemo(() => testCases.filter((tc) => tc.automation === "适合"), [testCases]);
+  const existingScriptCount = scripts.length;
+
+  const handleGenerate = async () => {
+    setGenerating(true);
+    setError(null);
+    try {
+      const result = await scriptsApi.generate(projectId);
+      if (result.ok && result.scripts) {
+        result.scripts.forEach((s) => dispatch({ type: "ADD_SCRIPT", payload: {
+          id: s.id, projectId: s.projectId, testCaseId: s.testCaseId ?? undefined,
+          scriptType: s.scriptType as AutomationScript["scriptType"],
+          framework: s.framework as AutomationScript["framework"],
+          language: s.language, code: s.code,
+          status: s.status as AutomationScript["status"],
+          generatedByAi: s.generatedByAi,
+          createdAt: s.createdAt, updatedAt: s.updatedAt,
+        }}));
+        toast.success(`成功生成 ${result.count} 个自动化脚本`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "生成失败";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setGenerating(false);
+      setShowGenerateConfirm(false);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editScript) return;
+    try {
+      const updated = await scriptsApi.update(editScript.id, { code: editCode });
+      dispatch({ type: "UPDATE_SCRIPT", payload: {
+        ...editScript, code: updated.code, updatedAt: updated.updatedAt,
+      } as AutomationScript });
+      toast.success("保存成功");
+      setEditScript(null);
+    } catch {
+      toast.error("保存失败");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingScript) return;
+    try {
+      await scriptsApi.delete(deletingScript.id);
+      dispatch({ type: "DELETE_SCRIPT", payload: deletingScript.id });
+      toast.success("删除成功");
+    } catch {
+      toast.error("删除失败");
+    }
+    setDeletingScript(null);
+  };
+
+  const getTestCaseTitle = (testCaseId: string | null | undefined) => {
+    if (!testCaseId) return "-";
+    const tc = testCases.find((t) => t.id === testCaseId);
+    return tc ? tc.title : "-";
+  };
+
   return (
     <div className="page-stack">
-      <SectionHeader title="自动化脚本" description="适合自动化的测试用例列表。" />
+      <SectionHeader title="自动化脚本" description="适合自动化的测试用例列表，可一键生成 Playwright 脚本。"
+        actions={<>
+          <button className="primary-button" type="button" onClick={() => {
+            if (existingScriptCount > 0) { setShowGenerateConfirm(true); return; }
+            handleGenerate();
+          }} disabled={generating || automatable.length === 0}>
+            {generating ? <Loader2 size={17} className="animate-spin" /> : <Code size={17} />}
+            {generating ? "生成中..." : "生成自动化脚本"}
+          </button>
+        </>} />
+      {error && <div className="error-banner"><span>{error}</span></div>}
       <section className="work-panel">
-        {automatable.length === 0 ? <div className="empty-state"><p>暂无可自动化的用例</p></div> : (
-          <div><p style={{ marginBottom: 12, color: "var(--muted)", fontSize: 14 }}>共 <strong style={{ color: "var(--text)" }}>{automatable.length}</strong> 条适合自动化的用例</p>
+        {automatable.length === 0 ? <div className="empty-state"><p>暂无可自动化的用例，请先在测试用例中标记适合自动化的用例</p></div> : (
+          <div><p style={{ marginBottom: 12, color: "var(--muted)", fontSize: 14 }}>共 <strong style={{ color: "var(--text)" }}>{automatable.length}</strong> 条适合自动化的用例，已生成 <strong style={{ color: "var(--text)" }}>{existingScriptCount}</strong> 个脚本</p>
             <DataTable rows={automatable} getRowKey={(r) => r.id} columns={[
               { key: "caseCode", label: "用例编号", render: (r) => r.caseCode },
               { key: "module", label: "模块", render: (r) => r.module },
               { key: "title", label: "用例标题", align: "left", render: (r) => r.title },
               { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
+              { key: "script", label: "脚本状态", align: "center", render: (r) => {
+                const script = scripts.find((s) => s.testCaseId === r.id);
+                return script ? <StatusPill tone={script.status === "成功" ? "green" : script.status === "失败" ? "red" : "blue"}>{script.status}</StatusPill> : <span style={{ color: "var(--muted)" }}>未生成</span>;
+              }},
+              { key: "actions", label: "操作", align: "center", render: (r) => {
+                const script = scripts.find((s) => s.testCaseId === r.id);
+                if (!script) return <span style={{ color: "var(--muted)" }}>-</span>;
+                return (
+                  <div className="inline-actions">
+                    <button className="text-button" type="button" onClick={() => setViewScript(script)}>查看</button>
+                    <button className="text-button" type="button" onClick={() => { setEditScript(script); setEditCode(script.code); }}>编辑</button>
+                    <button className="text-button text-button--danger" type="button" onClick={() => setDeletingScript({ id: script.id, name: `脚本 ${script.id.slice(0, 8)}` })}>删除</button>
+                  </div>
+                );
+              }},
             ]} /></div>
         )}
       </section>
+
+      {/* 查看脚本弹窗 */}
+      {viewScript && (
+        <div className="confirm-overlay" onClick={() => setViewScript(null)}>
+          <div className="confirm-dialog" style={{ width: 700, maxWidth: "90vw" }} onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-dialog__body" style={{ flexDirection: "column", gap: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 16 }}>脚本代码 - {viewScript.framework}</h3>
+              <pre style={{
+                background: "#1e1e2e",
+                color: "#cdd6f4",
+                padding: 16,
+                borderRadius: 8,
+                fontSize: 13,
+                lineHeight: 1.6,
+                overflow: "auto",
+                maxHeight: 400,
+                margin: 0,
+              }}>
+                {viewScript.code || "// 暂无代码"}
+              </pre>
+            </div>
+            <div className="confirm-dialog__actions">
+              <button className="ghost-button" type="button" onClick={() => setViewScript(null)}>关闭</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 编辑脚本弹窗 */}
+      {editScript && (
+        <div className="confirm-overlay" onClick={() => setEditScript(null)}>
+          <div className="confirm-dialog" style={{ width: 700, maxWidth: "90vw" }} onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-dialog__body" style={{ flexDirection: "column", gap: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 16 }}>编辑脚本 - {editScript.framework}</h3>
+              <textarea
+                value={editCode}
+                onChange={(e) => setEditCode(e.target.value)}
+                style={{
+                  width: "100%",
+                  minHeight: 400,
+                  background: "#1e1e2e",
+                  color: "#cdd6f4",
+                  padding: 16,
+                  borderRadius: 8,
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                  border: "none",
+                  resize: "vertical",
+                  fontFamily: "monospace",
+                }}
+              />
+            </div>
+            <div className="confirm-dialog__actions">
+              <button className="ghost-button" type="button" onClick={() => setEditScript(null)}>取消</button>
+              <button className="primary-button" type="button" onClick={handleSaveEdit}>保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog open={showGenerateConfirm} title="重新生成脚本" message={`当前已有 ${existingScriptCount} 个脚本，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={handleGenerate} onCancel={() => setShowGenerateConfirm(false)} />
+      <ConfirmDialog open={!!deletingScript} title="删除脚本" message={`确定删除脚本「${deletingScript?.name}」？`} confirmLabel="删除" onConfirm={handleDelete} onCancel={() => setDeletingScript(null)} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════
+// 执行脚本
+// ═══════════════════════════════════════
+
+function ExecuteScriptsTab({ projectId }: { projectId: string }) {
+  const scripts = useProjectScripts(projectId);
+  const testCases = useProjectTestCases(projectId);
+  const { dispatch } = useStore();
+  const [selectedScript, setSelectedScript] = useState<AutomationScript | null>(null);
+  const [runningId, setRunningId] = useState<string | null>(null);
+
+  const handleRun = async (script: AutomationScript) => {
+    setRunningId(script.id);
+    dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, status: "执行中" } });
+
+    // 模拟执行（实际应调用后端执行接口）
+    setTimeout(() => {
+      const success = Math.random() > 0.3;
+      dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, status: success ? "成功" : "失败" } });
+      setRunningId(null);
+      toast[success ? "success" : "error"](`脚本 ${script.id.slice(0, 8)} ${success ? "执行成功" : "执行失败"}`);
+    }, 2000);
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await scriptsApi.delete(id);
+      dispatch({ type: "DELETE_SCRIPT", payload: id });
+      toast.success("删除成功");
+    } catch {
+      toast.error("删除失败");
+    }
+  };
+
+  const getTestCaseTitle = (testCaseId: string | null | undefined) => {
+    if (!testCaseId) return "-";
+    const tc = testCases.find((t) => t.id === testCaseId);
+    return tc ? tc.title : "-";
+  };
+
+  return (
+    <div className="page-stack">
+      <SectionHeader title="执行脚本" description="管理和执行已生成的自动化脚本。" />
+      <section className="work-panel">
+        {scripts.length === 0 ? (
+          <div className="empty-state">
+            <p>暂无脚本，请先在「自动化脚本」页面生成脚本</p>
+          </div>
+        ) : (
+          <DataTable rows={scripts} getRowKey={(r) => r.id} columns={[
+            { key: "id", label: "脚本 ID", render: (r) => r.id.slice(0, 8) },
+            { key: "testCase", label: "关联用例", align: "left", render: (r) => getTestCaseTitle(r.testCaseId) },
+            { key: "framework", label: "框架", render: (r) => r.framework },
+            { key: "scriptType", label: "类型", render: (r) => r.scriptType },
+            { key: "status", label: "状态", align: "center", render: (r) => (
+              <StatusPill tone={r.status === "成功" ? "green" : r.status === "失败" ? "red" : r.status === "执行中" ? "blue" : "slate"}>
+                {r.status}
+              </StatusPill>
+            )},
+            { key: "actions", label: "操作", align: "center", render: (r) => (
+              <div className="inline-actions">
+                <button className="text-button" type="button" onClick={() => setSelectedScript(r)}>查看</button>
+                <button className="text-button" type="button" onClick={() => handleRun(r)} disabled={runningId === r.id}>
+                  {runningId === r.id ? "执行中" : "执行"}
+                </button>
+                <button className="text-button text-button--danger" type="button" onClick={() => handleDelete(r.id)}>删除</button>
+              </div>
+            )},
+          ]} />
+        )}
+      </section>
+
+      {/* 代码查看弹窗 */}
+      {selectedScript && (
+        <div className="confirm-overlay" onClick={() => setSelectedScript(null)}>
+          <div className="confirm-dialog" style={{ width: 700, maxWidth: "90vw" }} onClick={(e) => e.stopPropagation()}>
+            <div className="confirm-dialog__body" style={{ flexDirection: "column", gap: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 16 }}>脚本代码 - {selectedScript.framework}</h3>
+              <pre style={{
+                background: "#1e1e2e",
+                color: "#cdd6f4",
+                padding: 16,
+                borderRadius: 8,
+                fontSize: 13,
+                lineHeight: 1.6,
+                overflow: "auto",
+                maxHeight: 400,
+                margin: 0,
+              }}>
+                {selectedScript.code || "// 暂无代码"}
+              </pre>
+            </div>
+            <div className="confirm-dialog__actions">
+              <button className="ghost-button" type="button" onClick={() => setSelectedScript(null)}>关闭</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -547,7 +918,7 @@ function DocVerifyTab({ projectId }: { projectId: string }) {
 
 const tabComponents: Record<TabKey, React.FC<{ projectId: string }>> = {
   overview: OverviewTab, files: FilesTab, testPoints: TestPointsTab, testCases: TestCasesTab,
-  scripts: ScriptsTab, summary: SummaryTab, docManage: DocManageTab, docFusion: DocFusionTab,
+  scripts: ScriptsTab, executeScripts: ExecuteScriptsTab, summary: SummaryTab, docManage: DocManageTab, docFusion: DocFusionTab,
   docGenerate: DocGenerateTab, docVerify: DocVerifyTab,
 };
 
@@ -560,7 +931,12 @@ export function ProjectDetailPage() {
   const project = useProject(id);
   const initialTab = (searchParams.get("tab") as TabKey) || (localStorage.getItem(TAB_STORAGE_KEY) as TabKey) || "overview";
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
+  const tabContentRef = useRef<HTMLDivElement>(null);
   const handleTabChange = (tab: TabKey) => { setActiveTab(tab); localStorage.setItem(TAB_STORAGE_KEY, tab); };
+
+  useEffect(() => {
+    tabContentRef.current?.scrollTo({ top: 0 });
+  }, [activeTab]);
 
   if (!project) {
     return <div className="page-stack"><div className="empty-state"><p>项目不存在或已删除。</p><button className="primary-button" type="button" onClick={() => navigate("/projects")}>返回项目列表</button></div></div>;
@@ -569,7 +945,7 @@ export function ProjectDetailPage() {
   const ActiveComponent = tabComponents[activeTab];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div className="detail-header">
         <button className="ghost-button" type="button" onClick={() => navigate("/projects")}><ArrowLeft size={17} /> 返回</button>
         <h2 style={{ margin: 0 }}>{project.name}</h2>
@@ -578,7 +954,7 @@ export function ProjectDetailPage() {
       <div className="tab-bar">
         {allTabs.map((tab) => <button key={tab.key} type="button" className={`tab-button ${activeTab === tab.key ? "tab-button--active" : ""}`} onClick={() => handleTabChange(tab.key)}>{tab.label}</button>)}
       </div>
-      <div className="tab-content">
+      <div className="tab-content" ref={tabContentRef}>
         {ActiveComponent && <ActiveComponent projectId={project.id} />}
       </div>
     </div>

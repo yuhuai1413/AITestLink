@@ -1,8 +1,9 @@
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   transition: grid-template-columns 0.3s cubic-bezier(0.34, 1.42, 0.64, 1);
+  overflow: hidden;
 }
 
 .sidebar {

@@ -98,11 +98,14 @@ def _read_file_content(file_obj: FileAsset) -> str:
 async def run_parse_requirements(task_id: str, project_id: str, file_content: str):
     async with async_session() as db:
         try:
-            # 更新文件状态为"解析中"
+            # 查询文件列表
             file_result = await db.execute(
                 select(FileAsset).where(FileAsset.project_id == project_id)
             )
-            for f in file_result.scalars().all():
+            files = file_result.scalars().all()
+
+            # 更新文件状态为"解析中"
+            for f in files:
                 f.parse_status = "解析中"
             await db.commit()
 
@@ -120,7 +123,7 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
                 ))
 
             # 更新文件状态为"已完成"
-            for f in file_result.scalars().all():
+            for f in files:
                 f.parse_status = "已完成"
 
             await _update_task_status(db, task_id, "成功")
