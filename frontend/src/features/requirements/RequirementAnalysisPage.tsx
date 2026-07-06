@@ -24,7 +24,7 @@ export function RequirementAnalysisPage() {
         description="把 PRD、FS、接口文档和变更说明转换为可追溯的需求结构表。"
         actions={
           <button className="primary-button" type="button" onClick={() => navigate("/projects")}>
-            <WandSparkles size={17} />
+            <WandSparkles size={13} />
             前往项目发起解析
           </button>
         }

@@ -35,7 +35,7 @@ export function TestDesignPage() {
         description="以需求追溯为核心，生成可评审、可执行、可导出的测试资产。"
         actions={
           <button className="primary-button" type="button" onClick={() => navigate("/projects")}>
-            <WandSparkles size={17} />
+            <WandSparkles size={13} />
             前往项目生成
           </button>
         }
@@ -88,7 +88,7 @@ export function TestDesignPage() {
               type="button"
               onClick={() => exportTestCasesToExcel(state.testCases)}
             >
-              <Download size={17} />
+              <Download size={13} />
               导出 Excel
             </button>
           }

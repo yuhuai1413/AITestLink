@@ -168,7 +168,7 @@ export function ProjectListPage({ mode }: ProjectListPageProps) {
       </div>
       {mode === "projects" && (
         <button className="primary-button" type="button" style={{ marginLeft: "auto" }} onClick={() => setShowCreate(true)}>
-          <Plus size={17} />
+          <Plus size={13} />
           新建项目
         </button>
       )}

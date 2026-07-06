@@ -14,11 +14,12 @@
 
 .primary-button,
 .ghost-button {
-  min-height: 36px;
-  padding: 0 18px;
+  min-height: 27px;
+  padding: 0 14px;
   border: 1px solid transparent;
   font-weight: 600;
-  font-size: 14px;
+  font-size: 12px;
+  gap: 6px;
 }
 
 .primary-button {
