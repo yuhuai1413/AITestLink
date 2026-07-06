@@ -36,12 +36,14 @@ export const navigationItems: NavigationItem[] = [
     label: "测试中心",
     description: "需求、测试设计、用例执行、自动化脚本、缺陷",
     icon: ListChecks,
+    hidden: true,
   },
   {
     key: "documentCenter",
     label: "文档中心",
     description: "文档上传与管理",
     icon: FileSearch,
+    hidden: true,
   },
   {
     key: "modelConfig",

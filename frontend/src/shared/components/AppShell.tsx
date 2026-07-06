@@ -59,7 +59,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
   const [userInfo, setUserInfo] = useState<UserInfo>({ nickname: "用户", phone: "", avatar: "", isAdmin: false });
 
   const visibleNavItems = useMemo(
-    () => navigationItems.filter((item) => item.key !== "userManagement" || userInfo.isAdmin),
+    () => navigationItems.filter((item) => !item.hidden && (item.key !== "userManagement" || userInfo.isAdmin)),
     [userInfo.isAdmin]
   );
 
@@ -349,7 +349,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
               <div className="help-section">
                 <h3>核心功能</h3>
                 <ul>
-                  <li><strong>需求解析</strong> — 上传需求文档，AI 自动提取模块、功能点和业务规则</li>
+                  <li><strong>需求解析</strong> — 上传需求文档，AI 自动提取模块、测试点和业务规则</li>
                   <li><strong>测试设计</strong> — 基于需求生成测试点和测试用例</li>
                   <li><strong>用例管理</strong> — 在线编辑、评审和导出 Excel</li>
                   <li><strong>自动化中心</strong> — 脚本生成与执行分析（规划中）</li>

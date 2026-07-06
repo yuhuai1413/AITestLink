@@ -381,6 +381,7 @@ button {
 .page-stack {
   display: grid;
   gap: var(--sp-sm);
+  padding-top: var(--sp-sm);
 }
 
 .hero-panel {

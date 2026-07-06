@@ -17,6 +17,7 @@ export interface NavigationItem {
   label: string;
   description: string;
   icon: LucideIcon;
+  hidden?: boolean;
 }
 
 // ─── 指标卡片 ───

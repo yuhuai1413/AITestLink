@@ -23,6 +23,15 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
     from app.database import async_session
     async with async_session() as db:
         try:
+            # 更新文件状态为"解析中"
+            file_result = await db.execute(
+                select(FileAsset).where(FileAsset.project_id == project_id)
+            )
+            files = file_result.scalars().all()
+            for f in files:
+                f.parse_status = "解析中"
+            await db.commit()
+
             requirements = await ai_service.parse_requirements(file_content)
             for req in requirements:
                 r = Requirement(
@@ -37,12 +46,27 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
                 )
                 db.add(r)
 
+            # 更新文件状态为"已完成"
+            for f in files:
+                f.parse_status = "已完成"
+
             result = await db.execute(select(AITask).where(AITask.id == task_id))
             task = result.scalar_one()
             task.status = "成功"
             task.finished_at = datetime.utcnow()
             await db.commit()
         except Exception as e:
+            # 解析失败时更新文件状态为"失败"
+            try:
+                file_result = await db.execute(
+                    select(FileAsset).where(FileAsset.project_id == project_id)
+                )
+                for f in file_result.scalars().all():
+                    f.parse_status = "失败"
+                await db.commit()
+            except:
+                pass
+
             result = await db.execute(select(AITask).where(AITask.id == task_id))
             task = result.scalar_one()
             task.status = "失败"
@@ -64,11 +88,20 @@ async def run_generate_test_points(task_id: str, project_id: str):
             )
             points = await ai_service.generate_test_points(req_text)
 
+            # 按模块分组，生成 TP_模块_序号 格式编号
+            module_counters: dict[str, int] = {}
             for pt in points:
+                module = pt["module"]
+                module_counters[module] = module_counters.get(module, 0) + 1
+                seq = module_counters[module]
+                # 模块名取前4个字符作为缩写
+                module_short = module[:4] if len(module) >= 4 else module
+                tp_id = f"TP_{module_short}_{seq:03d}"
+
                 tp = TestPoint(
-                    id=str(uuid.uuid4()),
+                    id=tp_id,
                     project_id=project_id,
-                    module=pt["module"],
+                    module=module,
                     type=pt["type"],
                     title=pt["title"],
                     description=pt.get("description", ""),
@@ -105,12 +138,20 @@ async def run_generate_test_cases(task_id: str, project_id: str):
             )
             cases = await ai_service.generate_test_cases(pt_text)
 
+            # 按模块分组，生成 TC_模块_序号 格式编号
+            module_counters: dict[str, int] = {}
             for c in cases:
+                module = c["module"]
+                module_counters[module] = module_counters.get(module, 0) + 1
+                seq = module_counters[module]
+                module_short = module[:4] if len(module) >= 4 else module
+                case_code = f"TC_{module_short}_{seq:03d}"
+
                 tc = TestCase(
                     id=str(uuid.uuid4()),
                     project_id=project_id,
-                    case_code=c.get("caseCode", f"TC-{uuid.uuid4().hex[:6].upper()}"),
-                    module=c["module"],
+                    case_code=case_code,
+                    module=module,
                     feature=c.get("feature", ""),
                     title=c["title"],
                     priority=c.get("priority", "P1"),
@@ -162,12 +203,48 @@ async def parse_requirements(project_id: str, background_tasks: BackgroundTasks,
     if not files:
         return {"error": "No files found. Please upload files first."}
 
-    # Read file contents
+    # Read file contents - 支持多种格式
     content_parts = []
     for f in files:
-        if f.storage_path and __import__("os").path.exists(f.storage_path):
-            with open(f.storage_path, "r", errors="ignore") as fh:
-                content_parts.append(fh.read()[:5000])
+        if not f.storage_path or not __import__("os").path.exists(f.storage_path):
+            continue
+        ext = f.name.rsplit(".", 1)[-1].lower() if "." in f.name else ""
+        try:
+            if ext in ("docx", "doc"):
+                from docx import Document
+                doc = Document(f.storage_path)
+                text = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
+                content_parts.append(f"[{f.name}]\n{text[:5000]}")
+            elif ext in ("xlsx", "xls"):
+                import openpyxl
+                wb = openpyxl.load_workbook(f.storage_path, read_only=True, data_only=True)
+                text_parts = []
+                for sheet in wb.sheetnames:
+                    ws = wb[sheet]
+                    rows = []
+                    for row in ws.iter_rows(values_only=True):
+                        row_text = " | ".join([str(c) if c is not None else "" for c in row])
+                        if row_text.strip():
+                            rows.append(row_text)
+                    if rows:
+                        text_parts.append(f"Sheet: {sheet}\n" + "\n".join(rows[:100]))
+                wb.close()
+                content_parts.append(f"[{f.name}]\n" + "\n".join(text_parts)[:5000])
+            elif ext == "pdf":
+                try:
+                    import PyPDF2
+                    reader = PyPDF2.PdfReader(f.storage_path)
+                    text = "\n".join([page.extract_text() or "" for page in reader.pages[:20]])
+                    content_parts.append(f"[{f.name}]\n{text[:5000]}")
+                except:
+                    content_parts.append(f"[{f.name}] (PDF读取失败)")
+            elif ext in ("md", "txt", "json", "yaml", "yml", "csv"):
+                with open(f.storage_path, "r", errors="ignore") as fh:
+                    content_parts.append(f"[{f.name}]\n{fh.read()[:5000]}")
+            else:
+                content_parts.append(f"[{f.name}] (不支持的格式: {ext})")
+        except Exception as e:
+            content_parts.append(f"[{f.name}] (读取失败: {str(e)[:100]})")
 
     file_content = "\n---\n".join(content_parts) if content_parts else "No readable content"
 

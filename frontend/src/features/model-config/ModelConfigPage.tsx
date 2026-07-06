@@ -66,7 +66,7 @@ const defaultConfigs: ApiModelConfig[] = [
     modelName: "mimo-v2.5",
     apiKey: "",
     endpoint: "https://api.xiaomimimo.com/v1",
-    description: "从需求文档中提取模块、功能点和业务规则",
+    description: "从需求文档中提取模块、测试点和业务规则",
     enabled: true,
   },
   {

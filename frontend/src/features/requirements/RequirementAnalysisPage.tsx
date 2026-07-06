@@ -56,7 +56,7 @@ export function RequirementAnalysisPage() {
             columns={[
               { key: "id", label: "需求编号", render: (row) => row.id },
               { key: "module", label: "模块", render: (row) => row.module },
-              { key: "feature", label: "功能点", render: (row) => row.feature },
+              { key: "feature", label: "测试点", render: (row) => row.feature },
               { key: "source", label: "来源", render: (row) => row.source },
               {
                 key: "risk",

@@ -72,10 +72,10 @@ class AIService:
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": 0.3,
-            "max_tokens": 4000,
+            "max_tokens": 8000,
         }
 
-        async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=120) as client:
             response = await client.post(
                 config['endpoint'],
                 headers=headers,
@@ -83,12 +83,19 @@ class AIService:
             )
             response.raise_for_status()
             data = response.json()
-            return data["choices"][0]["message"]["content"]
+            content = data["choices"][0]["message"]["content"]
+            if not content:
+                logger.warning(f"LLM returned empty content for task: {task_type}")
+            return content
 
     def _parse_json_response(self, text: str) -> list | dict:
         """Extract JSON from LLM response."""
-        # Try to find JSON in the response
         text = text.strip()
+        if not text:
+            logger.error("LLM returned empty response")
+            return []
+
+        # Try to find JSON in the response
         if text.startswith("```"):
             lines = text.split("\n")
             json_lines = []
@@ -103,7 +110,12 @@ class AIService:
                     json_lines.append(line)
             text = "\n".join(json_lines)
 
-        return json.loads(text)
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse LLM response as JSON: {e}")
+            logger.error(f"Response preview: {text[:500]}")
+            return []
 
     async def parse_requirements(self, file_content: str) -> list[dict]:
         """Parse requirement document and extract structured requirements."""
@@ -129,7 +141,7 @@ class AIService:
         system_prompt = """你是一个专业的软件测试设计专家。你的任务是根据需求生成测试点。
 
 请以 JSON 数组格式输出，每个元素包含以下字段：
-- module: 所属模块
+- module: 所属模块（简短名称，2-4个字）
 - type: 测试类型（正常流程/异常流程/边界值/权限控制/数据一致性/状态流转）
 - title: 测试点标题（简洁描述要验证的内容）
 - description: 详细描述
@@ -137,6 +149,7 @@ class AIService:
 - automatable: 是否可自动化（true/false）
 
 确保覆盖正常流程、异常流程、边界值、权限控制等场景。
+同一个模块的测试点要集中在一起。
 只输出 JSON 数组，不要其他内容。"""
 
         user_prompt = f"请根据以下需求生成测试点：\n\n{requirements_text[:3000]}"
@@ -149,8 +162,7 @@ class AIService:
         system_prompt = """你是一个专业的软件测试用例编写专家。你的任务是根据测试点生成详细的测试用例。
 
 请以 JSON 数组格式输出，每个元素包含以下字段：
-- caseCode: 用例编号（格式：TC_模块缩写_序号，如 TC_LOGIN_001）
-- module: 所属模块
+- module: 所属模块（与测试点的模块保持一致）
 - feature: 功能点
 - title: 用例标题
 - priority: 优先级（P0/P1/P2/P3）
@@ -160,7 +172,9 @@ class AIService:
 - expectedResult: 预期结果
 - automation: 自动化标识（适合/不适合/待评估）
 
+注意：编号由系统自动生成，你不需要提供 caseCode 字段。
 确保步骤清晰可执行，预期结果明确可判断。
+同一个模块的用例要集中在一起。
 只输出 JSON 数组，不要其他内容。"""
 
         user_prompt = f"请根据以下测试点生成测试用例：\n\n{test_points_text[:3000]}"

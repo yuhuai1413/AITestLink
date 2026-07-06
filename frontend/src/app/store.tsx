@@ -131,15 +131,18 @@ export function reducer(state: AppState, action: Action): AppState {
       };
 
     case "ADD_REQUIREMENT":
+      if (state.requirements.some((r) => r.id === action.payload.id)) return state;
       return {
         ...state,
         requirements: [...state.requirements, action.payload],
       };
 
     case "ADD_REQUIREMENTS":
+      const existingReqIds = new Set(state.requirements.map((r) => r.id));
+      const newReq = action.payload.filter((r) => !existingReqIds.has(r.id));
       return {
         ...state,
-        requirements: [...state.requirements, ...action.payload],
+        requirements: [...state.requirements, ...newReq],
       };
 
     case "UPDATE_REQUIREMENT":
@@ -159,15 +162,18 @@ export function reducer(state: AppState, action: Action): AppState {
       };
 
     case "ADD_TEST_POINT":
+      if (state.testPoints.some((tp) => tp.id === action.payload.id)) return state;
       return {
         ...state,
         testPoints: [...state.testPoints, action.payload],
       };
 
     case "ADD_TEST_POINTS":
+      const existingTpIds = new Set(state.testPoints.map((tp) => tp.id));
+      const newTp = action.payload.filter((tp) => !existingTpIds.has(tp.id));
       return {
         ...state,
-        testPoints: [...state.testPoints, ...action.payload],
+        testPoints: [...state.testPoints, ...newTp],
       };
 
     case "UPDATE_TEST_POINT":
@@ -187,15 +193,18 @@ export function reducer(state: AppState, action: Action): AppState {
       };
 
     case "ADD_TEST_CASE":
+      if (state.testCases.some((tc) => tc.id === action.payload.id)) return state;
       return {
         ...state,
         testCases: [...state.testCases, action.payload],
       };
 
     case "ADD_TEST_CASES":
+      const existingTcIds = new Set(state.testCases.map((tc) => tc.id));
+      const newTc = action.payload.filter((tc) => !existingTcIds.has(tc.id));
       return {
         ...state,
-        testCases: [...state.testCases, ...action.payload],
+        testCases: [...state.testCases, ...newTc],
       };
 
     case "UPDATE_TEST_CASE":

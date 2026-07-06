@@ -36,7 +36,7 @@ export function TestCaseDetailModal({ open, testCase, onClose }: TestCaseDetailM
           <span>{testCase.module}</span>
         </div>
         <div className="detail-row">
-          <span className="detail-label">功能点</span>
+          <span className="detail-label">测试点</span>
           <span>{testCase.feature}</span>
         </div>
         <div className="detail-row detail-row--full">
