@@ -89,6 +89,15 @@
   padding-top: 8px;
 }
 
+/* ─── Checkbox ─── */
+
+input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--blue);
+  cursor: pointer;
+}
+
 @media (max-width: 1180px) {
   .form-row--3 {
     grid-template-columns: 1fr;

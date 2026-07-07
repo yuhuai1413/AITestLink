@@ -547,12 +547,33 @@ function TestCasesTab({ projectId }: { projectId: string }) {
     }
   };
 
+  const handleExportManual = () => {
+    const manualCases = testCases.filter((tc) => tc.automation !== "适合");
+    if (manualCases.length === 0) { toast.warning("暂无手动测试用例"); return; }
+    const headers = ["编号", "模块", "功能点", "标题", "优先级", "前置条件", "测试步骤", "测试数据", "预期结果", "评审状态", "备注"];
+    const rows = manualCases.map((tc) => [
+      tc.caseCode, tc.module, tc.feature, tc.title, tc.priority,
+      tc.precondition, tc.steps, tc.testData, tc.expectedResult,
+      tc.reviewStatus, tc.remark,
+    ]);
+    const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `手动测试用例_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`已导出 ${manualCases.length} 条手动测试用例`);
+  };
+
   return (
     <div className="page-stack page-stack--spaced">
       <SectionHeader title="用例生成" description="从测试点生成可执行用例，支持评审和删除。"
         actions={<>
           {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={batchApprove}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
           {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
+          <button className="primary-button" type="button" onClick={handleExportManual} disabled={testCases.length === 0}><Download size={13} /> 导出手动测试用例</button>
           <button className="primary-button" type="button" onClick={handleGenerate} disabled={loading || !hasPrerequisite}>{loading ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loading ? "生成中..." : "生成用例"}</button>
         </>} />
       {error && <div className="error-banner"><span>{error}</span></div>}
@@ -1050,11 +1071,11 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
   const files = useProjectFiles(projectId);
   const testCases = useProjectTestCases(projectId);
   const templates = [
-    { id: "tpl-plan", name: "软件测试计划", desc: "测试范围、策略、资源、进度安排", icon: "📋", needs: ["files"] },
-    { id: "tpl-spec", name: "软件测试说明", desc: "测试环境、用例设计、执行方法", icon: "📝", needs: ["files", "testCases"] },
-    { id: "tpl-report", name: "软件测试报告", desc: "执行结果、缺陷统计、风险分析", icon: "📊", needs: ["testCases"] },
-    { id: "tpl-pc", name: "PC端操作手册", desc: "系统操作流程、功能说明", icon: "💻", needs: ["files"] },
-    { id: "tpl-app", name: "APP端操作手册", desc: "移动端操作流程、功能说明", icon: "📱", needs: ["files"] },
+    { id: "tpl-plan", name: "软件测试计划", desc: "测试范围、策略、资源、进度安排", needs: ["files"] },
+    { id: "tpl-spec", name: "软件测试说明", desc: "测试环境、用例设计、执行方法", needs: ["files", "testCases"] },
+    { id: "tpl-report", name: "软件测试报告", desc: "执行结果、缺陷统计、风险分析", needs: ["testCases"] },
+    { id: "tpl-pc", name: "PC端操作手册", desc: "系统操作流程、功能说明", needs: ["files"] },
+    { id: "tpl-app", name: "APP端操作手册", desc: "移动端操作流程、功能说明", needs: ["files"] },
   ];
   const [generating, setGenerating] = useState<string | null>(null);
   const [generated, setGenerated] = useState<Set<string>>(new Set());
@@ -1063,21 +1084,39 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="page-stack page-stack--spaced">
-      <SectionHeader title="选择模板生成文档" description="选择文档模板，系统将根据项目数据自动生成 Word 文档。" />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
-        {templates.map((t) => {
-          const ready = isReady(t.needs);
-          const done = generated.has(t.id);
-          return (
-            <div key={t.id} className="dash-card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 28 }}>{t.icon}</span><div><strong style={{ fontSize: 15 }}>{t.name}</strong><p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>{t.desc}</p></div></div>
-              {!ready && <p style={{ margin: 0, fontSize: 12, color: "var(--amber)" }}>数据不足，请先完善前置内容</p>}
-              <button className={done ? "ghost-button" : "primary-button"} type="button" style={{ width: "100%" }} onClick={() => handleGenerate(t.id)} disabled={generating === t.id || !ready}>{generating === t.id ? "生成中..." : done ? "重新生成" : "生成文档"}</button>
-              {done && <button className="text-button" type="button" style={{ width: "100%", justifyContent: "center" }}><Download size={14} /> 下载文档</button>}
-            </div>
-          );
-        })}
-      </div>
+      <SectionHeader title="文档生成" description="选择文档模板，系统将根据项目数据自动生成 Word 文档。" />
+      <section className="work-panel">
+        <DataTable rows={templates} getRowKey={(r) => r.id} columns={[
+          { key: "name", label: "模板名称", render: (r) => r.name },
+          { key: "desc", label: "说明", render: (r) => r.desc },
+          { key: "needs", label: "前置数据", render: (r) => r.needs.map((n) => n === "files" ? "文档" : "用例").join("、") },
+          { key: "status", label: "状态", align: "center", render: (r) => {
+            const ready = isReady(r.needs);
+            const done = generated.has(r.id);
+            if (done) return <StatusPill tone="green">已生成</StatusPill>;
+            if (!ready) return <StatusPill tone="amber">数据不足</StatusPill>;
+            return <StatusPill tone="slate">待生成</StatusPill>;
+          }},
+          { key: "time", label: "上传时间", render: () => formatTime(new Date().toISOString()) },
+          { key: "actions", label: "操作", align: "center", render: (r) => {
+            const ready = isReady(r.needs);
+            const done = generated.has(r.id);
+            return (
+              <div className="inline-actions">
+                <button className="text-button" type="button" onClick={() => toast.info(`${r.name}：${r.desc}`)}>查看</button>
+                <button className="text-button" type="button" disabled={!ready}>{ready ? "编辑" : "编辑"}</button>
+                <button className="text-button" type="button" onClick={() => handleGenerate(r.id)} disabled={generating === r.id || !ready}>
+                  {generating === r.id ? "生成中..." : "生成"}
+                </button>
+                <button className="text-button" type="button" onClick={() => {
+                  if (!done) { toast.warning("请先生成文档"); return; }
+                  toast.success("下载最终文档");
+                }}>最终文档</button>
+              </div>
+            );
+          }},
+        ]} />
+      </section>
     </div>
   );
 }

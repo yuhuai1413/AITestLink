@@ -1,8 +1,10 @@
 import { useCallback, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useStore } from "../../app/store";
 import { aiApi, requirementsApi, testPointsApi, testCasesApi } from "../../api/client";
 import type { AITaskType } from "../types/platform";
 import type { ApiRequirement, ApiTestPoint, ApiTestCase } from "../../api/client";
+import { toast } from "sonner";
 
 interface UseAIActionReturn {
   loading: boolean;
@@ -15,18 +17,39 @@ interface UseAIActionReturn {
 /** 真实的 AI 操作 hook，调用后端 API */
 export function useAIAction(projectId: string): UseAIActionReturn {
   const { dispatch } = useStore();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 检查模型配置
+  const checkConfig = useCallback(async (taskType: string): Promise<boolean> => {
+    try {
+      const result = await aiApi.checkConfig(projectId, taskType);
+      if (!result.configured) {
+        toast.error(result.message, {
+          action: {
+            label: "去配置",
+            onClick: () => navigate("/model-config"),
+          },
+          duration: 5000,
+        });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error("Check config error:", err);
+      return true; // 检查失败时不阻止执行
+    }
+  }, [projectId, navigate]);
+
   // 轮询任务状态
   const pollTask = useCallback(async (taskId: string, type: AITaskType): Promise<boolean> => {
-    for (let i = 0; i < 120; i++) { // 最多轮询 2 分钟
+    for (let i = 0; i < 120; i++) {
       await new Promise((r) => setTimeout(r, 1000));
       try {
         const tasks = await aiApi.listTasks(projectId);
         const task = tasks.find((t) => t.id === taskId);
         if (task && (task.status === "成功" || task.status === "失败")) {
-          // 更新任务状态
           dispatch({
             type: "UPDATE_AI_TASK",
             payload: {
@@ -51,14 +74,16 @@ export function useAIAction(projectId: string): UseAIActionReturn {
 
   // 解析需求
   const parseRequirements = useCallback(async () => {
+    // 检查配置
+    const configured = await checkConfig("需求解析");
+    if (!configured) return;
+
     setLoading(true);
     setError(null);
 
     try {
-      // 发起 AI 解析任务
       const task = await aiApi.parseRequirements(projectId);
 
-      // 添加任务到 store
       dispatch({
         type: "ADD_AI_TASK",
         payload: {
@@ -71,13 +96,10 @@ export function useAIAction(projectId: string): UseAIActionReturn {
         },
       });
 
-      // 轮询任务状态
       const success = await pollTask(task.id, "需求解析");
 
       if (success) {
-        // 获取解析结果
         const requirements = await requirementsApi.list(projectId);
-        // 清除旧数据，添加新数据
         requirements.forEach((req: ApiRequirement) => {
           dispatch({
             type: "ADD_REQUIREMENT",
@@ -103,18 +125,20 @@ export function useAIAction(projectId: string): UseAIActionReturn {
     } finally {
       setLoading(false);
     }
-  }, [projectId, dispatch, pollTask]);
+  }, [projectId, dispatch, pollTask, checkConfig]);
 
   // 生成测试点
   const generateTestPoints = useCallback(async () => {
+    // 检查配置
+    const configured = await checkConfig("测试点生成");
+    if (!configured) return;
+
     setLoading(true);
     setError(null);
 
     try {
-      // 发起生成测试点任务
       const task = await aiApi.generateTestPoints(projectId);
 
-      // 添加任务到 store
       dispatch({
         type: "ADD_AI_TASK",
         payload: {
@@ -127,13 +151,10 @@ export function useAIAction(projectId: string): UseAIActionReturn {
         },
       });
 
-      // 轮询任务状态
       const success = await pollTask(task.id, "测试点生成");
 
       if (success) {
-        // 获取生成结果
         const testPoints = await testPointsApi.list(projectId);
-        // 清除旧数据，添加新数据
         testPoints.forEach((tp: ApiTestPoint) => {
           dispatch({
             type: "ADD_TEST_POINT",
@@ -160,18 +181,20 @@ export function useAIAction(projectId: string): UseAIActionReturn {
     } finally {
       setLoading(false);
     }
-  }, [projectId, dispatch, pollTask]);
+  }, [projectId, dispatch, pollTask, checkConfig]);
 
   // 生成测试用例
   const generateTestCases = useCallback(async () => {
+    // 检查配置
+    const configured = await checkConfig("用例生成");
+    if (!configured) return;
+
     setLoading(true);
     setError(null);
 
     try {
-      // 发起生成测试用例任务
       const task = await aiApi.generateTestCases(projectId);
 
-      // 添加任务到 store
       dispatch({
         type: "ADD_AI_TASK",
         payload: {
@@ -184,13 +207,10 @@ export function useAIAction(projectId: string): UseAIActionReturn {
         },
       });
 
-      // 轮询任务状态
       const success = await pollTask(task.id, "用例生成");
 
       if (success) {
-        // 获取生成结果
         const testCases = await testCasesApi.list(projectId);
-        // 清除旧数据，添加新数据
         testCases.forEach((tc: ApiTestCase) => {
           dispatch({
             type: "ADD_TEST_CASE",
@@ -225,7 +245,7 @@ export function useAIAction(projectId: string): UseAIActionReturn {
     } finally {
       setLoading(false);
     }
-  }, [projectId, dispatch, pollTask]);
+  }, [projectId, dispatch, pollTask, checkConfig]);
 
   return {
     loading,

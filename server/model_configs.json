@@ -4,7 +4,7 @@
     {
       "id": "parse-requirements",
       "name": "需求解析",
-      "aiNode": "需求解析节点",
+      "aiNode": "需求解析",
       "provider": "小米-MiMo大模型平台",
       "modelName": "mimo-v2.5",
       "apiKey": "tp-cazodxk90u6tcem5z6cumzxxlxzm5ioon8hf561ow4bo0jzf",
@@ -15,7 +15,7 @@
     {
       "id": "generate-test-points",
       "name": "测试点生成",
-      "aiNode": "测试设计节点",
+      "aiNode": "测试设计",
       "provider": "小米-MiMo大模型平台",
       "modelName": "mimo-v2.5",
       "apiKey": "",
@@ -26,7 +26,7 @@
     {
       "id": "generate-test-cases",
       "name": "用例生成",
-      "aiNode": "测试设计节点",
+      "aiNode": "测试设计",
       "provider": "小米-MiMo大模型平台",
       "modelName": "mimo-v2.5",
       "apiKey": "",
@@ -37,12 +37,56 @@
     {
       "id": "review-test-cases",
       "name": "用例评审",
-      "aiNode": "测试设计节点",
+      "aiNode": "测试设计",
       "provider": "小米-MiMo大模型平台",
       "modelName": "mimo-v2.5",
       "apiKey": "",
       "endpoint": "https://api.xiaomimimo.com/v1",
       "description": "评审测试用例的完整性和可执行性",
+      "enabled": true
+    },
+    {
+      "id": "generate-scripts",
+      "name": "脚本生成",
+      "aiNode": "自动化",
+      "provider": "小米-MiMo大模型平台",
+      "modelName": "mimo-v2.5",
+      "apiKey": "",
+      "endpoint": "https://api.xiaomimimo.com/v1",
+      "description": "根据测试用例生成可执行的自动化测试脚本",
+      "enabled": true
+    },
+    {
+      "id": "generate-test-plan",
+      "name": "测试计划生成",
+      "aiNode": "文档生成",
+      "provider": "小米-MiMo大模型平台",
+      "modelName": "mimo-v2.5",
+      "apiKey": "",
+      "endpoint": "https://api.xiaomimimo.com/v1",
+      "description": "根据项目数据生成软件测试计划文档",
+      "enabled": true
+    },
+    {
+      "id": "generate-test-report",
+      "name": "测试报告生成",
+      "aiNode": "文档生成",
+      "provider": "小米-MiMo大模型平台",
+      "modelName": "mimo-v2.5",
+      "apiKey": "",
+      "endpoint": "https://api.xiaomimimo.com/v1",
+      "description": "根据测试结果生成软件测试报告文档",
+      "enabled": true
+    },
+    {
+      "id": "generate-test-summary",
+      "name": "测试总结生成",
+      "aiNode": "文档生成",
+      "provider": "小米-MiMo大模型平台",
+      "modelName": "mimo-v2.5",
+      "apiKey": "",
+      "endpoint": "https://api.xiaomimimo.com/v1",
+      "description": "根据测试数据生成测试总结报告",
       "enabled": true
     }
   ]

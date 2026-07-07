@@ -18,16 +18,25 @@ TASK_CONFIG_MAP = {
     "测试点生成": "generate-test-points",
     "用例生成": "generate-test-cases",
     "用例评审": "review-test-cases",
+    "脚本生成": "generate-scripts",
+    "测试计划生成": "generate-test-plan",
+    "测试报告生成": "generate-test-report",
+    "测试总结生成": "generate-test-summary",
 }
 
 
-async def _get_config_for_task(task_type: str) -> dict:
-    """根据任务类型从数据库获取配置"""
+async def _get_config_for_task(task_type: str, user_id: str) -> dict:
+    """根据任务类型和用户ID从数据库获取配置"""
     config_id = TASK_CONFIG_MAP.get(task_type)
 
     async with async_session() as db:
         if config_id:
-            result = await db.execute(select(ModelConfig).where(ModelConfig.id == config_id))
+            result = await db.execute(
+                select(ModelConfig).where(
+                    ModelConfig.id == config_id,
+                    ModelConfig.user_id == user_id
+                )
+            )
             config = result.scalar_one_or_none()
             if config and config.enabled and config.api_key:
                 return {
@@ -36,9 +45,13 @@ async def _get_config_for_task(task_type: str) -> dict:
                     "model": config.model_name,
                 }
 
-        # 尝试获取任意一个启用的配置
+        # 尝试获取该用户任意一个启用的配置
         result = await db.execute(
-            select(ModelConfig).where(ModelConfig.enabled.is_(True), ModelConfig.api_key != "")
+            select(ModelConfig).where(
+                ModelConfig.user_id == user_id,
+                ModelConfig.enabled.is_(True),
+                ModelConfig.api_key != ""
+            )
         )
         configs = result.scalars().all()
         if configs:
@@ -57,10 +70,34 @@ async def _get_config_for_task(task_type: str) -> dict:
     }
 
 
+async def check_config_for_task(task_type: str, user_id: str) -> dict:
+    """检查用户是否已配置指定任务的模型"""
+    config_id = TASK_CONFIG_MAP.get(task_type)
+
+    async with async_session() as db:
+        if config_id:
+            result = await db.execute(
+                select(ModelConfig).where(
+                    ModelConfig.id == config_id,
+                    ModelConfig.user_id == user_id
+                )
+            )
+            config = result.scalar_one_or_none()
+            if config:
+                is_configured = bool(config.provider and config.model_name and config.api_key and config.endpoint)
+                return {
+                    "configured": is_configured,
+                    "name": config.name,
+                    "message": "已配置" if is_configured else f"请先在模型配置页面设置「{config.name}」的模型数据",
+                }
+
+    return {"configured": False, "name": task_type, "message": "配置不存在"}
+
+
 class AIService:
-    async def _call_llm(self, system_prompt: str, user_prompt: str, task_type: str = "") -> str:
+    async def _call_llm(self, system_prompt: str, user_prompt: str, task_type: str = "", user_id: str = "") -> str:
         """Call LLM API and return the response content."""
-        config = await _get_config_for_task(task_type)
+        config = await _get_config_for_task(task_type, user_id)
 
         headers = {
             "Authorization": f"Bearer {config['api_key']}",
@@ -118,7 +155,7 @@ class AIService:
             logger.error(f"Response preview: {text[:500]}")
             return []
 
-    async def parse_requirements(self, file_content: str) -> list[dict]:
+    async def parse_requirements(self, file_content: str, user_id: str = "") -> list[dict]:
         """Parse requirement document and extract structured requirements."""
         system_prompt = """你是一个专业的软件测试需求分析专家。你的任务是从需求文档中提取结构化的需求信息。
 
@@ -134,10 +171,10 @@ class AIService:
 
         user_prompt = f"请分析以下需求文档内容，提取结构化需求：\n\n{file_content[:3000]}"
 
-        response = await self._call_llm(system_prompt, user_prompt, "需求解析")
+        response = await self._call_llm(system_prompt, user_prompt, "需求解析", user_id)
         return self._parse_json_response(response)
 
-    async def generate_test_points(self, requirements_text: str) -> list[dict]:
+    async def generate_test_points(self, requirements_text: str, user_id: str = "") -> list[dict]:
         """Generate test points from requirements."""
         system_prompt = """你是一个专业的软件测试设计专家。你的任务是根据需求生成测试点。
 
@@ -155,10 +192,10 @@ class AIService:
 
         user_prompt = f"请根据以下需求生成测试点：\n\n{requirements_text[:3000]}"
 
-        response = await self._call_llm(system_prompt, user_prompt, "测试点生成")
+        response = await self._call_llm(system_prompt, user_prompt, "测试点生成", user_id)
         return self._parse_json_response(response)
 
-    async def generate_test_cases(self, test_points_text: str) -> list[dict]:
+    async def generate_test_cases(self, test_points_text: str, user_id: str = "") -> list[dict]:
         """Generate test cases from test points."""
         system_prompt = """你是一个专业的软件测试用例编写专家。你的任务是根据测试点生成详细的测试用例。
 
@@ -180,5 +217,5 @@ class AIService:
 
         user_prompt = f"请根据以下测试点生成测试用例：\n\n{test_points_text[:3000]}"
 
-        response = await self._call_llm(system_prompt, user_prompt, "用例生成")
+        response = await self._call_llm(system_prompt, user_prompt, "用例生成", user_id)
         return self._parse_json_response(response)

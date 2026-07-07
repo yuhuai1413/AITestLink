@@ -8,10 +8,11 @@ import { modelConfigApi, type ApiModelConfig } from "../../api/client";
 import { toast } from "sonner";
 
 const nodeColors: Record<string, string> = {
-  "需求解析节点": "green",
-  "测试点生成节点": "blue",
-  "用例生成节点": "amber",
-  "用例评审节点": "red",
+  "需求解析": "green",
+  "测试设计": "blue",
+  "用例评审": "red",
+  "自动化": "amber",
+  "文档生成": "purple",
 };
 
 const providerModels: Record<string, { models: string[]; endpoint: string }> = {
@@ -57,53 +58,6 @@ const providerModels: Record<string, { models: string[]; endpoint: string }> = {
   },
 };
 
-const defaultConfigs: ApiModelConfig[] = [
-  {
-    id: "parse-requirements",
-    name: "需求解析",
-    aiNode: "需求解析节点",
-    provider: "小米-MiMo大模型平台",
-    modelName: "mimo-v2.5",
-    apiKey: "",
-    endpoint: "https://api.xiaomimimo.com/v1",
-    description: "从需求文档中提取模块、测试点和业务规则",
-    enabled: true,
-  },
-  {
-    id: "generate-test-points",
-    name: "测试点生成",
-    aiNode: "测试设计节点",
-    provider: "小米-MiMo大模型平台",
-    modelName: "mimo-v2.5",
-    apiKey: "",
-    endpoint: "https://api.xiaomimimo.com/v1",
-    description: "根据需求生成覆盖正常、异常、边界等场景的测试点",
-    enabled: true,
-  },
-  {
-    id: "generate-test-cases",
-    name: "用例生成",
-    aiNode: "测试设计节点",
-    provider: "小米-MiMo大模型平台",
-    modelName: "mimo-v2.5",
-    apiKey: "",
-    endpoint: "https://api.xiaomimimo.com/v1",
-    description: "根据测试点生成包含步骤和预期结果的测试用例",
-    enabled: true,
-  },
-  {
-    id: "review-test-cases",
-    name: "用例评审",
-    aiNode: "测试设计节点",
-    provider: "小米-MiMo大模型平台",
-    modelName: "mimo-v2.5",
-    apiKey: "",
-    endpoint: "https://api.xiaomimimo.com/v1",
-    description: "评审测试用例的完整性和可执行性",
-    enabled: true,
-  },
-];
-
 function maskKey(key: string): string {
   if (!key) return "****未配置";
   if (key.length <= 8) return "****" + key;
@@ -133,10 +87,8 @@ export function ModelConfigPage() {
       if (data && data.length > 0) {
         setConfigs(data);
       }
-      // 如果后端没有配置，不覆盖，保持空列表让用户手动添加
     } catch (error) {
       console.error("Failed to load configs:", error);
-      // 加载失败时不覆盖现有配置
     } finally {
       setLoading(false);
     }
@@ -156,9 +108,11 @@ export function ModelConfigPage() {
       const result = await modelConfigApi.update(newConfigs);
       if (result.ok) {
         setConfigs(newConfigs);
+        toast.success("保存成功");
       }
     } catch (error) {
       console.error("Failed to save configs:", error);
+      toast.error("保存失败");
     } finally {
       setSaving(false);
     }
@@ -172,7 +126,6 @@ export function ModelConfigPage() {
       const result = await modelConfigApi.test(config.id);
       if (result.ok) {
         setTestResults(prev => ({ ...prev, [config.id]: "success" }));
-        // 显示成功提示
         toast.success(result.message || "连通正常");
       } else {
         setTestResults(prev => ({ ...prev, [config.id]: "error" }));
@@ -184,7 +137,6 @@ export function ModelConfigPage() {
       toast.error(error.message || "测试失败");
     } finally {
       setTestingId(null);
-      // 3秒后清除测试结果
       setTimeout(() => {
         setTestResults(prev => ({ ...prev, [config.id]: null }));
       }, 3000);
@@ -193,22 +145,18 @@ export function ModelConfigPage() {
 
   const updateConfig = async (id: string, field: keyof ApiModelConfig, value: string | boolean) => {
     const newConfigs = configs.map((c) => (c.id === id ? { ...c, [field]: value } : c));
-    // 先保存到后端，成功后再更新状态
     await saveConfigs(newConfigs);
   };
 
   const handleSaveEdit = async () => {
     if (editingConfig) {
-      // 直接用 editingConfig 更新 configs 中对应项，确保 apiKey 被正确传递
       const newConfigs = configs.map((c) => {
         if (c.id === editingConfig.id) {
-          // 返回 editingConfig 的副本，确保所有字段（包括 apiKey）都被保留
           return { ...editingConfig };
         }
         return c;
       });
       await saveConfigs(newConfigs);
-      // 重新加载配置以确保状态同步
       await loadConfigs();
       setEditingConfig(null);
       setShowApiKey(false);
@@ -232,13 +180,13 @@ export function ModelConfigPage() {
         toolbar={
           <div className="search-form">
             <div className="search-form__field">
-              <label className="search-form__label">AI 节点</label>
+              <label className="search-form__label">AI 能力</label>
               <select
                 className="search-form__select"
                 value={nodeFilter}
                 onChange={(e) => setNodeFilter(e.target.value)}
               >
-                <option value="all">全部节点</option>
+                <option value="all">全部</option>
                 {Object.keys(nodeColors).map((n) => (
                   <option key={n} value={n}>{n}</option>
                 ))}
@@ -267,15 +215,15 @@ export function ModelConfigPage() {
         columns={[
             {
               key: "aiNode",
-              label: "AI 节点",
+              label: "AI 能力",
               width: "10%",
               render: (row) => (
                 <StatusPill tone={(nodeColors[row.aiNode] || "slate") as any}>{row.aiNode}</StatusPill>
               ),
             },
             { key: "description", label: "说明", align: "left", width: "20%", render: (row) => <span style={{ fontSize: 13 }}>{row.description}</span> },
-            { key: "provider", label: "供应商", width: "8%", render: (row) => <span className="provider-tag">{row.provider.split("-")[0]}</span> },
-            { key: "modelName", label: "模型", width: "10%", render: (row) => row.modelName },
+            { key: "provider", label: "供应商", width: "8%", render: (row) => <span className="provider-tag">{row.provider ? row.provider.split("-")[0] : "-"}</span> },
+            { key: "modelName", label: "模型", width: "10%", render: (row) => row.modelName || "-" },
             {
               key: "apiKey",
               label: "API Key",
@@ -288,6 +236,7 @@ export function ModelConfigPage() {
               width: "20%",
               render: (row) => {
                 const ep = row.endpoint;
+                if (!ep) return <span className="text-muted" style={{ fontSize: 12 }}>-</span>;
                 const display = ep.length > 35 ? ep.slice(0, 35) + "..." : ep;
                 return (
                   <span className="text-muted" style={{ fontSize: 12 }} title={ep}>
@@ -355,6 +304,7 @@ export function ModelConfigPage() {
                     endpoint: models?.endpoint || "",
                   });
                 }}>
+                  <option value="">请选择供应商</option>
                   {Object.keys(providerModels).map((p) => (
                     <option key={p} value={p}>{p}</option>
                   ))}
@@ -365,10 +315,13 @@ export function ModelConfigPage() {
               <label className="form-label">
                 模型名称
                 <select className="form-select" value={editingConfig.modelName} onChange={(e) => setEditingConfig({ ...editingConfig, modelName: e.target.value })}>
+                  <option value="">请选择模型</option>
                   {(providerModels[editingConfig.provider]?.models || []).map((m) => (
                     <option key={m} value={m}>{m}</option>
                   ))}
-                  <option value={editingConfig.modelName}>{editingConfig.modelName}</option>
+                  {editingConfig.modelName && !providerModels[editingConfig.provider]?.models?.includes(editingConfig.modelName) && (
+                    <option value={editingConfig.modelName}>{editingConfig.modelName}</option>
+                  )}
                 </select>
               </label>
             </div>
@@ -386,7 +339,7 @@ export function ModelConfigPage() {
             <div className="form-row">
               <label className="form-label">
                 Endpoint
-                <input className="form-input" type="text" value={editingConfig.endpoint} onChange={(e) => setEditingConfig({ ...editingConfig, endpoint: e.target.value })} required />
+                <input className="form-input" type="text" value={editingConfig.endpoint} onChange={(e) => setEditingConfig({ ...editingConfig, endpoint: e.target.value })} placeholder="请输入 API 地址" required />
               </label>
             </div>
             <div className="form-row">

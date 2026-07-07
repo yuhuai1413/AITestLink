@@ -10,6 +10,18 @@ from app.utils import encrypt_value, decrypt_value
 
 router = APIRouter()
 
+# 默认模型配置模板（按测试流程排序）
+DEFAULT_CONFIGS = [
+    {"id": "parse-requirements", "name": "需求解析", "ai_node": "需求解析", "description": "从需求文档中提取模块、功能点和业务规则，生成结构化需求数据", "display_order": 1},
+    {"id": "generate-test-points", "name": "测试点生成", "ai_node": "测试设计", "description": "根据需求生成覆盖正常流程、异常流程、边界值等场景的测试点", "display_order": 2},
+    {"id": "generate-test-cases", "name": "用例生成", "ai_node": "测试设计", "description": "根据测试点生成包含前置条件、测试步骤和预期结果的详细测试用例", "display_order": 3},
+    {"id": "review-test-cases", "name": "用例评审", "ai_node": "测试设计", "description": "自动评审测试用例的完整性、可执行性和覆盖度", "display_order": 4},
+    {"id": "generate-scripts", "name": "脚本生成", "ai_node": "自动化", "description": "根据测试用例自动生成可执行的 Playwright 自动化测试脚本", "display_order": 5},
+    {"id": "generate-test-plan", "name": "测试计划生成", "ai_node": "文档生成", "description": "根据项目数据和测试范围自动生成软件测试计划文档", "display_order": 6},
+    {"id": "generate-test-report", "name": "测试报告生成", "ai_node": "文档生成", "description": "根据测试执行结果自动生成包含缺陷统计和风险分析的测试报告", "display_order": 7},
+    {"id": "generate-test-summary", "name": "测试总结生成", "ai_node": "文档生成", "description": "汇总测试数据，生成测试总结报告和质量评估", "display_order": 8},
+]
+
 
 class ModelConfigSchema(BaseModel):
     id: str
@@ -41,12 +53,43 @@ def _to_dict(m: ModelConfig) -> dict:
     }
 
 
+async def _ensure_user_configs(db: AsyncSession, user_id: str):
+    """确保用户有所有默认配置，新用户初始配置为空"""
+    result = await db.execute(
+        select(ModelConfig).where(ModelConfig.user_id == user_id)
+    )
+    existing = {c.id for c in result.scalars().all()}
+
+    for config in DEFAULT_CONFIGS:
+        if config["id"] not in existing:
+            db.add(ModelConfig(
+                id=config["id"],
+                user_id=user_id,
+                name=config["name"],
+                ai_node=config["ai_node"],
+                provider="",
+                model_name="",
+                api_key="",
+                endpoint="",
+                description=config["description"],
+                enabled=True,
+                display_order=config["display_order"],
+            ))
+
+    await db.commit()
+
+
 @router.get("/model-configs")
 async def list_model_configs(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(ModelConfig).order_by(ModelConfig.id))
+    user_id = user["sub"]
+    await _ensure_user_configs(db, user_id)
+
+    result = await db.execute(
+        select(ModelConfig).where(ModelConfig.user_id == user_id).order_by(ModelConfig.display_order)
+    )
     configs = result.scalars().all()
     return [_to_dict(c) for c in configs]
 
@@ -57,11 +100,37 @@ async def get_model_config(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(ModelConfig).where(ModelConfig.id == config_id))
+    user_id = user["sub"]
+    result = await db.execute(
+        select(ModelConfig).where(ModelConfig.id == config_id, ModelConfig.user_id == user_id)
+    )
     config = result.scalar_one_or_none()
     if not config:
         raise HTTPException(status_code=404, detail="配置不存在")
     return _to_dict(config)
+
+
+@router.get("/model-configs/check/{config_id}")
+async def check_model_config(
+    config_id: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """检查指定配置是否已配置（供应商、模型、API Key、Endpoint 都不为空）"""
+    user_id = user["sub"]
+    result = await db.execute(
+        select(ModelConfig).where(ModelConfig.id == config_id, ModelConfig.user_id == user_id)
+    )
+    config = result.scalar_one_or_none()
+    if not config:
+        return {"configured": False, "message": "配置不存在"}
+
+    is_configured = bool(config.provider and config.model_name and config.api_key and config.endpoint)
+    return {
+        "configured": is_configured,
+        "message": "已配置" if is_configured else "请先在模型配置页面设置该功能的模型数据",
+        "name": config.name,
+    }
 
 
 @router.put("/model-configs")
@@ -70,7 +139,10 @@ async def update_model_configs(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(ModelConfig))
+    user_id = user["sub"]
+    result = await db.execute(
+        select(ModelConfig).where(ModelConfig.user_id == user_id)
+    )
     existing = {c.id: c for c in result.scalars().all()}
 
     for cfg in data.configs:
@@ -87,6 +159,7 @@ async def update_model_configs(
         else:
             m = ModelConfig(
                 id=cfg.id,
+                user_id=user_id,
                 name=cfg.name,
                 ai_node=cfg.aiNode,
                 provider=cfg.provider,

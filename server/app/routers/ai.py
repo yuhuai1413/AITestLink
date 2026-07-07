@@ -3,7 +3,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +13,8 @@ from app.models.file_asset import FileAsset
 from app.models.requirement import Requirement
 from app.models.test_point import TestPoint
 from app.models.test_case import TestCase
-from app.services.ai_service import AIService
+from app.routers.auth import get_current_user
+from app.services.ai_service import AIService, check_config_for_task
 from app.utils import model_to_dict
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ async def _update_task_status(db: AsyncSession, task_id: str, status: str, error
         task.status = status
         task.finished_at = datetime.now(timezone.utc)
         if error:
-            task.error_message = error[:2000]  # 截断过长的错误信息
+            task.error_message = error[:2000]
         await db.commit()
 
 
@@ -95,21 +96,19 @@ def _read_file_content(file_obj: FileAsset) -> str:
 
 # ─── 后台任务 ───
 
-async def run_parse_requirements(task_id: str, project_id: str, file_content: str):
+async def run_parse_requirements(task_id: str, project_id: str, file_content: str, user_id: str):
     async with async_session() as db:
         try:
-            # 查询文件列表
             file_result = await db.execute(
                 select(FileAsset).where(FileAsset.project_id == project_id)
             )
             files = file_result.scalars().all()
 
-            # 更新文件状态为"解析中"
             for f in files:
                 f.parse_status = "解析中"
             await db.commit()
 
-            requirements = await ai_service.parse_requirements(file_content)
+            requirements = await ai_service.parse_requirements(file_content, user_id)
             for req in requirements:
                 db.add(Requirement(
                     id=str(uuid.uuid4()),
@@ -122,7 +121,6 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
                     question=req.get("question", ""),
                 ))
 
-            # 更新文件状态为"已完成"
             for f in files:
                 f.parse_status = "已完成"
 
@@ -142,7 +140,7 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
             await _update_task_status(db, task_id, "失败", str(e))
 
 
-async def run_generate_test_points(task_id: str, project_id: str):
+async def run_generate_test_points(task_id: str, project_id: str, user_id: str):
     async with async_session() as db:
         try:
             result = await db.execute(
@@ -152,7 +150,7 @@ async def run_generate_test_points(task_id: str, project_id: str):
             req_text = "\n".join(
                 f"- 模块:{r.module} 功能:{r.feature} 规则:{r.rule}" for r in requirements
             )
-            points = await ai_service.generate_test_points(req_text)
+            points = await ai_service.generate_test_points(req_text, user_id)
 
             for (tp_id, _), pt in zip(_module_counter(points, "TP"), points):
                 db.add(TestPoint(
@@ -173,7 +171,7 @@ async def run_generate_test_points(task_id: str, project_id: str):
             await _update_task_status(db, task_id, "失败", str(e))
 
 
-async def run_generate_test_cases(task_id: str, project_id: str):
+async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
     async with async_session() as db:
         try:
             tp_result = await db.execute(
@@ -184,7 +182,7 @@ async def run_generate_test_cases(task_id: str, project_id: str):
                 f"- 模块:{tp.module} 类型:{tp.type} 标题:{tp.title} 优先级:{tp.priority}"
                 for tp in points
             )
-            cases = await ai_service.generate_test_cases(pt_text)
+            cases = await ai_service.generate_test_cases(pt_text, user_id)
 
             for (case_code, _), c in zip(_module_counter(cases, "TC"), cases):
                 db.add(TestCase(
@@ -212,19 +210,40 @@ async def run_generate_test_cases(task_id: str, project_id: str):
 # ─── 路由 ───
 
 @router.get("/projects/{project_id}/ai/tasks")
-async def list_ai_tasks(project_id: str, db: AsyncSession = Depends(get_db)):
+async def list_ai_tasks(
+    project_id: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(
         select(AITask).where(AITask.project_id == project_id).order_by(AITask.created_at.desc())
     )
     return [model_to_dict(t) for t in result.scalars().all()]
 
 
+@router.get("/projects/{project_id}/ai/check-config/{task_type}")
+async def check_ai_config(
+    project_id: str,
+    task_type: str,
+    user: dict = Depends(get_current_user),
+):
+    """检查用户是否已配置指定 AI 任务的模型"""
+    result = await check_config_for_task(task_type, user["id"])
+    return result
+
+
 @router.post("/projects/{project_id}/ai/parse-requirements")
 async def parse_requirements(
     project_id: str,
     background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # 检查配置
+    config_check = await check_config_for_task("需求解析", user["id"])
+    if not config_check["configured"]:
+        raise HTTPException(status_code=400, detail=config_check["message"])
+
     file_result = await db.execute(
         select(FileAsset).where(FileAsset.project_id == project_id)
     )
@@ -250,7 +269,7 @@ async def parse_requirements(
     db.add(task)
     await db.commit()
 
-    background_tasks.add_task(run_parse_requirements, task.id, project_id, file_content)
+    background_tasks.add_task(run_parse_requirements, task.id, project_id, file_content, user["id"])
     return model_to_dict(task)
 
 
@@ -258,8 +277,14 @@ async def parse_requirements(
 async def generate_test_points(
     project_id: str,
     background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # 检查配置
+    config_check = await check_config_for_task("测试点生成", user["id"])
+    if not config_check["configured"]:
+        raise HTTPException(status_code=400, detail=config_check["message"])
+
     task = AITask(
         id=str(uuid.uuid4()),
         project_id=project_id,
@@ -270,7 +295,7 @@ async def generate_test_points(
     db.add(task)
     await db.commit()
 
-    background_tasks.add_task(run_generate_test_points, task.id, project_id)
+    background_tasks.add_task(run_generate_test_points, task.id, project_id, user["id"])
     return model_to_dict(task)
 
 
@@ -278,8 +303,14 @@ async def generate_test_points(
 async def generate_test_cases(
     project_id: str,
     background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # 检查配置
+    config_check = await check_config_for_task("用例生成", user["id"])
+    if not config_check["configured"]:
+        raise HTTPException(status_code=400, detail=config_check["message"])
+
     task = AITask(
         id=str(uuid.uuid4()),
         project_id=project_id,
@@ -290,5 +321,5 @@ async def generate_test_cases(
     db.add(task)
     await db.commit()
 
-    background_tasks.add_task(run_generate_test_cases, task.id, project_id)
+    background_tasks.add_task(run_generate_test_cases, task.id, project_id, user["id"])
     return model_to_dict(task)
