@@ -12,28 +12,27 @@ from app.utils import decrypt_value
 logger = logging.getLogger(__name__)
 
 
-# 任务类型到配置ID的映射
+# 任务类型到配置key的映射
 TASK_CONFIG_MAP = {
     "需求解析": "parse-requirements",
     "测试点生成": "generate-test-points",
     "用例生成": "generate-test-cases",
     "用例评审": "review-test-cases",
     "脚本生成": "generate-scripts",
-    "测试计划生成": "generate-test-plan",
-    "测试报告生成": "generate-test-report",
-    "测试总结生成": "generate-test-summary",
+    "执行脚本": "execute-scripts",
+    "文档生成": "generate-docs",
 }
 
 
 async def _get_config_for_task(task_type: str, user_id: str) -> dict:
     """根据任务类型和用户ID从数据库获取配置"""
-    config_id = TASK_CONFIG_MAP.get(task_type)
+    config_key = TASK_CONFIG_MAP.get(task_type)
 
     async with async_session() as db:
-        if config_id:
+        if config_key:
             result = await db.execute(
                 select(ModelConfig).where(
-                    ModelConfig.id == config_id,
+                    ModelConfig.config_key == config_key,
                     ModelConfig.user_id == user_id
                 )
             )
@@ -72,13 +71,13 @@ async def _get_config_for_task(task_type: str, user_id: str) -> dict:
 
 async def check_config_for_task(task_type: str, user_id: str) -> dict:
     """检查用户是否已配置指定任务的模型"""
-    config_id = TASK_CONFIG_MAP.get(task_type)
+    config_key = TASK_CONFIG_MAP.get(task_type)
 
     async with async_session() as db:
-        if config_id:
+        if config_key:
             result = await db.execute(
                 select(ModelConfig).where(
-                    ModelConfig.id == config_id,
+                    ModelConfig.config_key == config_key,
                     ModelConfig.user_id == user_id
                 )
             )

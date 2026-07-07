@@ -19,7 +19,7 @@ async def list_projects(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Use subquery to avoid N+1
+    user_id = user["sub"]
     count_subq = (
         select(TestCase.project_id, func.count(TestCase.id).label("case_count"))
         .group_by(TestCase.project_id)
@@ -28,6 +28,7 @@ async def list_projects(
     result = await db.execute(
         select(Project, func.coalesce(count_subq.c.case_count, 0).label("case_count"))
         .outerjoin(count_subq, Project.id == count_subq.c.project_id)
+        .where(Project.user_id == user_id)
         .order_by(Project.updated_at.desc())
     )
     rows = result.all()
@@ -47,20 +48,23 @@ async def create_project(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    user_id = user["sub"]
     existing = await db.execute(
         select(Project).where(
+            Project.user_id == user_id,
             Project.name == data.name,
-            Project.test_type == data.testType,
+            Project.test_type == data.test_type,
         )
     )
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail=f"项目「{data.name}」已存在同类型「{data.testType}」的记录，请勿重复创建")
+        raise HTTPException(status_code=409, detail=f"项目「{data.name}」已存在同类型「{data.test_type}」的记录，请勿重复创建")
 
     project = Project(
+        user_id=user_id,
         name=data.name,
-        test_type=data.testType,
-        test_status=data.testStatus,
-        doc_status=data.docStatus,
+        test_type=data.test_type,
+        test_status=data.test_status,
+        doc_status=data.doc_status,
         priority=data.priority,
         description=data.description,
     )
@@ -76,7 +80,10 @@ async def get_project(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Project).where(Project.id == project_id))
+    user_id = user["sub"]
+    result = await db.execute(
+        select(Project).where(Project.id == project_id, Project.user_id == user_id)
+    )
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -98,7 +105,10 @@ async def update_project(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Project).where(Project.id == project_id))
+    user_id = user["sub"]
+    result = await db.execute(
+        select(Project).where(Project.id == project_id, Project.user_id == user_id)
+    )
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -128,7 +138,10 @@ async def delete_project(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Project).where(Project.id == project_id))
+    user_id = user["sub"]
+    result = await db.execute(
+        select(Project).where(Project.id == project_id, Project.user_id == user_id)
+    )
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")

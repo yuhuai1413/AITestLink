@@ -7,6 +7,7 @@ from app.models.requirement import Requirement
 from app.routers.auth import get_current_user
 from app.schemas.requirement import RequirementUpdate
 from app.utils import model_to_dict
+from app.utils import verify_project_owner
 
 router = APIRouter()
 
@@ -17,6 +18,7 @@ async def list_requirements(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_project_owner(db, project_id, user["sub"])
     result = await db.execute(
         select(Requirement).where(Requirement.project_id == project_id)
     )
@@ -34,6 +36,8 @@ async def update_requirement(
     req = result.scalar_one_or_none()
     if not req:
         raise HTTPException(status_code=404, detail="Requirement not found")
+
+    await verify_project_owner(db, req.project_id, user["sub"])
 
     update_data = data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -54,6 +58,9 @@ async def delete_requirement(
     req = result.scalar_one_or_none()
     if not req:
         raise HTTPException(status_code=404, detail="Requirement not found")
+
+    await verify_project_owner(db, req.project_id, user["sub"])
+
     await db.delete(req)
     await db.commit()
     return {"ok": True}

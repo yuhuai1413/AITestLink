@@ -1,6 +1,12 @@
 import base64
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
+
+from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.project import Project
 
 
 def model_to_dict(obj) -> dict:
@@ -9,6 +15,8 @@ def model_to_dict(obj) -> dict:
     for column in obj.__table__.columns:
         value = getattr(obj, column.name)
         if isinstance(value, datetime):
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
             value = value.isoformat()
         elif hasattr(value, "hex"):
             value = str(value)
@@ -48,3 +56,14 @@ def decrypt_value(cipher: str) -> str:
         return decrypted.decode()
     except Exception:
         return cipher  # 兼容未加密的旧数据
+
+
+async def verify_project_owner(db: AsyncSession, project_id: str, user_id: str) -> Project:
+    """验证项目归属，返回项目对象。无权限则抛 404。"""
+    result = await db.execute(
+        select(Project).where(Project.id == project_id, Project.user_id == user_id)
+    )
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在或无权访问")
+    return project

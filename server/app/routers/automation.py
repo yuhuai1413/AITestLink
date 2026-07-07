@@ -9,6 +9,7 @@ from app.models.automation_script import AutomationScript
 from app.models.test_case import TestCase
 from app.routers.auth import get_current_user
 from app.utils import model_to_dict
+from app.utils import verify_project_owner
 
 router = APIRouter()
 
@@ -19,6 +20,7 @@ async def list_scripts(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_project_owner(db, project_id, user["sub"])
     result = await db.execute(
         select(AutomationScript).where(AutomationScript.project_id == project_id)
         .order_by(AutomationScript.created_at.desc())
@@ -36,6 +38,9 @@ async def get_script(
     script = result.scalar_one_or_none()
     if not script:
         raise HTTPException(status_code=404, detail="Script not found")
+
+    await verify_project_owner(db, script.project_id, user["sub"])
+
     return model_to_dict(script)
 
 
@@ -50,6 +55,8 @@ async def update_script(
     script = result.scalar_one_or_none()
     if not script:
         raise HTTPException(status_code=404, detail="Script not found")
+
+    await verify_project_owner(db, script.project_id, user["sub"])
 
     for key, value in data.items():
         if hasattr(script, key):
@@ -70,6 +77,9 @@ async def delete_script(
     script = result.scalar_one_or_none()
     if not script:
         raise HTTPException(status_code=404, detail="Script not found")
+
+    await verify_project_owner(db, script.project_id, user["sub"])
+
     await db.delete(script)
     await db.commit()
     return {"ok": True}
@@ -81,7 +91,8 @@ async def generate_scripts(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # 获取适合自动化的测试用例
+    await verify_project_owner(db, project_id, user["sub"])
+
     result = await db.execute(
         select(TestCase).where(
             TestCase.project_id == project_id,
@@ -95,7 +106,6 @@ async def generate_scripts(
 
     scripts = []
     for tc in test_cases:
-        # 生成 Playwright Python 脚本
         code = _generate_playwright_script(tc)
 
         script = AutomationScript(

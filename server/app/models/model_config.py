@@ -9,8 +9,9 @@ from app.database import Base
 class ModelConfig(Base):
     __tablename__ = "model_configs"
 
-    id = Column(String(50), primary_key=True)
+    id = Column(String(100), primary_key=True)  # 格式: {user_id}_{config_key}
     user_id = Column(String(50), ForeignKey("users.id"), nullable=False, index=True)
+    config_key = Column(String(50), nullable=False)  # 如 parse-requirements
     name = Column(String(100), nullable=False)
     ai_node = Column(String(100), nullable=False)
     provider = Column(String(100), nullable=False)

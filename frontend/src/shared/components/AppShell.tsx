@@ -320,6 +320,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
                   <button className="user-menu__item user-menu__item--danger" type="button" onClick={() => {
                     localStorage.removeItem("token");
                     localStorage.removeItem("user");
+                    localStorage.removeItem("aitestlink-store");
                     setShowUserMenu(false);
                     window.location.href = "/login";
                   }} style={{ paddingLeft: 16, gap: 10 }}>

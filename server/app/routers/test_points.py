@@ -9,6 +9,7 @@ from app.models.test_point import TestPoint
 from app.routers.auth import get_current_user
 from app.schemas.test_point import TestPointCreate, TestPointUpdate
 from app.utils import model_to_dict
+from app.utils import verify_project_owner
 
 router = APIRouter()
 
@@ -19,6 +20,7 @@ async def list_test_points(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_project_owner(db, project_id, user["sub"])
     result = await db.execute(
         select(TestPoint).where(TestPoint.project_id == project_id)
     )
@@ -32,6 +34,7 @@ async def create_test_point(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_project_owner(db, project_id, user["sub"])
     tp = TestPoint(
         id=str(uuid.uuid4()),
         project_id=project_id,
@@ -60,6 +63,8 @@ async def update_test_point(
     if not tp:
         raise HTTPException(status_code=404, detail="Test point not found")
 
+    await verify_project_owner(db, tp.project_id, user["sub"])
+
     update_data = data.model_dump(exclude_unset=True)
     field_map = {
         "title": "title",
@@ -86,6 +91,9 @@ async def delete_test_point(
     tp = result.scalar_one_or_none()
     if not tp:
         raise HTTPException(status_code=404, detail="Test point not found")
+
+    await verify_project_owner(db, tp.project_id, user["sub"])
+
     await db.delete(tp)
     await db.commit()
     return {"ok": True}

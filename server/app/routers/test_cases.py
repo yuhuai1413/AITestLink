@@ -9,6 +9,7 @@ from app.models.test_case import TestCase
 from app.routers.auth import get_current_user
 from app.schemas.test_case import TestCaseCreate, TestCaseUpdate
 from app.utils import model_to_dict
+from app.utils import verify_project_owner
 
 router = APIRouter()
 
@@ -19,6 +20,7 @@ async def list_test_cases(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_project_owner(db, project_id, user["sub"])
     result = await db.execute(
         select(TestCase).where(TestCase.project_id == project_id)
     )
@@ -32,6 +34,7 @@ async def create_test_case(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_project_owner(db, project_id, user["sub"])
     tc = TestCase(
         id=str(uuid.uuid4()),
         project_id=project_id,
@@ -68,6 +71,8 @@ async def update_test_case(
     if not tc:
         raise HTTPException(status_code=404, detail="Test case not found")
 
+    await verify_project_owner(db, tc.project_id, user["sub"])
+
     update_data = data.model_dump(exclude_unset=True)
     field_map = {
         "title": "title",
@@ -99,6 +104,9 @@ async def delete_test_case(
     tc = result.scalar_one_or_none()
     if not tc:
         raise HTTPException(status_code=404, detail="Test case not found")
+
+    await verify_project_owner(db, tc.project_id, user["sub"])
+
     await db.delete(tc)
     await db.commit()
     return {"ok": True}

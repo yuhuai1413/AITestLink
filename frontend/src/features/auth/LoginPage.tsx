@@ -96,6 +96,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         if (res.ok) {
           localStorage.setItem("lastPhone", phone);
           localStorage.setItem("lastPassword", password);
+          // 清除旧用户的本地数据
+          localStorage.removeItem("aitestlink-store");
           toast.success("登录成功");
           onLogin();
         } else {

@@ -1,6 +1,6 @@
 interface StatusPillProps {
-  children: string;
-  tone?: "blue" | "green" | "amber" | "red" | "slate";
+  children: React.ReactNode;
+  tone?: "blue" | "green" | "amber" | "red" | "slate" | "purple";
   className?: string;
 }
 

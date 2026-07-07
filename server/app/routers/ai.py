@@ -16,6 +16,7 @@ from app.models.test_case import TestCase
 from app.routers.auth import get_current_user
 from app.services.ai_service import AIService, check_config_for_task
 from app.utils import model_to_dict
+from app.utils import verify_project_owner
 
 logger = logging.getLogger(__name__)
 
@@ -215,6 +216,7 @@ async def list_ai_tasks(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_project_owner(db, project_id, user["sub"])
     result = await db.execute(
         select(AITask).where(AITask.project_id == project_id).order_by(AITask.created_at.desc())
     )
@@ -239,6 +241,7 @@ async def parse_requirements(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_project_owner(db, project_id, user["sub"])
     # 检查配置
     config_check = await check_config_for_task("需求解析", user["id"])
     if not config_check["configured"]:
@@ -280,6 +283,7 @@ async def generate_test_points(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_project_owner(db, project_id, user["sub"])
     # 检查配置
     config_check = await check_config_for_task("测试点生成", user["id"])
     if not config_check["configured"]:
@@ -306,6 +310,7 @@ async def generate_test_cases(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await verify_project_owner(db, project_id, user["sub"])
     # 检查配置
     config_check = await check_config_for_task("用例生成", user["id"])
     if not config_check["configured"]:
