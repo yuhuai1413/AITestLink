@@ -109,6 +109,8 @@ export interface ApiRequirement {
   question: string;
   confirmed: boolean;
   reviewStatus: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export const requirementsApi = {
@@ -132,6 +134,7 @@ export interface ApiTestPoint {
   automatable: boolean;
   reviewStatus: string;
   createdAt: string;
+  updatedAt: string;
 }
 
 export const testPointsApi = {
@@ -165,6 +168,8 @@ export interface ApiTestCase {
   automation: string;
   reviewStatus: string;
   remark: string;
+  tester: string;
+  testDate: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -235,6 +240,30 @@ export const modelConfigApi = {
     }),
 };
 
+
+// ─── Document Templates ───
+
+export interface ApiDocConfig {
+  id: string;
+  configKey: string;
+  name: string;
+  description: string;
+  templateFile: string;
+  promptTemplate: string;
+  outputFields: string;
+  displayOrder: number;
+}
+
+export const docConfigApi = {
+  list: () => request<ApiDocConfig[]>("/doc-configs"),
+  get: (id: string) => request<ApiDocConfig>("/doc-configs/" + id),
+  update: (configs: ApiDocConfig[]) =>
+    request<{ ok: boolean; count: number }>("/doc-configs", {
+      method: "PUT",
+      body: JSON.stringify({ configs }),
+    }),
+  downloadUrl: (id: string) => "/api/doc-configs/" + id + "/download",
+};
 // ─── Automation Scripts ───
 
 export interface ApiScript {

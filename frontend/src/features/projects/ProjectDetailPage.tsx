@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, WandSparkles, Loader2, FileUp, Upload, Trash2, Download, CheckCircle2, Play, Code, Eye } from "lucide-react";
-import { useStore } from "../../app/store";
+import { useStore, useProjectTestCases } from "../../app/store";
 import { useProjectData } from "./useProjectData";
 import { useAPISync } from "../../api/useAPISync";
 import { useAIAction } from "../../shared/hooks/useAIAction";
@@ -26,7 +26,7 @@ function formatTime(iso: string | undefined): string {
 
 type TabKey =
   | "overview" | "files" | "requirements" | "testPoints" | "testCases" | "scripts" | "executeScripts"
-  | "docFusion" | "summary" | "docGenerate" | "docVerify";
+  | "docFusion" | "summary" | "docGenerate";
 
 const allTabs: { key: TabKey; label: string }[] = [
   { key: "overview", label: "概览" },
@@ -39,7 +39,6 @@ const allTabs: { key: TabKey; label: string }[] = [
   { key: "docFusion", label: "数据汇总" },
   { key: "summary", label: "测试总结" },
   { key: "docGenerate", label: "文档生成" },
-  { key: "docVerify", label: "文档检验" },
 ];
 
 function priorityTone(p: Priority) {
@@ -172,13 +171,13 @@ function FilesTab({ projectId }: { projectId: string }) {
       <section className="work-panel">
         {files.length === 0 ? <div className="empty-state"><p>暂无文档，请上传文件。</p></div> : (
           <DataTable rows={files} getRowKey={(r) => r.id} columns={[
-            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
+            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "name", label: "文件名称", align: "left", render: (r) => <strong>{r.name}</strong> },
             { key: "type", label: "文件类型", render: (r) => r.fileType },
             { key: "size", label: "文件大小", render: (r) => r.size },
             { key: "parseStatus", label: "解析状态", align: "center", render: (r) => <span title={r.parseError || undefined}><StatusPill tone={r.parseStatus === "已完成" ? "green" : r.parseStatus === "解析中" ? "blue" : r.parseStatus === "失败" ? "red" : "slate"}>{r.parseStatus}</StatusPill></span> },
             { key: "date", label: "上传时间", render: (r) => formatTime(r.uploadedAt) },
-            { key: "actions", label: "操作", align: "center", render: (r) => <button className="text-button text-button--danger" type="button" onClick={() => setDeletingFile({ id: r.id, name: r.name })}>删除</button> },
+            { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => <button className="text-button text-button--danger" type="button" onClick={() => setDeletingFile({ id: r.id, name: r.name })}>删除</button> },
           ]} />
         )}
       </section>
@@ -191,6 +190,8 @@ function FilesTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 // 需求列表（解析 + 展示）
 // ═══════════════════════════════════════
+
+const truncateText = (text: string, maxLen = 50) => text.length > maxLen ? text.slice(0, maxLen) + "..." : text;
 
 function RequirementsTab({ projectId }: { projectId: string }) {
   const { files, requirements, refresh: refreshData } = useProjectData(projectId);
@@ -205,7 +206,7 @@ function RequirementsTab({ projectId }: { projectId: string }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const hasFiles = files.length > 0;
-  const hasParsedFiles = files.some((f) => f.parseStatus === "已完成");
+  const hasParsedFiles = requirements.length > 0;
   const allSelected = requirements.length > 0 && requirements.every((r) => selectedIds.has(r.id));
   const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(requirements.map((r) => r.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -276,15 +277,17 @@ function RequirementsTab({ projectId }: { projectId: string }) {
           </div>
         ) : (
           <DataTable rows={requirements} getRowKey={(r) => r.id} columns={[
-            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
+            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "module", label: "模块", width: "10%", render: (r) => r.module },
             { key: "feature", label: "功能点", width: "10%", align: "left", render: (r) => r.feature },
             { key: "source", label: "来源", width: "10%", render: (r) => r.source },
             { key: "risk", label: "风险", align: "center", render: (r) => <StatusPill tone={r.risk === "高" ? "red" : r.risk === "中" ? "amber" : "green"}>{r.risk}</StatusPill> },
-            { key: "rule", label: "业务规则", width: "20%", align: "left", render: (r) => r.rule },
-            { key: "question", label: "待确认", width: "20%", align: "left", render: (r) => r.question || <span style={{ color: "var(--muted)" }}>-</span> },
+            { key: "rule", label: "业务规则", width: "20%", align: "left", render: (r) => <span title={r.rule}>{truncateText(r.rule)}</span> },
+            { key: "question", label: "待确认", width: "20%", align: "left", render: (r) => r.question ? <span title={r.question}>{truncateText(r.question)}</span> : <span style={{ color: "var(--muted)" }}>-</span> },
             { key: "reviewStatus", label: "评审", width: "8%", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={r.reviewStatus === "已通过" ? "green" : "slate"}>{r.reviewStatus || "待评审"}</StatusPill></button> },
-            { key: "actions", label: "操作", align: "center", render: (r) => (
+            { key: "createdAt", label: "生成时间", render: (r) => formatTime(r.createdAt) },
+            { key: "updatedAt", label: "更新时间", render: (r) => formatTime(r.updatedAt) },
+            { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
               <div className="inline-actions">
                 <button className="text-button" type="button" onClick={() => setViewReq(r)}>查看</button>
                 <button className="text-button" type="button" onClick={() => { setEditReq(r); setEditRule(r.rule); setEditQuestion(r.question); }}>编辑</button>
@@ -320,13 +323,15 @@ function RequirementsTab({ projectId }: { projectId: string }) {
             <div className="detail-row"><span className="detail-label">风险等级</span><StatusPill tone={editReq.risk === "高" ? "red" : editReq.risk === "中" ? "amber" : "green"}>{editReq.risk}</StatusPill></div>
             <div className="detail-row detail-row--full"><span className="detail-label">业务规则</span><textarea className="form-textarea" style={{ flex: 1 }} rows={3} value={editRule} onChange={(e) => setEditRule(e.target.value)} /></div>
             <div className="detail-row detail-row--full"><span className="detail-label">待确认问题</span><textarea className="form-textarea" style={{ flex: 1 }} rows={3} value={editQuestion} onChange={(e) => setEditQuestion(e.target.value)} /></div>
+            <div className="detail-row"><span className="detail-label">生成时间</span><span>{formatTime(editReq.createdAt)}</span></div>
+            <div className="detail-row"><span className="detail-label">更新时间</span><span>{formatTime(editReq.updatedAt)}</span></div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 12 }}>
               <button className="ghost-button" type="button" onClick={() => setEditReq(null)}>取消</button>
               <button className="primary-button" type="button" onClick={async () => {
                 if (!editReq) return;
                 try {
-                  await requirementsApi.update(editReq.id, { rule: editRule, question: editQuestion } as any);
-                  dispatch({ type: "UPDATE_REQUIREMENT", payload: { ...editReq, rule: editRule, question: editQuestion } });
+                  const updatedReq = await requirementsApi.update(editReq.id, { rule: editRule, question: editQuestion } as any);
+                  dispatch({ type: "UPDATE_REQUIREMENT", payload: { ...editReq, rule: editRule, question: editQuestion, createdAt: updatedReq.createdAt, updatedAt: updatedReq.updatedAt } });
                   toast.success("保存成功");
                   setEditReq(null);
                 } catch { toast.error("保存失败"); }
@@ -410,8 +415,8 @@ function TestPointsTab({ projectId }: { projectId: string }) {
   const handleSaveEdit = async () => {
     if (!editTP) return;
     try {
-      await testPointsApi.update(editTP.id, { title: editTitle, description: editDesc } as any);
-      dispatch({ type: "UPDATE_TEST_POINT", payload: { ...editTP, title: editTitle, description: editDesc } });
+      const updatedTP = await testPointsApi.update(editTP.id, { title: editTitle, description: editDesc } as any);
+      dispatch({ type: "UPDATE_TEST_POINT", payload: { ...editTP, title: editTitle, description: editDesc, createdAt: updatedTP.createdAt, updatedAt: updatedTP.updatedAt } });
       toast.success("保存成功");
       setEditTP(null);
     } catch {
@@ -432,14 +437,16 @@ function TestPointsTab({ projectId }: { projectId: string }) {
       <section className="work-panel">
         {filtered.length === 0 ? <div className="empty-state"><p>暂无测试点</p></div> : (
           <DataTable rows={filtered} getRowKey={(r) => r.id} columns={[
-            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
+            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "id", label: "编号", render: (r) => r.id },
             { key: "module", label: "模块", render: (r) => r.module },
             { key: "type", label: "类型", render: (r) => r.type },
             { key: "title", label: "测试点", align: "left", render: (r) => r.title },
             { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
             { key: "reviewStatus", label: "评审", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus}</StatusPill></button> },
-            { key: "actions", label: "操作", align: "center", render: (r) => (
+            { key: "createdAt", label: "生成时间", render: (r) => formatTime(r.createdAt) },
+            { key: "updatedAt", label: "更新时间", render: (r) => formatTime(r.updatedAt) },
+            { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
               <div className="inline-actions">
                 <button className="text-button" type="button" onClick={() => setViewTP(r)}>查看</button>
                 <button className="text-button" type="button" onClick={() => { setEditTP(r); setEditTitle(r.title); setEditDesc(r.description); }}>编辑</button>
@@ -462,6 +469,7 @@ function TestPointsTab({ projectId }: { projectId: string }) {
             <div className="detail-row"><span className="detail-label">评审状态</span><StatusPill tone={reviewTone(viewTP.reviewStatus)}>{viewTP.reviewStatus}</StatusPill></div>
             <div className="detail-row detail-row--full"><span className="detail-label">描述</span><pre className="detail-pre">{viewTP.description || "无"}</pre></div>
             <div className="detail-row"><span className="detail-label">生成时间</span><span>{formatTime(viewTP.createdAt)}</span></div>
+            <div className="detail-row"><span className="detail-label">更新时间</span><span>{formatTime(viewTP.updatedAt)}</span></div>
           </div>
         )}
       </Modal>
@@ -587,8 +595,8 @@ function TestCasesTab({ projectId }: { projectId: string }) {
   const handleSaveEdit = async () => {
     if (!editCase) return;
     try {
-      await testCasesApi.update(editCase.id, { title: editTitle, steps: editSteps, expectedResult: editExpected } as any);
-      dispatch({ type: "UPDATE_TEST_CASE", payload: { ...editCase, title: editTitle, steps: editSteps, expectedResult: editExpected } });
+      const updatedTC = await testCasesApi.update(editCase.id, { title: editTitle, steps: editSteps, expectedResult: editExpected } as any);
+      dispatch({ type: "UPDATE_TEST_CASE", payload: { ...editCase, title: editTitle, steps: editSteps, expectedResult: editExpected, createdAt: updatedTC.createdAt, updatedAt: updatedTC.updatedAt } });
       toast.success("保存成功");
       setEditCase(null);
     } catch {
@@ -632,14 +640,18 @@ function TestCasesTab({ projectId }: { projectId: string }) {
       <section className="work-panel">
         {filtered.length === 0 ? <div className="empty-state"><p>暂无测试用例</p></div> : (
           <DataTable rows={filtered} getRowKey={(r) => r.id} columns={[
-            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
-            { key: "caseCode", label: "编号", render: (r) => r.caseCode },
+            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "module", label: "模块", render: (r) => r.module },
-            { key: "title", label: "用例标题", align: "left", render: (r) => r.title },
+            { key: "caseCode", label: "用例编号", render: (r) => r.caseCode },
+            { key: "feature", label: "测试点", align: "left", render: (r) => <span title={r.feature}>{truncateText(r.feature, 25)}</span> },
+            { key: "title", label: "用例标题", align: "left", render: (r) => <span title={r.title}>{truncateText(r.title, 30)}</span> },
             { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
+            { key: "steps", label: "测试步骤", align: "left", render: (r) => <span title={r.steps}>{truncateText(r.steps, 40)}</span> },
+            { key: "expectedResult", label: "预期结果", align: "left", render: (r) => <span title={r.expectedResult}>{truncateText(r.expectedResult, 35)}</span> },
             { key: "reviewStatus", label: "评审", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus}</StatusPill></button> },
-            { key: "automation", label: "是否自动化", align: "center", render: (r) => r.automation === "适合" ? "是" : "否" },
-            { key: "actions", label: "操作", align: "center", render: (r) => (
+            { key: "createdAt", label: "生成时间", render: (r) => formatTime(r.createdAt) },
+            { key: "updatedAt", label: "更新时间", render: (r) => formatTime(r.updatedAt) },
+            { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
               <div className="inline-actions">
                 <button className="text-button" type="button" onClick={() => setDetailCase(r)}>查看</button>
                 <button className="text-button" type="button" onClick={() => { setEditCase(r); setEditTitle(r.title); setEditSteps(r.steps); setEditExpected(r.expectedResult); }}>编辑</button>
@@ -656,10 +668,12 @@ function TestCasesTab({ projectId }: { projectId: string }) {
         {editCase && (
           <div className="detail-grid">
             <div className="detail-row"><span className="detail-label">用例编号</span><span>{editCase.caseCode}</span></div>
-            <div className="detail-row"><span className="detail-label">所属模块</span><span>{editCase.module}</span></div>
+            <div className="detail-row"><span className="detail-label">模块</span><span>{editCase.module}</span></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">测试点</span><span>{editCase.feature}</span></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">用例标题</span><input className="form-input" style={{ flex: 1 }} value={editTitle} onChange={(e) => setEditTitle(e.target.value)} /></div>
             <div className="detail-row"><span className="detail-label">优先级</span><StatusPill tone={priorityTone(editCase.priority)}>{editCase.priority}</StatusPill></div>
             <div className="detail-row"><span className="detail-label">评审状态</span><StatusPill tone={reviewTone(editCase.reviewStatus)}>{editCase.reviewStatus}</StatusPill></div>
-            <div className="detail-row detail-row--full"><span className="detail-label">用例标题</span><input className="form-input" style={{ flex: 1 }} value={editTitle} onChange={(e) => setEditTitle(e.target.value)} /></div>
+            <div className="detail-row"><span className="detail-label">是否自动化</span><span>{editCase.automation === "适合" ? "是" : "否"}</span></div>
             <div className="detail-row detail-row--full"><span className="detail-label">测试步骤</span><textarea className="form-textarea" style={{ flex: 1 }} rows={4} value={editSteps} onChange={(e) => setEditSteps(e.target.value)} /></div>
             <div className="detail-row detail-row--full"><span className="detail-label">预期结果</span><textarea className="form-textarea" style={{ flex: 1 }} rows={4} value={editExpected} onChange={(e) => setEditExpected(e.target.value)} /></div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 12 }}>
@@ -862,7 +876,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
         {automatable.length === 0 ? <div className="empty-state"><p>暂无可自动化的用例，请先在测试用例中标记适合自动化的用例</p></div> : (
           <div>
             <DataTable rows={automatable} getRowKey={(r) => r.id} columns={[
-              { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
+              { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
               { key: "caseCode", label: "用例编号", render: (r) => r.caseCode },
             { key: "module", label: "模块", render: (r) => r.module },
               { key: "title", label: "用例标题", align: "left", render: (r) => r.title },
@@ -877,7 +891,15 @@ function ScriptsTab({ projectId }: { projectId: string }) {
                 const rev = (script as any).reviewStatus || "待评审";
                 return <button type="button" className="text-button" onClick={() => toggleReview(script)}><StatusPill tone={rev === "已通过" ? "green" : "slate"}>{rev}</StatusPill></button>;
               }},
-              { key: "actions", label: "操作", align: "center", render: (r) => {
+              { key: "createdAt", label: "生成时间", align: "center", render: (r) => {
+                const script = scripts.find((s) => s.testCaseId === r.id);
+                return script ? formatTime(script.createdAt) : <span style={{ color: "var(--muted)" }}>-</span>;
+              }},
+              { key: "updatedAt", label: "更新时间", align: "center", render: (r) => {
+                const script = scripts.find((s) => s.testCaseId === r.id);
+                return script ? formatTime(script.updatedAt) : <span style={{ color: "var(--muted)" }}>-</span>;
+              }},
+              { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => {
                 const script = scripts.find((s) => s.testCaseId === r.id);
                 if (!script) return <span style={{ color: "var(--muted)" }}>-</span>;
                 return (
@@ -898,6 +920,10 @@ function ScriptsTab({ projectId }: { projectId: string }) {
           <div className="confirm-dialog" style={{ width: 700, maxWidth: "90vw" }} onClick={(e) => e.stopPropagation()}>
             <div className="confirm-dialog__body" style={{ flexDirection: "column", gap: 12 }}>
               <h3 style={{ margin: 0, fontSize: 16 }}>脚本代码 - {viewScript.framework}</h3>
+              <div style={{ display: "flex", gap: 24, fontSize: 13, color: "var(--muted)" }}>
+                <span>生成时间：{formatTime(viewScript.createdAt)}</span>
+                <span>更新时间：{formatTime(viewScript.updatedAt)}</span>
+              </div>
               <pre style={{
                 background: "#1e1e2e",
                 color: "#cdd6f4",
@@ -1067,7 +1093,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
           </div>
         ) : (
           <DataTable rows={scripts} getRowKey={(r) => r.id} columns={[
-            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
+            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "id", label: "脚本 ID", render: (r) => r.id.slice(0, 8) },
             { key: "testCase", label: "关联用例", align: "left", render: (r) => getTestCaseTitle(r.testCaseId) },
             { key: "framework", label: "框架", render: (r) => r.framework },
@@ -1081,7 +1107,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
               const rev = (r as any).reviewStatus || "待评审";
               return <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={rev === "已通过" ? "green" : "slate"}>{rev}</StatusPill></button>;
             }},
-            { key: "actions", label: "操作", align: "center", render: (r) => (
+            { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
               <div className="inline-actions">
                 <button className="text-button" type="button" onClick={() => setSelectedScript(r)}>查看</button>
                 <button className="text-button" type="button" onClick={() => handleRun(r)} disabled={runningId === r.id}>
@@ -1132,41 +1158,57 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
 
 function SummaryTab({ projectId }: { projectId: string }) {
   const { files, testPoints, testCases } = useProjectData(projectId);
+
+  // 判断用例是否通过：实测结果与预期结果一致
+  const isCasePassed = (c: ApiTestCase) => {
+    if (!c.actualResult || !c.actualResult.trim()) return false;
+    return c.actualResult.trim() === (c.expectedResult || "").trim();
+  };
+  const isCaseFailed = (c: ApiTestCase) => {
+    if (!c.actualResult || !c.actualResult.trim()) return false;
+    return c.actualResult.trim() !== (c.expectedResult || "").trim();
+  };
+
   const total = testCases.length;
-  const passed = testCases.filter((c) => c.reviewStatus === "已通过").length;
-  const failed = testCases.filter((c) => c.reviewStatus === "需修改").length;
-  const pending = testCases.filter((c) => c.reviewStatus !== "已通过" && c.reviewStatus !== "需修改").length;
+  const passed = testCases.filter(isCasePassed).length;
+  const failed = testCases.filter(isCaseFailed).length;
+  const unexecuted = testCases.filter((c) => !c.actualResult || !c.actualResult.trim()).length;
   const passRate = total > 0 ? Math.round(passed / total * 100) : 0;
-  const isPass = passRate >= 80;
+  const isPass = passRate >= 80 && failed === 0;
   const autoCount = testCases.filter((c) => c.automation === "适合").length;
 
   // 按模块统计
   const modules = useMemo(() => {
-    const map = new Map<string, { total: number; passed: number; failed: number }>();
+    const map = new Map<string, { total: number; passed: number; failed: number; unexecuted: number }>();
     testCases.forEach((c) => {
-      const m = map.get(c.module) || { total: 0, passed: 0, failed: 0 };
+      const m = map.get(c.module) || { total: 0, passed: 0, failed: 0, unexecuted: 0 };
       m.total++;
-      if (c.reviewStatus === "已通过") m.passed++;
-      if (c.reviewStatus === "需修改") m.failed++;
+      if (isCasePassed(c)) m.passed++;
+      else if (isCaseFailed(c)) m.failed++;
+      else m.unexecuted++;
       map.set(c.module, m);
     });
-    return Array.from(map.entries()).map(([name, data]) => ({ name, ...data, rate: data.total > 0 ? Math.round(data.passed / data.total * 100) : 0 }));
+    return Array.from(map.entries()).map(([name, data]) => ({
+      name, ...data,
+      rate: data.total > 0 ? Math.round(data.passed / data.total * 100) : 0,
+    }));
   }, [testCases]);
 
   // 按优先级统计
   const priorities = useMemo(() => {
-    const map = new Map<string, { total: number; passed: number }>();
+    const map = new Map<string, { total: number; passed: number; failed: number }>();
+    const order = ["P0", "P1", "P2", "P3"];
     testCases.forEach((c) => {
-      const p = map.get(c.priority) || { total: 0, passed: 0 };
+      const p = map.get(c.priority) || { total: 0, passed: 0, failed: 0 };
       p.total++;
-      if (c.reviewStatus === "已通过") p.passed++;
+      if (isCasePassed(c)) p.passed++;
+      else if (isCaseFailed(c)) p.failed++;
       map.set(c.priority, p);
     });
-    return Array.from(map.entries()).map(([name, data]) => ({ name, ...data, rate: data.total > 0 ? Math.round(data.passed / data.total * 100) : 0 }));
+    return Array.from(map.entries())
+      .map(([name, data]) => ({ name, ...data, rate: data.total > 0 ? Math.round(data.passed / data.total * 100) : 0 }))
+      .sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
   }, [testCases]);
-
-  // 未通过用例
-  const failedCases = useMemo(() => testCases.filter((c) => c.reviewStatus !== "已通过"), [testCases]);
 
   const toneForRate = (r: number) => r >= 80 ? "green" : r >= 50 ? "amber" : "red";
 
@@ -1181,7 +1223,7 @@ function SummaryTab({ projectId }: { projectId: string }) {
             {!isPass && passRate < 80 && `，低于 80% 阈值`}
           </span>
         </div>
-        {!isPass && <p style={{ margin: 0, fontSize: 12, color: "var(--text-secondary)" }}>存在 {failed} 条失败用例和 {pending} 条待评审用例，建议排查后重新执行。</p>}
+        {!isPass && <p style={{ margin: 0, fontSize: 12, color: "var(--text-secondary)" }}>存在 {failed} 条失败用例和 {unexecuted} 条未执行用例，建议排查后重新执行。</p>}
       </div>
 
       {/* 核心指标 */}
@@ -1190,23 +1232,29 @@ function SummaryTab({ projectId }: { projectId: string }) {
           { label: "用例总数", value: total },
           { label: "通过", value: passed, sub: `${passRate}%`, color: "var(--green)" },
           { label: "失败", value: failed, sub: failed > 0 ? "需排查" : "", color: "var(--red)" },
-          { label: "待评审", value: pending, sub: pending > 0 ? "待处理" : "", color: "var(--amber)" },
+          { label: "未执行", value: unexecuted, sub: unexecuted > 0 ? "待执行" : "", color: "var(--amber)" },
         ].map((s) => <div className="dash-stat-card" key={s.label}><div className="dash-stat-body"><span className="dash-stat-label">{s.label}</span><strong className="dash-stat-value" style={s.color ? { color: s.color } : undefined}>{s.value}</strong>{s.sub && <span className="dash-stat-sub">{s.sub}</span>}</div></div>)}
       </div>
 
       {/* 模块通过率 + 优先级通过率 并排 */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <section className="work-panel">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, flex: 1 }}>
+        {/* 模块通过率 */}
+        <section className="work-panel" style={{ display: "flex", flexDirection: "column" }}>
           <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>模块通过率</h3>
           {modules.length === 0 ? <div className="empty-state"><p>暂无数据</p></div> : (
-            <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1, overflow: "auto" }}>
               {modules.map((m) => (
                 <div key={m.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ width: 80, fontSize: 13, flexShrink: 0, textAlign: "right" }}>{m.name}</span>
-                  <div style={{ flex: 1, height: 8, background: "var(--line)", borderRadius: 4, overflow: "hidden" }}>
-                    <div style={{ width: `${m.rate}%`, height: "100%", background: m.rate >= 80 ? "var(--green)" : m.rate >= 50 ? "var(--amber)" : "var(--red)", borderRadius: 4, transition: "width 0.3s" }} />
+                  <span style={{ width: 80, fontSize: 13, flexShrink: 0, textAlign: "right", fontWeight: 500 }}>{m.name}</span>
+                  <div style={{ flex: 1, height: 12, background: "var(--line)", borderRadius: 999, overflow: "hidden", display: "flex" }}>
+                    {m.total > 0 && (
+                      <>
+                        <div style={{ width: `${(m.passed / m.total) * 100}%`, height: "100%", background: "var(--green)", borderRadius: "5px 0 0 5px", transition: "width 0.3s" }} />
+                        <div style={{ width: `${(m.failed / m.total) * 100}%`, height: "100%", background: "var(--red)", transition: "width 0.3s" }} />
+                      </>
+                    )}
                   </div>
-                  <span style={{ width: 50, fontSize: 12, color: "var(--text-secondary)" }}>{m.passed}/{m.total}</span>
+                  <span style={{ width: 46, fontSize: 12, color: "var(--text-secondary)", textAlign: "right", flexShrink: 0 }}>{m.passed}/{m.total}</span>
                   <StatusPill tone={toneForRate(m.rate)}>{m.rate}%</StatusPill>
                 </div>
               ))}
@@ -1214,17 +1262,23 @@ function SummaryTab({ projectId }: { projectId: string }) {
           )}
         </section>
 
-        <section className="work-panel">
+        {/* 优先级通过率 */}
+        <section className="work-panel" style={{ display: "flex", flexDirection: "column" }}>
           <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>优先级通过率</h3>
           {priorities.length === 0 ? <div className="empty-state"><p>暂无数据</p></div> : (
-            <div style={{ display: "grid", gap: 8 }}>
-              {priorities.sort((a, b) => a.name.localeCompare(b.name)).map((p) => (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1, justifyContent: "center", overflow: "auto" }}>
+              {priorities.map((p) => (
                 <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ width: 40, fontSize: 13, fontWeight: 600, flexShrink: 0 }}><StatusPill tone={priorityTone(p.name)}>{p.name}</StatusPill></span>
-                  <div style={{ flex: 1, height: 8, background: "var(--line)", borderRadius: 4, overflow: "hidden" }}>
-                    <div style={{ width: `${p.rate}%`, height: "100%", background: p.rate >= 80 ? "var(--green)" : p.rate >= 50 ? "var(--amber)" : "var(--red)", borderRadius: 4, transition: "width 0.3s" }} />
+                  <span style={{ width: "fit-content", fontSize: 13, flexShrink: 0, textAlign: "right" }}><StatusPill tone={priorityTone(p.name)}>{p.name}</StatusPill></span>
+                  <div style={{ flex: 1, height: 12, background: "var(--line)", borderRadius: 999, overflow: "hidden", display: "flex" }}>
+                    {p.total > 0 && (
+                      <>
+                        <div style={{ width: `${(p.passed / p.total) * 100}%`, height: "100%", background: "var(--green)", borderRadius: "5px 0 0 5px", transition: "width 0.3s" }} />
+                        <div style={{ width: `${(p.failed / p.total) * 100}%`, height: "100%", background: "var(--red)", transition: "width 0.3s" }} />
+                      </>
+                    )}
                   </div>
-                  <span style={{ width: 50, fontSize: 12, color: "var(--text-secondary)" }}>{p.passed}/{p.total}</span>
+                  <span style={{ width: 46, fontSize: 12, color: "var(--text-secondary)", textAlign: "right", flexShrink: 0 }}>{p.passed}/{p.total}</span>
                   <StatusPill tone={toneForRate(p.rate)}>{p.rate}%</StatusPill>
                 </div>
               ))}
@@ -1232,21 +1286,6 @@ function SummaryTab({ projectId }: { projectId: string }) {
           )}
         </section>
       </div>
-
-      {/* 未通过用例列表 */}
-      <section className="work-panel">
-        <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>未通过用例（{failedCases.length}）</h3>
-        {failedCases.length === 0 ? <div className="empty-state"><p>所有用例已通过，无待处理问题</p></div> : (
-          <DataTable rows={failedCases} getRowKey={(r) => r.id} columns={[
-            { key: "caseCode", label: "编号", render: (r) => r.caseCode },
-            { key: "module", label: "模块", render: (r) => r.module },
-            { key: "title", label: "用例标题", align: "left", render: (r) => r.title },
-            { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
-            { key: "reviewStatus", label: "状态", align: "center", render: (r) => <StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus}</StatusPill> },
-            { key: "automation", label: "是否自动化", align: "center", render: (r) => r.automation === "适合" ? "是" : "否" },
-          ]} />
-        )}
-      </section>
 
       {/* 补充信息 */}
       <div className="dash-stats" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
@@ -1289,9 +1328,20 @@ function DocManageTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function DocFusionTab({ projectId }: { projectId: string }) {
-  const { testCases } = useProjectData(projectId);
+  const { dispatch } = useStore();
+  const testCases = useProjectTestCases(projectId);
+  const { scripts } = useProjectData(projectId);
   const [manualResults, setManualResults] = useState<Record<string, string>>({});
   const inputRef = useRef<HTMLInputElement>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [viewCase, setViewCase] = useState<typeof testCases[0] | null>(null);
+  const [editCase, setEditCase] = useState<typeof testCases[0] | null>(null);
+  const [editActual, setEditActual] = useState("");
+  const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
+
+  const allSelected = testCases.length > 0 && testCases.every((tc) => selectedIds.has(tc.id));
+  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(testCases.map((tc) => tc.id)));
+  const toggleSelect = (id: string) => setSelectedIds((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
 
   const handleUploadManual = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1303,42 +1353,146 @@ function DocFusionTab({ projectId }: { projectId: string }) {
     if (inputRef.current) inputRef.current.value = "";
   };
 
+  const handleSaveEdit = async () => {
+    if (!editCase) return;
+    try {
+      const updated = await testCasesApi.update(editCase.id, { actualResult: editActual } as any);
+      dispatch({ type: "UPDATE_TEST_CASE", payload: { ...editCase, actualResult: updated.actualResult, createdAt: updated.createdAt, updatedAt: updated.updatedAt } });
+      toast.success("保存成功");
+      setEditCase(null);
+    } catch { toast.error("保存失败"); }
+  };
+
+    const toggleReview = async (tc: typeof testCases[0]) => {
+    const newStatus = tc.reviewStatus === "已通过" ? "待评审" : "已通过";
+    try {
+      const updated = await testCasesApi.update(tc.id, { reviewStatus: newStatus } as any);
+      dispatch({ type: "UPDATE_TEST_CASE", payload: { ...tc, reviewStatus: newStatus, createdAt: updated.createdAt, updatedAt: updated.updatedAt } });
+      toast.success(newStatus === "已通过" ? "评审已通过" : "已取消评审");
+    } catch (e) {
+      toast.error("评审操作失败: " + (e as Error).message);
+    }
+  };
+
+  const batchApprove = async () => {
+    let successCount = 0;
+    for (const id of selectedIds) {
+      const tc = testCases.find((c) => c.id === id);
+      if (tc && tc.reviewStatus !== "已通过") {
+        try {
+          const updated = await testCasesApi.update(tc.id, { reviewStatus: "已通过" } as any);
+          dispatch({ type: "UPDATE_TEST_CASE", payload: { ...tc, reviewStatus: "已通过", createdAt: updated.createdAt, updatedAt: updated.updatedAt } });
+          successCount++;
+        } catch (e) {
+          toast.error(`用例 ${tc.caseCode} 评审失败`);
+        }
+      }
+    }
+    toast.success(`已通过 ${successCount} 条用例`);
+    setSelectedIds(new Set());
+  };
+
+  const getScriptTime = (tc: typeof testCases[0]) => {
+    const script = scripts.find((s) => s.testCaseId === tc.id);
+    return script ? formatTime(script.updatedAt) : "-";
+  };
+
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="手动 + 自动化结果合并" description="上传手动测试结果文档，与自动化测试数据按用例编号合并展示。"
-        actions={<><input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} onChange={handleUploadManual} /><button className="primary-button" type="button" onClick={() => inputRef.current?.click()}><FileUp size={13} /> 上传手动测试结果</button></>} />
+        actions={<>
+          {selectedIds.size > 0 && <button className="primary-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}>批量评审通过 ({selectedIds.size})</button>}
+          <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} onChange={handleUploadManual} />
+          <button className="primary-button" type="button" onClick={() => inputRef.current?.click()}><FileUp size={13} /> 上传手动测试结果</button>
+        </>} />
       <section className="work-panel">
         {testCases.length === 0 ? <div className="empty-state"><p>暂无测试用例数据</p></div> : (
           <DataTable rows={testCases} getRowKey={(r) => r.id} columns={[
+            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "module", label: "模块", render: (r) => r.module },
             { key: "caseCode", label: "用例编号", render: (r) => r.caseCode },
-            { key: "title", label: "用例标题", align: "left", render: (r) => r.title },
+            { key: "feature", label: "测试点", align: "left", render: (r) => <span title={r.feature}>{truncateText(r.feature, 25)}</span> },
+            { key: "title", label: "用例标题", align: "left", render: (r) => <span title={r.title}>{truncateText(r.title, 30)}</span> },
+            { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
             { key: "testType", label: "测试类型", align: "center", render: (r) => r.testType || "功能测试" },
-            { key: "steps", label: "测试步骤", align: "left", render: (r) => <span style={{ fontSize: 12, maxWidth: 200, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.steps || "-"}</span> },
-            { key: "expectedResult", label: "预期结果", align: "left", render: (r) => <span style={{ fontSize: 12, maxWidth: 200, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.expectedResult || "-"}</span> },
-            { key: "actualResult", label: "实测结果", align: "left", render: (r) => <span style={{ fontSize: 12, maxWidth: 200, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.actualResult || <span style={{ color: "var(--text-secondary)" }}>-</span>}</span> },
-            { key: "passed", label: "是否通过", align: "center", render: (r) => r.passed === "通过" ? <StatusPill tone="green">通过</StatusPill> : r.passed === "失败" ? <StatusPill tone="red">失败</StatusPill> : <StatusPill tone="slate">未执行</StatusPill> },
-            { key: "actions", label: "操作", align: "center", render: (r) => (
+            { key: "steps", label: "测试步骤", align: "left", render: (r) => <span title={r.steps}>{truncateText(r.steps, 40)}</span> },
+            { key: "expectedResult", label: "预期结果", align: "left", render: (r) => <span title={r.expectedResult}>{truncateText(r.expectedResult, 35)}</span> },
+            { key: "actualResult", label: "实测结果", align: "left", render: (r) => <span style={{ fontSize: 12, maxWidth: 200, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.actualResult || "-"}</span> },
+            { key: "passed", label: "是否通过", align: "center", render: (r) => {
+              const matched = r.actualResult && r.expectedResult && r.actualResult.trim() === r.expectedResult.trim();
+              return matched ? <StatusPill tone="green">通过</StatusPill> : r.actualResult ? <StatusPill tone="red">未通过</StatusPill> : <StatusPill tone="slate">未执行</StatusPill>;
+            }},
+            { key: "reviewStatus", label: "评审状态", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={r.reviewStatus === "已通过" ? "green" : "slate"}>{r.reviewStatus || "待评审"}</StatusPill></button> },
+            { key: "automation", label: "是否自动化", align: "center", render: (r) => r.automation === "适合" ? "是" : r.automation === "不适合" ? "否" : "待评估" },
+            { key: "testTime", label: "测试时间", render: (r) => <span>{getScriptTime(r)}</span> },
+            { key: "actions", label: "操作", width: "100px", sticky: "right" as const, align: "center", render: (r) => (
               <div className="inline-actions">
-                <button className="text-button" type="button" onClick={() => toast.info(`查看用例 ${r.caseCode}`)}>查看</button>
-                <button className="text-button" type="button" onClick={() => toast.info(`编辑用例 ${r.caseCode}`)}>编辑</button>
-                <button className="text-button text-button--danger" type="button" onClick={async () => { try { await testCasesApi.delete(r.id); } catch {} toast.success("已删除"); }}>删除</button>
+                <button className="text-button" type="button" onClick={() => setViewCase(r)}>查看</button>
+                <button className="text-button" type="button" onClick={() => { setEditCase(r); setEditActual(r.actualResult || ""); }}>编辑</button>
               </div>
             ) },
           ]} />
         )}
       </section>
+
+      {/* 查看弹窗 - 字段与表格一致 */}
+      <Modal open={!!viewCase} onClose={() => setViewCase(null)} title="用例详情" width={560}>
+        {viewCase && (() => {
+          const matched = viewCase.actualResult && viewCase.expectedResult && viewCase.actualResult.trim() === viewCase.expectedResult.trim();
+          return (
+            <div className="detail-grid">
+              <div className="detail-row"><span className="detail-label">模块</span><span>{viewCase.module}</span></div>
+              <div className="detail-row"><span className="detail-label">用例编号</span><span>{viewCase.caseCode}</span></div>
+              <div className="detail-row detail-row--full"><span className="detail-label">测试点</span><span>{viewCase.feature}</span></div>
+              <div className="detail-row detail-row--full"><span className="detail-label">用例标题</span><span>{viewCase.title}</span></div>
+              <div className="detail-row"><span className="detail-label">优先级</span><StatusPill tone={priorityTone(viewCase.priority)}>{viewCase.priority}</StatusPill></div>
+              <div className="detail-row"><span className="detail-label">测试类型</span><span>{viewCase.testType || "功能测试"}</span></div>
+              <div className="detail-row detail-row--full"><span className="detail-label">测试步骤</span><pre className="detail-pre">{viewCase.steps || "-"}</pre></div>
+              <div className="detail-row detail-row--full"><span className="detail-label">预期结果</span><pre className="detail-pre">{viewCase.expectedResult || "-"}</pre></div>
+              <div className="detail-row detail-row--full"><span className="detail-label">实测结果</span><pre className="detail-pre">{viewCase.actualResult || "-"}</pre></div>
+              <div className="detail-row"><span className="detail-label">是否通过</span>{matched ? <StatusPill tone="green">通过</StatusPill> : viewCase.actualResult ? <StatusPill tone="red">未通过</StatusPill> : <StatusPill tone="slate">未执行</StatusPill>}</div>
+              <div className="detail-row"><span className="detail-label">是否自动化</span><span>{viewCase.automation === "适合" ? "是" : viewCase.automation === "不适合" ? "否" : "待评估"}</span></div>
+              <div className="detail-row"><span className="detail-label">测试时间</span><span>{getScriptTime(viewCase)}</span></div>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* 编辑弹窗 - 只能编辑实测结果，是否通过自动计算 */}
+      <Modal open={!!editCase} onClose={() => setEditCase(null)} title="编辑实测结果" width={560}>
+        {editCase && (
+          <div className="detail-grid">
+            <div className="detail-row"><span className="detail-label">模块</span><span>{editCase.module}</span></div>
+            <div className="detail-row"><span className="detail-label">用例编号</span><span>{editCase.caseCode}</span></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">测试点</span><span>{editCase.feature}</span></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">用例标题</span><span>{editCase.title}</span></div>
+            <div className="detail-row"><span className="detail-label">优先级</span><StatusPill tone={priorityTone(editCase.priority)}>{editCase.priority}</StatusPill></div>
+            <div className="detail-row"><span className="detail-label">测试类型</span><span>{editCase.testType || "功能测试"}</span></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">测试步骤</span><span>{editCase.steps || "-"}</span></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">预期结果</span><span>{editCase.expectedResult || "-"}</span></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">实测结果</span><textarea className="form-textarea" style={{ flex: 1 }} rows={3} value={editActual} onChange={(e) => setEditActual(e.target.value)} placeholder="输入实际测试结果" /></div>
+            <div className="detail-row"><span className="detail-label">是否通过</span><StatusPill tone={editActual && editCase.expectedResult && editActual.trim() === editCase.expectedResult.trim() ? "green" : editActual ? "red" : "slate"}>{editActual && editCase.expectedResult && editActual.trim() === editCase.expectedResult.trim() ? "通过" : editActual ? "未通过" : "未执行"}</StatusPill></div>
+            <div className="detail-row"><span className="detail-label">是否自动化</span><span>{editCase.automation === "适合" ? "是" : editCase.automation === "不适合" ? "否" : "待评估"}</span></div>
+            <div className="detail-row"><span className="detail-label">测试时间</span><span>{getScriptTime(editCase)}</span></div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 12 }}>
+              <button className="ghost-button" type="button" onClick={() => setEditCase(null)}>取消</button>
+              <button className="primary-button" type="button" onClick={handleSaveEdit}>保存</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 条用例标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
     </div>
   );
 }
 
 // ═══════════════════════════════════════
+// ═══════════════════════════════════════
 // 文档生成（模板 + 生成 + 下载）
 // ═══════════════════════════════════════
 
 function DocGenerateTab({ projectId }: { projectId: string }) {
-  const { files } = useProjectData(projectId);
-  const { testCases } = useProjectData(projectId);
+  const { files, testCases } = useProjectData(projectId);
   const templates = [
     { id: "tpl-plan", name: "软件测试计划", desc: "测试范围、策略、资源、进度安排", needs: ["files"] },
     { id: "tpl-spec", name: "软件测试说明", desc: "测试环境、用例设计、执行方法", needs: ["files", "testCases"] },
@@ -1366,14 +1520,12 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
             if (!ready) return <StatusPill tone="amber">数据不足</StatusPill>;
             return <StatusPill tone="slate">待生成</StatusPill>;
           }},
-          { key: "time", label: "上传时间", render: () => formatTime(new Date().toISOString()) },
-          { key: "actions", label: "操作", align: "center", render: (r) => {
+          { key: "time", label: "生成时间", width: "160px", align: "center", render: (r) => <span style={{ display: "inline-block", width: 160 }}>{generated.has(r.id) ? formatTime(new Date().toISOString()) : "-"}</span> },
+          { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => {
             const ready = isReady(r.needs);
             const done = generated.has(r.id);
             return (
               <div className="inline-actions">
-                <button className="text-button" type="button" onClick={() => toast.info(`${r.name}：${r.desc}`)}>查看</button>
-                <button className="text-button" type="button" disabled={!ready}>{ready ? "编辑" : "编辑"}</button>
                 <button className="text-button" type="button" onClick={() => handleGenerate(r.id)} disabled={generating === r.id || !ready}>
                   {generating === r.id ? "生成中..." : "生成"}
                 </button>
@@ -1391,30 +1543,6 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
 }
 
 // ═══════════════════════════════════════
-// 文档检验
-// ═══════════════════════════════════════
-
-function DocVerifyTab({ projectId }: { projectId: string }) {
-  const { files } = useProjectData(projectId);
-  const { testCases } = useProjectData(projectId);
-  const checks = [
-    { name: "需求文档完整性", pass: files.length > 0, detail: files.length > 0 ? `已上传 ${files.length} 个文档` : "未上传需求文档" },
-    { name: "测试用例覆盖", pass: testCases.length > 0, detail: testCases.length > 0 ? `已生成 ${testCases.length} 条用例` : "未生成测试用例" },
-    { name: "P0 用例评审", pass: testCases.filter((c) => c.priority === "P0" && c.reviewStatus === "已通过").length > 0, detail: `${testCases.filter((c) => c.priority === "P0").length} 条 P0 用例` },
-    { name: "模块覆盖度", pass: new Set(testCases.map((c) => c.module)).size >= 2, detail: `覆盖 ${new Set(testCases.map((c) => c.module)).size} 个模块` },
-  ];
-  return (
-    <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="文档完整性校验" description="检查项目数据是否满足生成测试文档的条件。" />
-      <section className="work-panel">
-        <div style={{ display: "grid", gap: 12 }}>
-          {checks.map((c) => <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: "1px solid var(--line)" }}><StatusPill tone={c.pass ? "green" : "red"}>{c.pass ? "通过" : "未通过"}</StatusPill><div><strong>{c.name}</strong><p style={{ margin: 0, fontSize: 13, color: "var(--muted)" }}>{c.detail}</p></div></div>)}
-        </div>
-      </section>
-    </div>
-  );
-}
-
 // ═══════════════════════════════════════
 // 主页面
 // ═══════════════════════════════════════
@@ -1422,7 +1550,7 @@ function DocVerifyTab({ projectId }: { projectId: string }) {
 const tabComponents: Record<TabKey, React.FC<{ projectId: string }>> = {
   overview: OverviewTab, files: FilesTab, requirements: RequirementsTab, testPoints: TestPointsTab, testCases: TestCasesTab,
   scripts: ScriptsTab, executeScripts: ExecuteScriptsTab, docFusion: DocFusionTab, summary: SummaryTab,
-  docGenerate: DocGenerateTab, docVerify: DocVerifyTab,
+  docGenerate: DocGenerateTab,
 };
 
 const TAB_STORAGE_KEY = "aitestlink-project-tab";
@@ -1470,7 +1598,15 @@ export function ProjectDetailPage() {
         {allTabs.map((tab) => <button key={tab.key} type="button" className={`tab-button ${activeTab === tab.key ? "tab-button--active" : ""}`} onClick={() => handleTabChange(tab.key)}>{tab.label}</button>)}
       </div>
       <div className="tab-content" ref={tabContentRef}>
-        {ActiveComponent && <ActiveComponent projectId={project.id} />}
+        {allTabs.map((tab) => {
+          const Comp = tabComponents[tab.key];
+          if (!Comp) return null;
+          return (
+            <div key={tab.key} style={{ display: activeTab === tab.key ? "contents" : "none" }}>
+              <Comp projectId={project.id} />
+            </div>
+          );
+        })}
       </div>
     </div>
   );

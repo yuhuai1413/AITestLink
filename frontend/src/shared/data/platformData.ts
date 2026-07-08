@@ -10,6 +10,7 @@ import {
   PlayCircle,
   Settings,
   Users,
+  FileText,
 } from "lucide-react";
 import type {
   AgentCapability,
@@ -44,6 +45,12 @@ export const navigationItems: NavigationItem[] = [
     description: "文档上传与管理",
     icon: FileSearch,
     hidden: true,
+  },
+  {
+    key: "docConfig",
+    label: "文档配置",
+    description: "上传和管理文档模板",
+    icon: FileText,
   },
   {
     key: "modelConfig",

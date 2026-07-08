@@ -236,6 +236,7 @@ async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
                     steps=c.get("steps", ""),
                     test_data=c.get("testData", ""),
                     expected_result=c.get("expectedResult", ""),
+                    test_type=c.get("testType", "功能测试"),
                     automation=c.get("automation", "待评估"),
                 ))
 

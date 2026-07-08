@@ -477,7 +477,7 @@ export function ModelConfigPage() {
               key: "actions",
               label: "操作",
               width: "10%",
-              align: "center",
+              sticky: "right" as const, align: "center",
               render: (row) => (
                 <div className="inline-actions">
                   <button className="text-button" type="button" onClick={() => {

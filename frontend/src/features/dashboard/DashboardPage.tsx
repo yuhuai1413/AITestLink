@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, RadialBarChart, RadialBar,
+  CartesianGrid,
 } from "recharts";
 import { useStore } from "../../app/store";
 import { StatusPill } from "../../shared/components/StatusPill";
@@ -75,6 +75,14 @@ function EmptyChart() {
   return <div className="dash-empty">暂无数据</div>;
 }
 
+function CenterLabel({ value }: { value: string }) {
+  return (
+    <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" style={{ fontSize: 26, fontWeight: 700, fill: "var(--text)" }}>
+      {value}
+    </text>
+  );
+}
+
 function Legend({ data }: { data: ChartDataItem[] }) {
   return (
     <div className="dash-legend">
@@ -122,17 +130,20 @@ export function DashboardPage() {
 
 
 
-  const autoBarData = useMemo<ChartDataItem[]>(() => {
-    const map: Record<string, number> = {};
-    const colors: Record<string, string> = { "适合": C.green, "不适合": C.red, "待评估": C.amber };
-    state.testCases.forEach((c) => { map[c.automation] = (map[c.automation] || 0) + 1; });
-    return Object.entries(map).map(([name, value]) => ({ name, value, fill: colors[name] || C.slate }));
+
+  const AUTO_COLORS = { "已自动化": C.blue, "未自动化": C.slate };
+  const autoDistributionData = useMemo<ChartDataItem[]>(() => {
+    const cases = state.testCases;
+    const auto = cases.filter((c) => c.automation === "适合").length;
+    const total = cases.length;
+    return [
+      { name: "已自动化", value: auto, fill: AUTO_COLORS["已自动化"] },
+      { name: "未自动化", value: total - auto, fill: AUTO_COLORS["未自动化"] },
+    ];
   }, [state.testCases]);
 
-  const radialData = useMemo(() => [{ name: "自动化覆盖", value: stats.autoRate, fill: C.blue }], [stats.autoRate]);
-
   const recentProjects = useMemo(() =>
-    [...state.projects].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5),
+    [...state.projects].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 4),
   [state.projects]);
 
   const cards: { icon: LucideIcon; label: string; value: string | number; sub: string; color: string }[] = [
@@ -153,7 +164,7 @@ export function DashboardPage() {
           <h3 className="dash-card-title">项目优先级分布</h3>
           <div className="dash-chart-wrap">
             {projectPriorityData.some((d) => d.value > 0) ? (
-              <ResponsiveContainer width="100%" height={220}>
+              <ResponsiveContainer width="100%" height={170}>
                 <PieChart>
                   <Pie data={projectPriorityData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" stroke="none">
                     {projectPriorityData.map((d, i) => <Cell key={i} fill={d.fill} />)}
@@ -170,7 +181,7 @@ export function DashboardPage() {
           <h3 className="dash-card-title">用例优先级分布</h3>
           <div className="dash-chart-wrap">
             {priorityData.some((d) => d.value > 0) ? (
-              <ResponsiveContainer width="100%" height={220}>
+              <ResponsiveContainer width="100%" height={198}>
                 <BarChart data={priorityData} barSize={36} margin={{ top: 20, right: 16, left: 0, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 12, fill: C.muted }} axisLine={false} tickLine={false} />
@@ -188,31 +199,18 @@ export function DashboardPage() {
         <div className="dash-card">
           <h3 className="dash-card-title">自动化覆盖率</h3>
           <div className="dash-chart-wrap dash-chart-center">
-            {stats.caseCount > 0 ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <RadialBarChart cx="50%" cy="50%" innerRadius="60%" outerRadius="90%" barSize={18} startAngle={90} endAngle={-270} data={radialData}>
-                  <RadialBar background={{ fill: `${C.blue}18` }} dataKey="value" cornerRadius={90} />
-                </RadialBarChart>
+            {autoDistributionData.some((d) => d.value > 0) ? (
+              <ResponsiveContainer width="100%" height={170}>
+                <PieChart>
+                  <Pie data={autoDistributionData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" stroke="none" label={false}>
+                    {autoDistributionData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                  </Pie>
+                  <Tooltip content={<ChartTooltip />} />
+                  <CenterLabel value={`${stats.autoRate}%`} />
+                </PieChart>
               </ResponsiveContainer>
             ) : <EmptyChart />}
-            <div className="dash-radial-label">
-              <strong>{stats.autoRate}%</strong>
-              <span>自动化用例 {stats.caseCount > 0 ? Math.round(stats.caseCount * stats.autoRate / 100) : 0} 条</span>
-            </div>
-          </div>
-          <div className="dash-auto-bars">
-            {autoBarData.map((d) => (
-              <div key={d.name} className="dash-auto-bar-row">
-                <span>{d.name}</span>
-                <div className="dash-auto-bar-track">
-                  <div className="dash-auto-bar-fill" style={{
-                    width: stats.caseCount > 0 ? `${(d.value / stats.caseCount) * 100}%` : "0%",
-                    background: d.fill,
-                  }} />
-                </div>
-                <span className="dash-auto-bar-val">{d.value}</span>
-              </div>
-            ))}
+            <Legend data={autoDistributionData} />
           </div>
         </div>
       </div>

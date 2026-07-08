@@ -8,6 +8,14 @@ interface TestCaseDetailModalProps {
   onClose: () => void;
 }
 
+function formatTime(iso: string | undefined): string {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 function priorityTone(p: string) {
   if (p === "P0") return "red" as const;
   if (p === "P1") return "amber" as const;
@@ -21,14 +29,6 @@ function reviewTone(s: string) {
   return "amber" as const;
 }
 
-function formatTime(iso: string | undefined): string {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-
 export function TestCaseDetailModal({ open, testCase, onClose }: TestCaseDetailModalProps) {
   if (!testCase) return null;
 
@@ -40,10 +40,10 @@ export function TestCaseDetailModal({ open, testCase, onClose }: TestCaseDetailM
           <span>{testCase.caseCode}</span>
         </div>
         <div className="detail-row">
-          <span className="detail-label">所属模块</span>
+          <span className="detail-label">模块</span>
           <span>{testCase.module}</span>
         </div>
-        <div className="detail-row">
+        <div className="detail-row detail-row--full">
           <span className="detail-label">测试点</span>
           <span>{testCase.feature}</span>
         </div>
@@ -64,29 +64,15 @@ export function TestCaseDetailModal({ open, testCase, onClose }: TestCaseDetailM
           <span>{testCase.automation === "适合" ? "是" : "否"}</span>
         </div>
         <div className="detail-row detail-row--full">
-          <span className="detail-label">前置条件</span>
-          <span>{testCase.precondition || "无"}</span>
-        </div>
-        <div className="detail-row detail-row--full">
           <span className="detail-label">测试步骤</span>
           <pre className="detail-pre">{testCase.steps}</pre>
-        </div>
-        <div className="detail-row detail-row--full">
-          <span className="detail-label">测试数据</span>
-          <span>{testCase.testData || "无"}</span>
         </div>
         <div className="detail-row detail-row--full">
           <span className="detail-label">预期结果</span>
           <pre className="detail-pre">{testCase.expectedResult}</pre>
         </div>
-        {testCase.remark && (
-          <div className="detail-row detail-row--full">
-            <span className="detail-label">备注</span>
-            <span>{testCase.remark}</span>
-          </div>
-        )}
         <div className="detail-row">
-          <span className="detail-label">创建时间</span>
+          <span className="detail-label">生成时间</span>
           <span>{formatTime(testCase.createdAt)}</span>
         </div>
         <div className="detail-row">

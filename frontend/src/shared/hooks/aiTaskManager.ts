@@ -200,6 +200,7 @@ export async function startParseRequirements(projectId: string) {
           payload: {
             id: r.id, projectId: r.projectId, module: r.module, feature: r.feature,
             source: r.source, risk: r.risk, rule: r.rule, question: r.question, confirmed: r.confirmed,
+            createdAt: r.createdAt, updatedAt: r.updatedAt,
           },
         });
       });
@@ -225,6 +226,7 @@ export async function startGenerateTestPoints(projectId: string) {
             id: tp.id, projectId: tp.projectId, requirementId: tp.requirementId ?? undefined,
             module: tp.module, type: tp.type, title: tp.title, description: tp.description,
             priority: tp.priority, automatable: tp.automatable, reviewStatus: tp.reviewStatus,
+            createdAt: tp.createdAt, updatedAt: tp.updatedAt,
           },
         });
       });
@@ -254,6 +256,7 @@ export async function startGenerateTestCases(projectId: string) {
             testData: tc.testData, expectedResult: tc.expectedResult,
             testType: tc.testType ?? "功能测试", actualResult: tc.actualResult ?? "", passed: tc.passed ?? "未执行",
             automation: tc.automation, reviewStatus: tc.reviewStatus, remark: tc.remark,
+            tester: tc.tester ?? "", testDate: tc.testDate ?? "",
             createdAt: tc.createdAt, updatedAt: tc.updatedAt,
           },
         });

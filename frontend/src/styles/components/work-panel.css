@@ -7,9 +7,9 @@
 
 .work-panel {
   border: 1px solid var(--line);
-  border-radius: var(--radius-l2);
+  border-radius: 12px;
   background: var(--surface);
-  padding: 18px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
   overflow-y: auto;

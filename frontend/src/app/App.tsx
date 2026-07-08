@@ -12,6 +12,7 @@ import { DocumentCenterListPage } from "../features/document-center/DocumentCent
 import { DocumentCenterProjectPage } from "../features/document-center/DocumentCenterProjectPage";
 import { ModelConfigPage } from "../features/model-config/ModelConfigPage";
 import { UserManagementPage } from "../features/user-management/UserManagementPage";
+import { DocConfigPage } from "../features/doc-config/DocConfigPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { isLoggedIn } from "../features/auth/api/auth";
 import { useAPISync } from "../api/useAPISync";
@@ -26,6 +27,7 @@ function pathnameToView(pathname: string): ViewKey {
   if (pathname.startsWith("/test-center")) return "testCenter";
   if (pathname.match(/^\/document-center\/[a-f0-9-]+/)) return "documentCenter";
   if (pathname.startsWith("/document-center")) return "documentCenter";
+  if (pathname.startsWith("/doc-config")) return "docConfig";
   if (pathname.startsWith("/model-config")) return "modelConfig";
   if (pathname.startsWith("/user-management")) return "userManagement";
   return "dashboard";
@@ -49,6 +51,7 @@ function AppShellLayout({ children }: { children: React.ReactNode }) {
       projects: "/projects",
       testCenter: "/test-center",
       documentCenter: "/document-center",
+      docConfig: "/doc-config",
       modelConfig: "/model-config",
       userManagement: "/user-management",
     };
@@ -129,6 +132,7 @@ export function App() {
               <Route path="/test-center/:id" element={<TestCenterProjectPage />} />
               <Route path="/document-center" element={<DocumentCenterListPage />} />
               <Route path="/document-center/:id" element={<DocumentCenterProjectPage />} />
+              <Route path="/doc-config" element={<DocConfigPage />} />
               <Route path="/model-config" element={<ModelConfigPage />} />
               <Route path="/user-management" element={<UserManagementPage />} />
             </Routes>

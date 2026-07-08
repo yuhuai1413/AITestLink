@@ -8,7 +8,8 @@ export type ViewKey =
   | "testCenter"
   | "documentCenter"
   | "modelConfig"
-  | "userManagement";
+  | "userManagement"
+  | "docConfig";
 
 // ─── 导航 ───
 
@@ -75,6 +76,8 @@ export interface Requirement {
   rule: string;
   question: string;
   confirmed: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ─── 测试点 ───
@@ -100,6 +103,7 @@ export interface TestPoint {
   automatable: boolean;
   reviewStatus: "待评审" | "已通过" | "需修改";
   createdAt: string;
+  updatedAt: string;
 }
 
 // ─── 测试用例 ───
@@ -127,6 +131,8 @@ export interface TestCase {
   automation: AutomationFlag;
   reviewStatus: ReviewStatus;
   remark: string;
+  tester: string;
+  testDate: string;
   createdAt: string;
   updatedAt: string;
 }

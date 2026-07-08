@@ -6,8 +6,9 @@
 
 .data-table {
   width: 100%;
-  min-width: 760px;
-  border-collapse: collapse;
+  min-width: 1200px;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 14px;
   table-layout: auto;
 }
@@ -15,7 +16,7 @@
 .data-table th {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 3;
   height: 42px;
   padding: 0 14px;
   background: var(--surface-soft);
@@ -23,6 +24,10 @@
   color: #475569;
   font-size: 12px;
   font-weight: 800;
+  white-space: nowrap;
+  max-width: 250px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .data-table td {
@@ -31,11 +36,12 @@
   border-bottom: 1px solid var(--line);
   color: var(--text);
   vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 250px;
 }
 
-.data-table tr:last-child td {
-  border-bottom: 0;
-}
 
 .align-left {
   text-align: left;
@@ -57,6 +63,77 @@
 .table-title span {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* ── Sticky right column ── */
+.sticky-right {
+  position: sticky;
+  right: 0;
+  z-index: 4;
+  background: var(--surface);
+}
+
+thead .sticky-right {
+  background: var(--surface-soft);
+  z-index: 5;
+}
+
+.sticky-right::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -8px;
+  width: 8px;
+  height: 100%;
+  background: linear-gradient(to right, transparent, rgba(0,0,0,0.04));
+  pointer-events: none;
+}
+
+thead .sticky-right::before {
+  background: linear-gradient(to right, transparent, rgba(0,0,0,0.03));
+}
+
+/* ── Sticky left column ── */
+.sticky-left {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  background: var(--surface);
+}
+
+thead .sticky-left {
+  background: var(--surface-soft);
+  z-index: 5;
+}
+
+.sticky-left::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -8px;
+  width: 8px;
+  height: 100%;
+  background: linear-gradient(to left, transparent, rgba(0,0,0,0.04));
+  pointer-events: none;
+}
+
+thead .sticky-left::after {
+  background: linear-gradient(to left, transparent, rgba(0,0,0,0.03));
+}
+
+/* ── Legacy: sticky last column fallback ── */
+.data-table th:last-child:not(.sticky-right),
+.data-table td:last-child:not(.sticky-right) {
+  /* no-op, just avoid conflict with explicit sticky classes */
+}
+
+/* ── Visual separator for sticky column border ── */
+.sticky-right {
+  border-left: 1px solid var(--line);
+}
+
+.sticky-left {
+  border-right: 1px solid var(--line);
 }
 
 @media (max-width: 560px) {

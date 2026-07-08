@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -76,6 +77,7 @@ async def update_test_point(
         if schema_key in update_data:
             setattr(tp, db_key, update_data[schema_key])
 
+    tp.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(tp)
     return model_to_dict(tp)

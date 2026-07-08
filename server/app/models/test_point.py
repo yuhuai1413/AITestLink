@@ -20,3 +20,4 @@ class TestPoint(Base):
     automatable = Column(Boolean, default=False)
     review_status = Column(String(50), default="待评审")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

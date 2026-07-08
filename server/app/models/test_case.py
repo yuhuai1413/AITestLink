@@ -28,5 +28,7 @@ class TestCase(Base):
     automation = Column(String(20), default="待评估")
     review_status = Column(String(50), default="待评审")
     remark = Column(Text, default="")
+    tester = Column(String(100), default="")
+    test_date = Column(String(20), default="")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +46,7 @@ async def update_requirement(
         db_key = field_map.get(key, key)
         setattr(req, db_key, value)
 
+    req.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(req)
     return model_to_dict(req)
