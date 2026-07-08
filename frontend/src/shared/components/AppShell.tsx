@@ -14,11 +14,13 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { navigationItems } from "../data/platformData";
-import { useStore } from "../../app/store";
+import { useStore, useUnreadCount } from "../../app/store";
 import { PersonalSettingsModal } from "../../features/personal-settings/PersonalSettingsModal";
 import { getMeWithAdmin } from "../../features/auth/api/auth";
 import type { ViewKey } from "../types/platform";
+import type { AppNotification } from "../types/platform";
 import { useNavHighlight } from "../hooks/useNavHighlight";
+import { LogoMark } from "../../features/auth/components/LogoMark";
 
 interface UserInfo {
   nickname: string;
@@ -27,27 +29,7 @@ interface UserInfo {
   isAdmin: boolean;
 }
 
-function LogoIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M12 2L3 7v10l9 5 9-5V7l-9-5z"
-        stroke="white"
-        strokeWidth="1.8"
-        strokeLinejoin="round"
-        fill="rgba(255,255,255,0.1)"
-      />
-      <path
-        d="M8.5 12.5l2.5 2.5 5-5.5"
-        stroke="white"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <circle cx="18.5" cy="5.5" r="1.5" fill="white" opacity="0.7" />
-    </svg>
-  );
-}
+
 
 interface AppShellProps {
   activeView: ViewKey;
@@ -75,6 +57,9 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showPersonalSettings, setShowPersonalSettings] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const unreadCount = useUnreadCount();
 
   const fetchUser = useCallback(() => {
     getMeWithAdmin().then((res) => {
@@ -91,7 +76,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
   }, []);
 
   useEffect(() => { fetchUser(); }, [fetchUser]);
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const navigate = useNavigate();
 
   // 选中层：始终跟踪 activeIdx，collapsed 变化时重算
@@ -108,7 +93,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
 
     state.projects.forEach((p) => {
       if (p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q)) {
-        results.push({ type: "项目", label: p.name, sub: `${p.version} · ${p.status}`, icon: FolderOpen, onClick: () => navigate(`/projects/${p.id}`) });
+        results.push({ type: "项目", label: p.name, sub: p.testStatus, icon: FolderOpen, onClick: () => navigate(`/projects/${p.id}`) });
       }
     });
     state.requirements.forEach((r) => {
@@ -144,6 +129,18 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showUserMenu]);
 
+  // 点击外部关闭通知面板
+  useEffect(() => {
+    if (!showNotifications) return;
+    const handleClick = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setShowNotifications(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showNotifications]);
+
   // 鼠标移动时跟随
   const handleNavMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const container = containerRef.current;
@@ -178,10 +175,10 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
       <aside className={`sidebar ${collapsed ? "sidebar--collapsed" : ""}`}>
         <div className="sidebar__brand">
           <div className="brand-mark">
-            <LogoIcon />
+            <LogoMark size={22} />
           </div>
           <div className="brand-text">
-            <strong>智测通</strong>
+            <strong>AITestLink</strong>
             <span>AI 测试平台</span>
           </div>
         </div>
@@ -295,9 +292,53 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
                 </div>
               )}
             </div>
-            <button className="icon-button" type="button" title="通知">
-              <Bell size={18} />
-            </button>
+            <div className="notif-wrapper" ref={notifRef}>
+              <button
+                className="icon-button"
+                type="button"
+                title="通知"
+                onClick={() => {
+                  setShowNotifications(!showNotifications);
+                  // 打开时标记全部已读
+                  if (!showNotifications) {
+                    state.notifications.forEach((n) => {
+                      if (!n.read) dispatch({ type: "MARK_NOTIFICATION_READ", payload: n.id });
+                    });
+                  }
+                }}
+              >
+                <Bell size={18} />
+                {unreadCount > 0 && <span className="notif-badge">{unreadCount > 99 ? "99+" : unreadCount}</span>}
+              </button>
+              {showNotifications && (
+                <div className="notif-panel">
+                  <div className="notif-panel__header">
+                    <span>通知</span>
+                    {state.notifications.length > 0 && (
+                      <button className="text-button" type="button" onClick={() => dispatch({ type: "CLEAR_NOTIFICATIONS" })}>
+                        清空
+                      </button>
+                    )}
+                  </div>
+                  <div className="notif-panel__list">
+                    {state.notifications.length === 0 ? (
+                      <div className="notif-panel__empty">暂无通知</div>
+                    ) : (
+                      state.notifications.slice(0, 20).map((n: AppNotification) => (
+                        <div key={n.id} className={`notif-item ${n.type === "任务失败" ? "notif-item--error" : "notif-item--success"}`} onClick={() => { window.dispatchEvent(new CustomEvent("aitestlink:navigate-tab", { detail: { tab: n.taskType === "需求解析" ? "requirements" : n.taskType === "测试点生成" ? "testPoints" : n.taskType === "用例生成" ? "testCases" : "overview", projectId: n.projectId } })); navigate(n.targetPath || `/projects/${n.projectId}`, { state: { targetTab: n.taskType === "需求解析" ? "requirements" : n.taskType === "测试点生成" ? "testPoints" : n.taskType === "用例生成" ? "testCases" : "overview" } }); dispatch({ type: "MARK_NOTIFICATION_READ", payload: n.id }); setShowNotifications(false); }}>
+                          <div className="notif-item__icon">{n.type === "任务完成" ? "✓" : "✕"}</div>
+                          <div className="notif-item__body">
+                            <div className="notif-item__title">{n.taskType} · {n.projectName}</div>
+                            <div className="notif-item__desc">{n.message}</div>
+                            <div className="notif-item__time">{new Date(n.createdAt).toLocaleString("zh-CN")}</div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="user-avatar-wrapper" ref={userMenuRef}>
               <button className="user-avatar" type="button" onClick={() => setShowUserMenu(!showUserMenu)} style={userInfo.avatar ? { backgroundImage: `url(${userInfo.avatar})`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>
                 {!userInfo.avatar && <span>{userInfo.nickname.charAt(0)}</span>}
@@ -345,7 +386,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
             <div className="help-popover__body">
               <div className="help-section">
                 <h3>平台简介</h3>
-                <p>智测通是一款 AI 驱动的软件测试平台，支持从需求文档到测试用例的全链路自动化生成。</p>
+                <p>AITestLink是一款 AI 驱动的软件测试平台，支持从需求文档到测试用例的全链路自动化生成。</p>
               </div>
               <div className="help-section">
                 <h3>核心功能</h3>

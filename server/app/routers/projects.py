@@ -113,7 +113,7 @@ async def update_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    update_data = data.model_dump(exclude_unset=True)
+    update_data = data.model_dump(exclude_unset=True, by_alias=True)
     field_map = {
         "name": "name",
         "testType": "test_type",

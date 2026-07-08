@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { ArrowLeft, WandSparkles, Loader2, FileUp, Upload, Trash2, Download, CheckCircle2, Play, Code, Eye } from "lucide-react";
-import { useStore, useProject, useProjectFiles, useProjectRequirements, useProjectTestPoints, useProjectTestCases, useProjectScripts } from "../../app/store";
+import { useStore } from "../../app/store";
+import { useProjectData } from "./useProjectData";
 import { useAPISync } from "../../api/useAPISync";
 import { useAIAction } from "../../shared/hooks/useAIAction";
-import { aiApi, requirementsApi, scriptsApi, testCasesApi, testPointsApi } from "../../api/client";
+import { requirementsApi, scriptsApi, testCasesApi, testPointsApi, type ApiFile, type ApiRequirement, type ApiTestPoint, type ApiTestCase, type ApiScript } from "../../api/client";
 import { DataTable } from "../../shared/components/DataTable";
 import { SectionHeader } from "../../shared/components/SectionHeader";
 import { StatusPill } from "../../shared/components/StatusPill";
@@ -12,6 +13,7 @@ import { ConfirmDialog } from "../../shared/components/ConfirmDialog";
 import { Modal } from "../../shared/components/Modal";
 import { TestCaseDetailModal } from "../test-design/TestCaseDetailModal";
 import { toast } from "sonner";
+import { startParseRequirements } from "../../shared/hooks/aiTaskManager";
 import type { Priority, TestCase, AutomationScript } from "../../shared/types/platform";
 
 function formatTime(iso: string | undefined): string {
@@ -53,34 +55,26 @@ function reviewTone(s: string) {
   return "amber" as const;
 }
 
-function statusTone(s: string) {
-  if (s === "阻塞") return "red" as const;
-  if (s === "已完成") return "green" as const;
-  if (s === "执行中") return "blue" as const;
-  return "amber" as const;
-}
+
 
 // ═══════════════════════════════════════
 // 概览
 // ═══════════════════════════════════════
 
 function OverviewTab({ projectId }: { projectId: string }) {
-  const project = useProject(projectId);
-  const files = useProjectFiles(projectId);
-  const testPoints = useProjectTestPoints(projectId);
-  const testCases = useProjectTestCases(projectId);
+  const { project, files, testPoints, testCases, scripts } = useProjectData(projectId);
   if (!project) return null;
   const p0Cases = testCases.filter((c) => c.priority === "P0").length;
   const autoCount = testCases.filter((c) => c.automation === "适合").length;
   const autoRate = testCases.length > 0 ? Math.round(autoCount / testCases.length * 100) : 0;
   const cards = [
-    { label: "项目状态", value: <StatusPill tone={statusTone(project.status)}>{project.status}</StatusPill> },
     { label: "优先级", value: <StatusPill tone={project.priority === "高" ? "red" : project.priority === "中" ? "amber" : "green"}>{project.priority}</StatusPill> },
     { label: "文档数量", value: files.length },
     { label: "测试点", value: testPoints.length },
     { label: "测试用例", value: testCases.length },
     { label: "P0 用例", value: p0Cases },
     { label: "自动化覆盖", value: `${autoRate}%` },
+    { label: "自动化脚本", value: scripts.length },
     { label: "测试类型", value: project.testType },
   ];
   return (
@@ -93,7 +87,7 @@ function OverviewTab({ projectId }: { projectId: string }) {
           </div>
         ))}
       </div>
-      <section className="work-panel">
+      <section className="work-panel" style={{ flex: 1, minHeight: 0 }}>
         <h3 style={{ margin: "0 0 12px", fontSize: 15 }}>项目说明</h3>
         {project.description ? (
           <p style={{ margin: 0, color: "var(--muted)", fontSize: 14, lineHeight: 22 }}>{project.description}</p>
@@ -115,7 +109,7 @@ function OverviewTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function FilesTab({ projectId }: { projectId: string }) {
-  const files = useProjectFiles(projectId);
+  const { files, refreshFiles } = useProjectData(projectId);
   const { uploadFile, deleteFile } = useAPISync();
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -136,7 +130,7 @@ function FilesTab({ projectId }: { projectId: string }) {
     setUploading(true);
     try {
       for (const file of newFiles) { await uploadFile(projectId, file); }
-      toast.success(skipped > 0 ? `上传 ${newFiles.length} 个，跳过 ${skipped} 个重复` : `上传成功，共 ${newFiles.length} 个文件`);
+      toast.success(skipped > 0 ? `上传 ${newFiles.length} 个，跳过 ${skipped} 个重复` : `上传成功，共 ${newFiles.length} 个文件`); await refreshFiles();
     } catch (err) { toast.error(err instanceof Error ? err.message : "上传失败"); }
     finally { setUploading(false); if (inputRef.current) inputRef.current.value = ""; }
   };
@@ -147,7 +141,7 @@ function FilesTab({ projectId }: { projectId: string }) {
 
   const handleDelete = async () => {
     if (!deletingFile) return;
-    try { await deleteFile(deletingFile.id); toast.success("删除成功"); } catch { toast.error("删除失败"); }
+    try { await deleteFile(deletingFile.id); toast.success("删除成功"); await refreshFiles(); } catch { toast.error("删除失败"); }
     setDeletingFile(null);
   };
 
@@ -155,11 +149,12 @@ function FilesTab({ projectId }: { projectId: string }) {
   const batchDelete = async () => {
     for (const id of selectedIds) { try { await deleteFile(id); } catch {} }
     toast.success(`已删除 ${selectedIds.size} 个文件`);
+    await refreshFiles();
     setSelectedIds(new Set());
   };
 
   return (
-    <div className="page-stack page-stack--spaced">
+    <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="文档管理" description="上传需求文档、接口文档、原型和变更说明，支持拖拽上传。"
         actions={<>
           {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
@@ -180,7 +175,7 @@ function FilesTab({ projectId }: { projectId: string }) {
             { key: "name", label: "文件名称", align: "left", render: (r) => <strong>{r.name}</strong> },
             { key: "type", label: "文件类型", render: (r) => r.fileType },
             { key: "size", label: "文件大小", render: (r) => r.size },
-            { key: "parseStatus", label: "解析状态", align: "center", render: (r) => <StatusPill tone={r.parseStatus === "已完成" ? "green" : r.parseStatus === "解析中" ? "blue" : r.parseStatus === "失败" ? "red" : "slate"}>{r.parseStatus}</StatusPill> },
+            { key: "parseStatus", label: "解析状态", align: "center", render: (r) => <span title={r.parseError || undefined}><StatusPill tone={r.parseStatus === "已完成" ? "green" : r.parseStatus === "解析中" ? "blue" : r.parseStatus === "失败" ? "red" : "slate"}>{r.parseStatus}</StatusPill></span> },
             { key: "date", label: "上传时间", render: (r) => formatTime(r.uploadedAt) },
             { key: "actions", label: "操作", align: "center", render: (r) => <button className="text-button text-button--danger" type="button" onClick={() => setDeletingFile({ id: r.id, name: r.name })}>删除</button> },
           ]} />
@@ -197,10 +192,9 @@ function FilesTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function RequirementsTab({ projectId }: { projectId: string }) {
-  const files = useProjectFiles(projectId);
-  const requirements = useProjectRequirements(projectId);
-  const { dispatch } = useStore();
-  const [parsing, setParsing] = useState(false);
+  const { files, requirements, refresh: refreshData } = useProjectData(projectId);
+  const { state, dispatch } = useStore();
+  const parsing = useMemo(() => state.activeAITasks.includes("需求解析"), [state.activeAITasks]);
   const [showReparseConfirm, setShowReparseConfirm] = useState(false);
   const [viewReq, setViewReq] = useState<typeof requirements[0] | null>(null);
   const [editReq, setEditReq] = useState<typeof requirements[0] | null>(null);
@@ -221,47 +215,20 @@ function RequirementsTab({ projectId }: { projectId: string }) {
     selectedIds.forEach((id) => dispatch({ type: "DELETE_REQUIREMENT", payload: id }));
     toast.success(`已删除 ${selectedIds.size} 条需求`);
     setSelectedIds(new Set());
+    await refreshData();
   };
 
   const doParse = async () => {
-    setParsing(true);
-    files.forEach((f) => {
-      dispatch({ type: "UPDATE_FILE", payload: { ...f, parseStatus: "解析中" } });
-    });
     try {
-      await aiApi.parseRequirements(projectId);
-      toast.success("需求解析已启动，正在分析...");
-      const poll = async () => {
-        for (let i = 0; i < 60; i++) {
-          await new Promise((r) => setTimeout(r, 2000));
-          try {
-            const updatedFiles = await (await import("../../api/client")).filesApi.list(projectId);
-            updatedFiles.forEach((f: any) => {
-              dispatch({ type: "UPDATE_FILE", payload: { ...f, parseStatus: f.parseStatus } });
-            });
-            const allDone = updatedFiles.every((f: any) => f.parseStatus === "已完成" || f.parseStatus === "失败");
-            if (allDone) {
-              const failed = updatedFiles.filter((f: any) => f.parseStatus === "失败");
-              if (failed.length > 0) toast.error(`${failed.length} 个文件解析失败`);
-              else toast.success("需求解析完成！");
-              setParsing(false);
-              // 重新加载需求数据
-              const reqs = await (await import("../../api/client")).requirementsApi.list(projectId);
-              reqs.forEach((r: any) => dispatch({ type: "ADD_REQUIREMENT", payload: {
-                id: r.id, projectId: r.projectId, module: r.module, feature: r.feature,
-                source: r.source, risk: r.risk, rule: r.rule, question: r.question, confirmed: r.confirmed,
-              }}));
-              return;
-            }
-          } catch {}
-        }
-        setParsing(false);
-        toast.warning("解析超时，请刷新查看结果");
-      };
-      poll();
+      const result = await startParseRequirements(projectId);
+      if (result.success) {
+        toast.success("需求解析完成！");
+        await refreshData();
+      } else if (result.error && result.error !== "模型未配置") {
+        toast.error(result.error);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "解析失败");
-      setParsing(false);
     }
   };
 
@@ -272,11 +239,11 @@ function RequirementsTab({ projectId }: { projectId: string }) {
   };
 
   return (
-    <div className="page-stack page-stack--spaced">
+    <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="需求列表" description="从上传的文档中解析需求，支持查看和确认。"
         actions={<>
           {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
-          <button className="primary-button" type="button" onClick={handleParse} disabled={parsing || !hasFiles}>
+          <button className="primary-button" type="button" onClick={handleParse} disabled={parsing}>
             {parsing ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}
             {parsing ? "解析中..." : "需求解析"}
           </button>
@@ -352,7 +319,7 @@ function RequirementsTab({ projectId }: { projectId: string }) {
       <ConfirmDialog open={showBatchDeleteConfirm} title="批量删除需求" message={`确定删除选中的 ${selectedIds.size} 条需求？`} confirmLabel="删除" onConfirm={() => { setShowBatchDeleteConfirm(false); batchDelete(); }} onCancel={() => setShowBatchDeleteConfirm(false)} />
       <ConfirmDialog open={!!deletingReq} title="删除需求" message={`确定删除需求「${deletingReq?.name}」？`} confirmLabel="删除" onConfirm={async () => {
         if (!deletingReq) return;
-        try { await requirementsApi.delete(deletingReq.id); dispatch({ type: "DELETE_REQUIREMENT", payload: deletingReq.id }); toast.success("删除成功"); } catch { toast.error("删除失败"); }
+        try { await requirementsApi.delete(deletingReq.id); dispatch({ type: "DELETE_REQUIREMENT", payload: deletingReq.id }); toast.success("删除成功"); await refreshData(); } catch { toast.error("删除失败"); }
         setDeletingReq(null);
       }} onCancel={() => setDeletingReq(null)} />
     </div>
@@ -364,11 +331,11 @@ function RequirementsTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function TestPointsTab({ projectId }: { projectId: string }) {
-  const testPoints = useProjectTestPoints(projectId);
-  const files = useProjectFiles(projectId);
-  const requirements = useProjectRequirements(projectId);
+  const { testPoints, files, requirements, refresh: refreshData, refreshTestPoints } = useProjectData(projectId);
   const { dispatch } = useStore();
   const { loading, error, generateTestPoints } = useAIAction(projectId);
+  const prevLoadingRef = useRef(loading);
+  useEffect(() => { if (prevLoadingRef.current && !loading) { refreshTestPoints(); } prevLoadingRef.current = loading; }, [loading, refreshTestPoints]);
   const [moduleFilter, setModuleFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
@@ -395,6 +362,7 @@ function TestPointsTab({ projectId }: { projectId: string }) {
     selectedIds.forEach((id) => dispatch({ type: "DELETE_TEST_POINT", payload: id }));
     toast.success(`已删除 ${selectedIds.size} 个测试点`);
     setSelectedIds(new Set());
+    await refreshTestPoints();
   };
   const batchApprove = () => {
     selectedIds.forEach((id) => {
@@ -418,12 +386,12 @@ function TestPointsTab({ projectId }: { projectId: string }) {
   };
 
   return (
-    <div className="page-stack page-stack--spaced">
+    <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="测试点生成" description="AI 从文档中提取测试点，支持评审和删除。"
         actions={<>
           {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={batchApprove}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
           {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
-          <button className="primary-button" type="button" onClick={handleGenerate} disabled={loading || !hasPrerequisite}>{loading ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loading ? "生成中..." : "生成测试点"}</button>
+          <button className="primary-button" type="button" onClick={handleGenerate} disabled={loading}>{loading ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loading ? "生成中..." : "生成测试点"}</button>
         </>} />
       {error && <div className="error-banner"><span>{error}</span></div>}
       {modules.length > 0 && <div className="filter-bar"><span className="filter-label">模块筛选</span><select className="filter-select" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}><option value="all">全部模块</option>{modules.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>}
@@ -441,7 +409,7 @@ function TestPointsTab({ projectId }: { projectId: string }) {
               <div className="inline-actions">
                 <button className="text-button" type="button" onClick={() => setViewTP(r)}>查看</button>
                 <button className="text-button" type="button" onClick={() => { setEditTP(r); setEditTitle(r.title); setEditDesc(r.description); }}>编辑</button>
-                <button className="text-button text-button--danger" type="button" onClick={async () => { try { await testPointsApi.delete(r.id); } catch {} dispatch({ type: "DELETE_TEST_POINT", payload: r.id }); }}>删除</button>
+                <button className="text-button text-button--danger" type="button" onClick={async () => { try { await testPointsApi.delete(r.id); } catch {} dispatch({ type: "DELETE_TEST_POINT", payload: r.id }); refreshTestPoints(); }}>删除</button>
               </div>
             )},
           ]} />
@@ -494,10 +462,11 @@ function TestPointsTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function TestCasesTab({ projectId }: { projectId: string }) {
-  const testCases = useProjectTestCases(projectId);
-  const testPoints = useProjectTestPoints(projectId);
+  const { testCases, testPoints, refreshTestCases, refreshTestPoints } = useProjectData(projectId);
   const { dispatch } = useStore();
   const { loading, error, generateTestCases } = useAIAction(projectId);
+  const prevLoadingRef = useRef(loading);
+  useEffect(() => { if (prevLoadingRef.current && !loading) { refreshTestCases(); } prevLoadingRef.current = loading; }, [loading, refreshTestCases]);
   const [detailCase, setDetailCase] = useState<TestCase | null>(null);
   const [editCase, setEditCase] = useState<TestCase | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -525,6 +494,7 @@ function TestCasesTab({ projectId }: { projectId: string }) {
     selectedIds.forEach((id) => dispatch({ type: "DELETE_TEST_CASE", payload: id }));
     toast.success(`已删除 ${selectedIds.size} 条用例`);
     setSelectedIds(new Set());
+    await refreshTestCases();
   };
   const batchApprove = () => {
     selectedIds.forEach((id) => {
@@ -568,13 +538,13 @@ function TestCasesTab({ projectId }: { projectId: string }) {
   };
 
   return (
-    <div className="page-stack page-stack--spaced">
+    <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="用例生成" description="从测试点生成可执行用例，支持评审和删除。"
         actions={<>
           {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={batchApprove}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
           {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
           <button className="primary-button" type="button" onClick={handleExportManual} disabled={testCases.length === 0}><Download size={13} /> 导出手动测试用例</button>
-          <button className="primary-button" type="button" onClick={handleGenerate} disabled={loading || !hasPrerequisite}>{loading ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loading ? "生成中..." : "生成用例"}</button>
+          <button className="primary-button" type="button" onClick={handleGenerate} disabled={loading}>{loading ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loading ? "生成中..." : "生成用例"}</button>
         </>} />
       {error && <div className="error-banner"><span>{error}</span></div>}
       {modules.length > 0 && <div className="filter-bar"><span className="filter-label">模块筛选</span><select className="filter-select" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}><option value="all">全部模块</option>{modules.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>}
@@ -592,7 +562,7 @@ function TestCasesTab({ projectId }: { projectId: string }) {
               <div className="inline-actions">
                 <button className="text-button" type="button" onClick={() => setDetailCase(r)}>查看</button>
                 <button className="text-button" type="button" onClick={() => { setEditCase(r); setEditTitle(r.title); setEditSteps(r.steps); setEditExpected(r.expectedResult); }}>编辑</button>
-                <button className="text-button text-button--danger" type="button" onClick={async () => { try { await testCasesApi.delete(r.id); } catch {} dispatch({ type: "DELETE_TEST_CASE", payload: r.id }); }}>删除</button>
+                <button className="text-button text-button--danger" type="button" onClick={async () => { try { await testCasesApi.delete(r.id); } catch {} dispatch({ type: "DELETE_TEST_CASE", payload: r.id }); refreshTestCases(); }}>删除</button>
               </div>
             )},
           ]} />
@@ -630,8 +600,7 @@ function TestCasesTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function ScriptsTab({ projectId }: { projectId: string }) {
-  const testCases = useProjectTestCases(projectId);
-  const scripts = useProjectScripts(projectId);
+  const { testCases, scripts, refreshScripts } = useProjectData(projectId);
   const { dispatch } = useStore();
   const [generating, setGenerating] = useState(false);
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
@@ -657,6 +626,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
     }
     toast.success(`已删除 ${selectedIds.size} 个脚本`);
     setSelectedIds(new Set());
+    await refreshScripts();
   };
 
   const handleGenerate = async () => {
@@ -676,6 +646,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
           createdAt: s.createdAt, updatedAt: s.updatedAt,
         }}));
         toast.success(`成功生成 ${result.count} 个自动化脚本`);
+        await refreshScripts();
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "生成失败";
@@ -707,6 +678,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
       await scriptsApi.delete(deletingScript.id);
       dispatch({ type: "DELETE_SCRIPT", payload: deletingScript.id });
       toast.success("删除成功");
+      await refreshScripts();
     } catch {
       toast.error("删除失败");
     }
@@ -720,7 +692,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
   };
 
   return (
-    <div className="page-stack page-stack--spaced">
+    <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="自动化脚本" description="适合自动化的测试用例列表，可一键生成 Playwright 脚本。"
         actions={<>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
@@ -730,7 +702,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
                 if (!hasPrerequisite) { toast.warning("请先生成测试用例并标记适合自动化的用例"); return; }
                 if (existingScriptCount > 0) { setShowGenerateConfirm(true); return; }
                 handleGenerate();
-              }} disabled={generating || !hasPrerequisite}>
+              }} disabled={generating}>
                 {generating ? <Loader2 size={13} className="animate-spin" /> : <Code size={13} />}
                 {generating ? "生成中..." : "生成自动化脚本"}
               </button>
@@ -838,8 +810,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function ExecuteScriptsTab({ projectId }: { projectId: string }) {
-  const scripts = useProjectScripts(projectId);
-  const testCases = useProjectTestCases(projectId);
+  const { scripts, testCases, refreshScripts } = useProjectData(projectId);
   const { dispatch } = useStore();
   const [selectedScript, setSelectedScript] = useState<AutomationScript | null>(null);
   const [runningId, setRunningId] = useState<string | null>(null);
@@ -855,9 +826,11 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
     for (const id of selectedIds) { try { await scriptsApi.delete(id); dispatch({ type: "DELETE_SCRIPT", payload: id }); } catch {} }
     toast.success(`已删除 ${selectedIds.size} 个脚本`);
     setSelectedIds(new Set());
+    await refreshScripts();
   };
 
   const runAll = async () => {
+    if (scripts.length === 0) { toast.warning("请先在「自动化脚本」页面生成脚本"); return; }
     setRunningAll(true);
     for (const script of scripts) {
       if (script.status === "成功") continue;
@@ -888,6 +861,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
       await scriptsApi.delete(id);
       dispatch({ type: "DELETE_SCRIPT", payload: id });
       toast.success("删除成功");
+      await refreshScripts();
     } catch {
       toast.error("删除失败");
     }
@@ -900,11 +874,11 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
   };
 
   return (
-    <div className="page-stack page-stack--spaced">
+    <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="执行脚本" description="管理和执行已生成的自动化脚本。"
         actions={<>
           {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
-          <button className="primary-button" type="button" onClick={runAll} disabled={runningAll || scripts.length === 0}>
+          <button className="primary-button" type="button" onClick={runAll} disabled={runningAll}>
             {runningAll ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
             {runningAll ? "执行中..." : "全部执行"}
           </button>
@@ -975,9 +949,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function SummaryTab({ projectId }: { projectId: string }) {
-  const files = useProjectFiles(projectId);
-  const testPoints = useProjectTestPoints(projectId);
-  const testCases = useProjectTestCases(projectId);
+  const { files, testPoints, testCases } = useProjectData(projectId);
   const passedTP = testPoints.filter((tp) => tp.reviewStatus === "已通过").length;
   const passedTC = testCases.filter((tc) => tc.reviewStatus === "已通过").length;
   const autoCount = testCases.filter((tc) => tc.automation === "适合").length;
@@ -990,7 +962,7 @@ function SummaryTab({ projectId }: { projectId: string }) {
     { label: "需修改", value: testCases.filter((c) => c.reviewStatus === "需修改").length },
   ];
   return (
-    <div className="page-stack page-stack--spaced">
+    <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="测试进度概览" description="手动测试数据与自动化测试结果的汇总统计。" />
       <div className="dash-stats" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
         {stats.map((s) => <div className="dash-stat-card" key={s.label}><div className="dash-stat-body"><span className="dash-stat-label">{s.label}</span><strong className="dash-stat-value">{s.value}</strong>{s.sub && <span className="dash-stat-sub">{s.sub}</span>}</div></div>)}
@@ -1004,9 +976,9 @@ function SummaryTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function DocManageTab({ projectId }: { projectId: string }) {
-  const files = useProjectFiles(projectId);
+  const { files } = useProjectData(projectId);
   return (
-    <div className="page-stack page-stack--spaced">
+    <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="项目文档" description="项目已上传的文档列表。" />
       <section className="work-panel">
         {files.length === 0 ? <div className="empty-state"><p>暂无文档</p></div> : (
@@ -1028,7 +1000,7 @@ function DocManageTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function DocFusionTab({ projectId }: { projectId: string }) {
-  const testCases = useProjectTestCases(projectId);
+  const { testCases } = useProjectData(projectId);
   const [manualResults, setManualResults] = useState<Record<string, string>>({});
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -1043,7 +1015,7 @@ function DocFusionTab({ projectId }: { projectId: string }) {
   };
 
   return (
-    <div className="page-stack page-stack--spaced">
+    <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="手动 + 自动化结果合并" description="上传手动测试结果文档，与自动化测试数据按用例编号合并展示。"
         actions={<><input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} onChange={handleUploadManual} /><button className="primary-button" type="button" onClick={() => inputRef.current?.click()}><FileUp size={13} /> 上传手动测试结果</button></>} />
       <section className="work-panel">
@@ -1068,8 +1040,8 @@ function DocFusionTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function DocGenerateTab({ projectId }: { projectId: string }) {
-  const files = useProjectFiles(projectId);
-  const testCases = useProjectTestCases(projectId);
+  const { files } = useProjectData(projectId);
+  const { testCases } = useProjectData(projectId);
   const templates = [
     { id: "tpl-plan", name: "软件测试计划", desc: "测试范围、策略、资源、进度安排", needs: ["files"] },
     { id: "tpl-spec", name: "软件测试说明", desc: "测试环境、用例设计、执行方法", needs: ["files", "testCases"] },
@@ -1083,7 +1055,7 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
   const isReady = (needs: string[]) => { if (needs.includes("files") && files.length === 0) return false; if (needs.includes("testCases") && testCases.length === 0) return false; return true; };
 
   return (
-    <div className="page-stack page-stack--spaced">
+    <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="文档生成" description="选择文档模板，系统将根据项目数据自动生成 Word 文档。" />
       <section className="work-panel">
         <DataTable rows={templates} getRowKey={(r) => r.id} columns={[
@@ -1126,8 +1098,8 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function DocVerifyTab({ projectId }: { projectId: string }) {
-  const files = useProjectFiles(projectId);
-  const testCases = useProjectTestCases(projectId);
+  const { files } = useProjectData(projectId);
+  const { testCases } = useProjectData(projectId);
   const checks = [
     { name: "需求文档完整性", pass: files.length > 0, detail: files.length > 0 ? `已上传 ${files.length} 个文档` : "未上传需求文档" },
     { name: "测试用例覆盖", pass: testCases.length > 0, detail: testCases.length > 0 ? `已生成 ${testCases.length} 条用例` : "未生成测试用例" },
@@ -1135,7 +1107,7 @@ function DocVerifyTab({ projectId }: { projectId: string }) {
     { name: "模块覆盖度", pass: new Set(testCases.map((c) => c.module)).size >= 2, detail: `覆盖 ${new Set(testCases.map((c) => c.module)).size} 个模块` },
   ];
   return (
-    <div className="page-stack page-stack--spaced">
+    <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="文档完整性校验" description="检查项目数据是否满足生成测试文档的条件。" />
       <section className="work-panel">
         <div style={{ display: "grid", gap: 12 }}>
@@ -1161,19 +1133,32 @@ const TAB_STORAGE_KEY = "aitestlink-project-tab";
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const project = useProject(id);
-  const initialTab = (searchParams.get("tab") as TabKey) || (localStorage.getItem(TAB_STORAGE_KEY) as TabKey) || "overview";
+  const location = useLocation();
+  const { project } = useProjectData(id);
+  // 优先从路由 state 读取（通知跳转），否则用 "overview"
+  const initialTab: TabKey = (location.state?.targetTab as TabKey) || "overview";
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
   const tabContentRef = useRef<HTMLDivElement>(null);
   const handleTabChange = (tab: TabKey) => { setActiveTab(tab); localStorage.setItem(TAB_STORAGE_KEY, tab); };
+
+  // 监听通知点击的 CustomEvent，实时切换 tab
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { tab, projectId } = (e as CustomEvent).detail;
+      if (projectId === id && tab) {
+        setActiveTab(tab as TabKey);
+      }
+    };
+    window.addEventListener("aitestlink:navigate-tab", handler);
+    return () => window.removeEventListener("aitestlink:navigate-tab", handler);
+  }, [id]);
 
   useEffect(() => {
     tabContentRef.current?.scrollTo({ top: 0 });
   }, [activeTab]);
 
   if (!project) {
-    return <div className="page-stack page-stack--spaced"><div className="empty-state"><p>项目不存在或已删除。</p><button className="primary-button" type="button" onClick={() => navigate("/projects")}>返回项目列表</button></div></div>;
+    return <div className="page-stack page-stack--spaced page-stack--fill"><div className="empty-state"><p>项目不存在或已删除。</p><button className="primary-button" type="button" onClick={() => navigate("/projects")}>返回项目列表</button></div></div>;
   }
 
   const ActiveComponent = tabComponents[activeTab];
@@ -1183,7 +1168,6 @@ export function ProjectDetailPage() {
       <div className="detail-header">
         <button className="ghost-button" type="button" onClick={() => navigate("/projects")}><ArrowLeft size={13} /> 返回</button>
         <h2 style={{ margin: 0 }}>{project.name}</h2>
-        <StatusPill tone={statusTone(project.status)}>{project.status}</StatusPill>
       </div>
       <div className="tab-bar">
         {allTabs.map((tab) => <button key={tab.key} type="button" className={`tab-button ${activeTab === tab.key ? "tab-button--active" : ""}`} onClick={() => handleTabChange(tab.key)}>{tab.label}</button>)}

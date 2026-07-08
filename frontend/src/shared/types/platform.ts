@@ -37,17 +37,13 @@ export type TestType = "首轮全量测试" | "回归测试" | "增量测试" | 
 export interface Project {
   id: string;
   name: string;
-  version: string;
-  owner: string;
   testType: TestType;
   testStatus: string;
   docStatus: string;
-  status: ProjectStatus;
   description: string;
   caseCount: number;
   passRate: number;
   priority: "高" | "中" | "低";
-  riskLevel: "高" | "中" | "低";
   createdAt: string;
   updatedAt: string;
 }
@@ -189,4 +185,20 @@ export interface RoadmapPhase {
   goal: string;
   capabilities: string;
   status: "当前" | "下一步" | "规划";
+}
+
+// ─── 通知 ───
+
+export type NotificationType = "任务完成" | "任务失败";
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  taskType: AITaskType;
+  projectName: string;
+  projectId: string;
+  message: string;
+  targetPath: string;
+  read: boolean;
+  createdAt: string;
 }

@@ -34,7 +34,7 @@ export function EditProjectModal({ open, onClose, project }: EditProjectModalPro
     if (open && project) {
       setName(project.name);
       setTestType(project.testType);
-      setPriority(project.riskLevel);
+      setPriority(project.priority);
       setTestStatus(project.testStatus);
       setDocStatus(project.docStatus);
       setDescription(project.description);

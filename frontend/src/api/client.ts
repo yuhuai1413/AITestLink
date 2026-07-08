@@ -71,6 +71,7 @@ export interface ApiFile {
   fileType: string;
   size: string;
   parseStatus: string;
+  parseError?: string;
   uploadedAt: string;
 }
 

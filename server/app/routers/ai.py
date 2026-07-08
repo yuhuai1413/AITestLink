@@ -20,6 +20,39 @@ from app.utils import verify_project_owner
 
 logger = logging.getLogger(__name__)
 
+
+def _friendly_error(err: Exception) -> str:
+    """将后端异常转换为中文用户友好提示"""
+    msg = str(err)
+    # HTTP 状态码错误
+    if "404" in msg or "Not Found" in msg:
+        return "模型服务地址不可用（404），请在模型配置中检查 API 地址是否正确"
+    if "401" in msg or "Unauthorized" in msg or "403" in msg or "Forbidden" in msg:
+        return "API Key 无效或无权限，请在模型配置中检查 API Key"
+    if "429" in msg or "Too Many Requests" in msg or "Rate limit" in msg:
+        return "模型服务请求过于频繁（限流），请稍后重试"
+    if "500" in msg or "502" in msg or "503" in msg or "Internal Server" in msg or "Bad Gateway" in msg or "Service Unavailable" in msg:
+        return "模型服务暂时不可用，请稍后重试"
+    if "Connect" in msg or "connect" in msg or "ConnectionRefused" in msg:
+        return "无法连接到模型服务，请检查网络连接或模型配置中的 API 地址"
+    if "Timeout" in msg or "timeout" in msg:
+        return "模型服务响应超时，请检查网络连接后重试"
+    if "SSL" in msg or "ssl" in msg:
+        return "SSL 连接错误，请检查网络环境"
+    if "JSONDecodeError" in msg or "json" in msg.lower():
+        return "模型返回的数据格式异常，无法解析，请稍后重试"
+    if "KeyError" in msg:
+        return "模型返回数据结构异常，请稍后重试"
+    # AI 配置相关
+    if "配置不存在" in msg or "模型配置" in msg:
+        return msg  # 已经是中文了
+    if "请先" in msg:
+        return msg
+    # 默认兜底
+    return f"解析失败：{msg[:200]}"
+
+
+
 router = APIRouter()
 ai_service = AIService()
 
@@ -124,10 +157,12 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
 
             for f in files:
                 f.parse_status = "已完成"
+                f.parse_error = ""
 
             await _update_task_status(db, task_id, "成功")
 
         except Exception as e:
+            error_msg = _friendly_error(e)
             logger.exception("run_parse_requirements failed")
             try:
                 file_result = await db.execute(
@@ -135,10 +170,11 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
                 )
                 for f in file_result.scalars().all():
                     f.parse_status = "失败"
+                    f.parse_error = error_msg
                 await db.commit()
             except Exception:
                 logger.exception("Failed to update file status on error")
-            await _update_task_status(db, task_id, "失败", str(e))
+            await _update_task_status(db, task_id, "失败", _friendly_error(e))
 
 
 async def run_generate_test_points(task_id: str, project_id: str, user_id: str):
@@ -148,6 +184,9 @@ async def run_generate_test_points(task_id: str, project_id: str, user_id: str):
                 select(Requirement).where(Requirement.project_id == project_id)
             )
             requirements = result.scalars().all()
+            if not requirements:
+                await _update_task_status(db, task_id, "失败", "需求列表为空，无法生成测试点")
+                return
             req_text = "\n".join(
                 f"- 模块:{r.module} 功能:{r.feature} 规则:{r.rule}" for r in requirements
             )
@@ -169,7 +208,7 @@ async def run_generate_test_points(task_id: str, project_id: str, user_id: str):
 
         except Exception as e:
             logger.exception("run_generate_test_points failed")
-            await _update_task_status(db, task_id, "失败", str(e))
+            await _update_task_status(db, task_id, "失败", _friendly_error(e))
 
 
 async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
@@ -205,7 +244,7 @@ async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
 
         except Exception as e:
             logger.exception("run_generate_test_cases failed")
-            await _update_task_status(db, task_id, "失败", str(e))
+            await _update_task_status(db, task_id, "失败", _friendly_error(e))
 
 
 # ─── 路由 ───
@@ -230,7 +269,7 @@ async def check_ai_config(
     user: dict = Depends(get_current_user),
 ):
     """检查用户是否已配置指定 AI 任务的模型"""
-    result = await check_config_for_task(task_type, user["id"])
+    result = await check_config_for_task(task_type, user["sub"])
     return result
 
 
@@ -243,7 +282,7 @@ async def parse_requirements(
 ):
     await verify_project_owner(db, project_id, user["sub"])
     # 检查配置
-    config_check = await check_config_for_task("需求解析", user["id"])
+    config_check = await check_config_for_task("需求解析", user["sub"])
     if not config_check["configured"]:
         raise HTTPException(status_code=400, detail=config_check["message"])
 
@@ -272,7 +311,7 @@ async def parse_requirements(
     db.add(task)
     await db.commit()
 
-    background_tasks.add_task(run_parse_requirements, task.id, project_id, file_content, user["id"])
+    background_tasks.add_task(run_parse_requirements, task.id, project_id, file_content, user["sub"])
     return model_to_dict(task)
 
 
@@ -284,8 +323,15 @@ async def generate_test_points(
     db: AsyncSession = Depends(get_db),
 ):
     await verify_project_owner(db, project_id, user["sub"])
+    # 检查是否有需求数据
+    req_result = await db.execute(
+        select(Requirement).where(Requirement.project_id == project_id)
+    )
+    if not req_result.scalars().first():
+        raise HTTPException(status_code=400, detail="需求列表为空，请先在「需求列表」页面完成需求解析")
+
     # 检查配置
-    config_check = await check_config_for_task("测试点生成", user["id"])
+    config_check = await check_config_for_task("测试点生成", user["sub"])
     if not config_check["configured"]:
         raise HTTPException(status_code=400, detail=config_check["message"])
 
@@ -299,7 +345,7 @@ async def generate_test_points(
     db.add(task)
     await db.commit()
 
-    background_tasks.add_task(run_generate_test_points, task.id, project_id, user["id"])
+    background_tasks.add_task(run_generate_test_points, task.id, project_id, user["sub"])
     return model_to_dict(task)
 
 
@@ -312,7 +358,7 @@ async def generate_test_cases(
 ):
     await verify_project_owner(db, project_id, user["sub"])
     # 检查配置
-    config_check = await check_config_for_task("用例生成", user["id"])
+    config_check = await check_config_for_task("用例生成", user["sub"])
     if not config_check["configured"]:
         raise HTTPException(status_code=400, detail=config_check["message"])
 
@@ -326,5 +372,5 @@ async def generate_test_cases(
     db.add(task)
     await db.commit()
 
-    background_tasks.add_task(run_generate_test_cases, task.id, project_id, user["id"])
+    background_tasks.add_task(run_generate_test_cases, task.id, project_id, user["sub"])
     return model_to_dict(task)

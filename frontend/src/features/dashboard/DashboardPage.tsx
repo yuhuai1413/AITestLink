@@ -8,7 +8,7 @@ import { useStore } from "../../app/store";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { ChartTooltip } from "../../shared/components/ChartTooltip";
 import {
-  FolderOpen, FileText, ShieldCheck, AlertTriangle, ArrowRight,
+  FolderOpen, FileText, ShieldCheck, ArrowRight, Bot,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -24,11 +24,10 @@ const C = {
   muted: "#64748b",
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  设计中: C.amber,
-  执行中: C.blue,
-  阻塞: C.red,
-  已完成: C.green,
+const PROJECT_PRIORITY_COLORS: Record<string, string> = {
+  高: C.red,
+  中: C.amber,
+  低: C.green,
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -44,10 +43,10 @@ interface ChartDataItem {
 interface DashboardStats {
   projectCount: number;
   requirementCount: number;
+  testingCount: number;
   caseCount: number;
   p0Cases: number;
   passRate: number;
-  blocked: number;
   autoRate: number;
 }
 
@@ -101,18 +100,18 @@ export function DashboardPage() {
     return {
       projectCount: state.projects.length,
       requirementCount: state.requirements.length,
+      testingCount: state.projects.filter((p) => p.testStatus === "测试中").length,
       caseCount: totalCases,
       p0Cases: cases.filter((c) => c.priority === "P0").length,
       passRate: totalCases > 0 ? Math.round((passed / totalCases) * 100) : 0,
-      blocked: state.projects.filter((p) => p.status === "阻塞").length,
       autoRate: totalCases > 0 ? Math.round((automatable / totalCases) * 100) : 0,
     };
   }, [state]);
 
-  const statusData = useMemo<ChartDataItem[]>(() => {
+  const projectPriorityData = useMemo<ChartDataItem[]>(() => {
     const map: Record<string, number> = {};
-    state.projects.forEach((p) => { map[p.status] = (map[p.status] || 0) + 1; });
-    return Object.entries(map).map(([name, value]) => ({ name, value, fill: STATUS_COLORS[name] || C.slate }));
+    state.projects.forEach((p) => { map[p.priority] = (map[p.priority] || 0) + 1; });
+    return ["高", "中", "低"].map((p) => ({ name: p, value: map[p] || 0, fill: PROJECT_PRIORITY_COLORS[p] || C.slate }));
   }, [state.projects]);
 
   const priorityData = useMemo<ChartDataItem[]>(() => {
@@ -121,18 +120,7 @@ export function DashboardPage() {
     return ["P0", "P1", "P2", "P3"].map((p) => ({ name: p, value: map[p] || 0, fill: PRIORITY_COLORS[p] }));
   }, [state.testCases]);
 
-  const moduleData = useMemo(() => {
-    const map: Record<string, number> = {};
-    state.testCases.forEach((c) => { map[c.module] = (map[c.module] || 0) + 1; });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, value]) => ({ name, value }));
-  }, [state.testCases]);
 
-  const reviewData = useMemo<ChartDataItem[]>(() => {
-    const map: Record<string, number> = {};
-    const colors: Record<string, string> = { "已通过": C.green, "待评审": C.amber, "需修改": C.red };
-    state.testCases.forEach((c) => { map[c.reviewStatus] = (map[c.reviewStatus] || 0) + 1; });
-    return Object.entries(map).map(([name, value]) => ({ name, value, fill: colors[name] || C.slate }));
-  }, [state.testCases]);
 
   const autoBarData = useMemo<ChartDataItem[]>(() => {
     const map: Record<string, number> = {};
@@ -148,10 +136,10 @@ export function DashboardPage() {
   [state.projects]);
 
   const cards: { icon: LucideIcon; label: string; value: string | number; sub: string; color: string }[] = [
-    { icon: FolderOpen, label: "项目总数", value: stats.projectCount, sub: `${stats.blocked} 个阻塞`, color: C.blue },
+    { icon: FolderOpen, label: "项目总数", value: stats.projectCount, sub: `${stats.testingCount} 个测试中`, color: C.blue },
     { icon: FileText, label: "测试用例", value: stats.caseCount, sub: `P0 用例 ${stats.p0Cases} 条`, color: C.green },
-    { icon: ShieldCheck, label: "用例通过率", value: `${stats.passRate}%`, sub: `共 ${stats.requirementCount} 条需求`, color: C.purple },
-    { icon: AlertTriangle, label: "阻塞项目", value: stats.blocked, sub: stats.blocked > 0 ? "需及时处理" : "运行正常", color: stats.blocked > 0 ? C.red : C.green },
+    { icon: ShieldCheck, label: "评审通过率", value: `${stats.passRate}%`, sub: `${stats.caseCount} 条用例已评审`, color: C.purple },
+    { icon: Bot, label: "自动化覆盖", value: `${stats.autoRate}%`, sub: `适合自动化 ${stats.caseCount > 0 ? Math.round(stats.caseCount * stats.autoRate / 100) : 0} 条`, color: C.blue },
   ];
 
   return (
@@ -162,19 +150,19 @@ export function DashboardPage() {
 
       <div className="dash-charts-row">
         <div className="dash-card">
-          <h3 className="dash-card-title">项目状态分布</h3>
+          <h3 className="dash-card-title">项目优先级分布</h3>
           <div className="dash-chart-wrap">
-            {statusData.length > 0 ? (
+            {projectPriorityData.some((d) => d.value > 0) ? (
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={statusData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" stroke="none">
-                    {statusData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                  <Pie data={projectPriorityData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" stroke="none">
+                    {projectPriorityData.map((d, i) => <Cell key={i} fill={d.fill} />)}
                   </Pie>
                   <Tooltip content={<ChartTooltip />} />
                 </PieChart>
               </ResponsiveContainer>
             ) : <EmptyChart />}
-            <Legend data={statusData} />
+            <Legend data={projectPriorityData} />
           </div>
         </div>
 
@@ -183,7 +171,7 @@ export function DashboardPage() {
           <div className="dash-chart-wrap">
             {priorityData.some((d) => d.value > 0) ? (
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={priorityData} barSize={36}>
+                <BarChart data={priorityData} barSize={36} margin={{ top: 20, right: 16, left: 0, bottom: 4 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 12, fill: C.muted }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 12, fill: C.muted }} axisLine={false} tickLine={false} allowDecimals={false} />
@@ -201,7 +189,7 @@ export function DashboardPage() {
           <h3 className="dash-card-title">自动化覆盖率</h3>
           <div className="dash-chart-wrap dash-chart-center">
             {stats.caseCount > 0 ? (
-              <ResponsiveContainer width="100%" height={180}>
+              <ResponsiveContainer width="100%" height={220}>
                 <RadialBarChart cx="50%" cy="50%" innerRadius="60%" outerRadius="90%" barSize={18} startAngle={90} endAngle={-270} data={radialData}>
                   <RadialBar background={{ fill: `${C.blue}18` }} dataKey="value" cornerRadius={90} />
                 </RadialBarChart>
@@ -229,43 +217,9 @@ export function DashboardPage() {
         </div>
       </div>
 
-      <div className="dash-charts-row">
-        <div className="dash-card dash-card--wide">
-          <h3 className="dash-card-title">模块用例分布</h3>
-          <div className="dash-chart-wrap">
-            {moduleData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={moduleData} layout="vertical" barSize={20}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={C.border} horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 12, fill: C.muted }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 12, fill: C.muted }} axisLine={false} tickLine={false} width={100} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Bar dataKey="value" name="用例数" radius={[0, 6, 6, 0]} fill={C.blue} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : <EmptyChart />}
-          </div>
-        </div>
 
-        <div className="dash-card">
-          <h3 className="dash-card-title">用例评审状态</h3>
-          <div className="dash-chart-wrap">
-            {reviewData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <PieChart>
-                  <Pie data={reviewData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" stroke="none">
-                    {reviewData.map((d, i) => <Cell key={i} fill={d.fill} />)}
-                  </Pie>
-                  <Tooltip content={<ChartTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : <EmptyChart />}
-            <Legend data={reviewData} />
-          </div>
-        </div>
-      </div>
 
-      <div className="dash-card">
+      <div className="dash-card dash-card--fill">
         <div className="dash-card-header">
           <h3 className="dash-card-title">最近项目</h3>
           <button className="text-button" onClick={() => navigate("/projects")}>
@@ -278,7 +232,8 @@ export function DashboardPage() {
               <tr>
                 <th>项目名称</th>
                 <th>测试类型</th>
-                <th>状态</th>
+                <th>测试状态</th>
+                <th>文档状态</th>
                 <th>优先级</th>
                 <th>用例数</th>
                 <th>通过率</th>
@@ -291,8 +246,13 @@ export function DashboardPage() {
                   <td><strong>{p.name}</strong></td>
                   <td>{p.testType}</td>
                   <td>
-                    <StatusPill tone={p.status === "阻塞" ? "red" : p.status === "已完成" ? "green" : p.status === "执行中" ? "blue" : "amber"}>
-                      {p.status}
+                    <StatusPill tone={p.testStatus === "已测试" ? "green" : p.testStatus === "测试中" ? "blue" : "amber"}>
+                      {p.testStatus}
+                    </StatusPill>
+                  </td>
+                  <td>
+                    <StatusPill tone={p.docStatus === "已完成" ? "green" : p.docStatus === "解析中" ? "blue" : "amber"}>
+                      {p.docStatus}
                     </StatusPill>
                   </td>
                   <td>
@@ -302,11 +262,11 @@ export function DashboardPage() {
                   </td>
                   <td>{p.caseCount}</td>
                   <td>{p.passRate}%</td>
-                  <td>{new Date(p.createdAt).toLocaleDateString("zh-CN")}</td>
+                  <td>{(() => { const d = new Date(p.createdAt); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`; })()}</td>
                 </tr>
               ))}
               {recentProjects.length === 0 && (
-                <tr><td colSpan={7} className="dash-empty">暂无项目</td></tr>
+                <tr><td colSpan={8} className="dash-empty">暂无项目</td></tr>
               )}
             </tbody>
           </table>

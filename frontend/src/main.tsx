@@ -40,6 +40,7 @@ import "./styles/components/process-strip.css";
 import "./styles/components/timeline.css";
 import "./styles/components/help-modal.css";
 import "./styles/components/utility.css";
+import "./styles/components/notification.css";
 import "./styles/global.css";
 
 createRoot(document.getElementById("root")!).render(

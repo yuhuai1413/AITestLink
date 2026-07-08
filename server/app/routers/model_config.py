@@ -27,7 +27,7 @@ DEFAULT_CONFIGS = [
 class ModelConfigSchema(BaseModel):
     id: str
     name: str
-    aiNode: str
+    aiNode: str | list
     provider: str
     modelName: str
     apiKey: str

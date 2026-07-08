@@ -6,8 +6,10 @@ interface LogoMarkProps {
 }
 
 export function LogoMark({ size = 36, className }: LogoMarkProps) {
-  const id = useId().replace(/:/g, "");
-  const gradientId = `logo-mark-gradient-${id}`;
+  const raw = useId();
+  const uid = raw.replace(/:/g, "");
+  const gid = `lg-grad-${uid}`;
+  const glid = `lg-glow-${uid}`;
 
   return (
     <svg
@@ -21,29 +23,36 @@ export function LogoMark({ size = 36, className }: LogoMarkProps) {
       focusable="false"
     >
       <defs>
-        <linearGradient id={gradientId} x1="2" y1="2" x2="34" y2="34" gradientUnits="userSpaceOnUse">
+        <linearGradient id={gid} x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor="#312e81" />
-          <stop offset="54%" stopColor="#6d28d9" />
+          <stop offset="50%" stopColor="#5b21b6" />
           <stop offset="100%" stopColor="#8b5cf6" />
         </linearGradient>
+        <filter id={glid} x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#5b21b6" floodOpacity="0.3" />
+        </filter>
       </defs>
-      <circle cx="18" cy="18" r="18" fill={`url(#${gradientId})`} />
+
+      {/* 主体：圆角方形 + 渐变 */}
+      <rect x="1" y="1" width="34" height="34" rx="8" fill={`url(#${gid})`} filter={`url(#${glid})`} />
+      <rect x="1" y="1" width="34" height="34" rx="8" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="0.5" />
+
+      {/* AI 电路网络：三个互联节点 */}
+      <line x1="10" y1="14" x2="20" y2="9"  stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" />
+      <line x1="20" y1="9"  x2="26" y2="17" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" />
+      <line x1="26" y1="17" x2="10" y2="14" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" />
+      <circle cx="10" cy="14" r="2.3" fill="white" />
+      <circle cx="20" cy="9"  r="2.3" fill="white" />
+      <circle cx="26" cy="17" r="2.3" fill="white" />
+
+      {/* 测试验证勾 */}
       <path
-        d="M8.2 12.5C8.2 10.4 9.9 8.8 12 8.8H23.9C26 8.8 27.7 10.4 27.7 12.5V19.8C27.7 21.9 26 23.5 23.9 23.5H20.7L17.2 27.2V23.5H12C9.9 23.5 8.2 21.9 8.2 19.8V12.5Z"
-        fill="white"
-        fillOpacity="0.94"
-      />
-      <rect x="15.3" y="12" width="5.4" height="7.3" rx="2.7" fill="#5b21b6" />
-      <path
-        d="M13.2 16.5C13.2 19.2 15.3 21.2 18 21.2C20.7 21.2 22.8 19.2 22.8 16.5"
-        stroke="#5b21b6"
-        strokeWidth="1.45"
+        d="M13 21.5  L16.2 24.7  L23 17.2"
+        stroke="white"
+        strokeWidth="2.4"
         strokeLinecap="round"
+        strokeLinejoin="round"
       />
-      <path d="M18 21.2V22.9" stroke="#5b21b6" strokeWidth="1.45" strokeLinecap="round" />
-      <path d="M16.1 22.9H19.9" stroke="#5b21b6" strokeWidth="1.45" strokeLinecap="round" />
-      <circle cx="25.2" cy="10.9" r="4.2" fill="#22c55e" />
-      <path d="M23.4 10.9L24.6 12.1L27.2 9.2" stroke="white" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

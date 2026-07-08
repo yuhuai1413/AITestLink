@@ -15,6 +15,8 @@ import { UserManagementPage } from "../features/user-management/UserManagementPa
 import { LoginPage } from "../features/auth/LoginPage";
 import { isLoggedIn } from "../features/auth/api/auth";
 import { useAPISync } from "../api/useAPISync";
+import { useStore } from "./store";
+import { initManager } from "../shared/hooks/aiTaskManager";
 
 const LAST_PATH_KEY = "aitestlink-last-path";
 
@@ -82,7 +84,13 @@ function RestorePath() {
 
 export function App() {
   const [authed, setAuthed] = useState(isLoggedIn());
+  const { dispatch, state } = useStore();
   useAPISync(authed);
+
+  // 初始化全局 AI 任务管理器
+  useEffect(() => {
+    initManager(dispatch, () => state.projects.map((p) => ({ id: p.id, name: p.name })));
+  }, [dispatch, state.projects]);
 
   if (!authed) {
     return (

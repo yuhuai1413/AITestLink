@@ -7,6 +7,7 @@ import { useTypeCycle } from "./hooks/useTypeCycle";
 import { cn, iosRadius, loginStyles, pageStyles } from "./styles/pageStyles";
 import { getCaptcha, register, login } from "./api/auth";
 import { toast } from "./components/ToastProvider";
+import { LogoMark } from "./components/LogoMark";
 
 type MainTab = "login" | "register";
 
@@ -20,15 +21,7 @@ const orbitPositions = ORBIT_ICONS.map((_, i) => {
   return { left: 128 + r * Math.cos(angle) - 24, top: 128 + r * Math.sin(angle) - 24 };
 });
 
-function LogoIcon({ size = 30 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <path d="M12 2L3 7v10l9 5 9-5V7l-9-5z" stroke="white" strokeWidth="1.8" strokeLinejoin="round" fill="rgba(255,255,255,0.1)" />
-      <path d="M8.5 12.5l2.5 2.5 5-5.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="18.5" cy="5.5" r="1.5" fill="white" opacity="0.7" />
-    </svg>
-  );
-}
+
 
 interface LoginPageProps {
   onLogin: () => void;
@@ -132,7 +125,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       {/* 手机端左上角 logo */}
       <div className="fixed top-0 left-0 z-50 md:hidden flex items-center gap-2.5 pl-5 pt-5 pr-4 pb-3">
         <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shadow-md shadow-primary/20">
-          <LogoIcon size={22} />
+          <LogoMark size={22} />
         </div>
         <span className="text-xl font-bold text-foreground" style={{ fontFamily: '"Times New Roman", serif' }}>AITestLink</span>
       </div>
@@ -146,7 +139,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         <div className={loginStyles.visualContent}>
           <div className="flex items-center gap-3 animate-stagger-1">
             <div className={loginStyles.visualBrandIcon} style={{ background: "rgba(255,255,255,0.16)", border: "1.5px solid rgba(255,255,255,0.24)" }}>
-              <LogoIcon size={30} />
+              <LogoMark size={30} />
             </div>
             <span className="text-2xl xl:text-[1.75rem] font-bold text-white" style={{ fontFamily: '"Times New Roman", serif' }}>AITestLink</span>
           </div>

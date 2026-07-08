@@ -16,8 +16,14 @@ import type { Project, FileAsset, Requirement, TestPoint, TestCase, AITask, Auto
 export function useAPISync(enabled = true) {
   const { state, dispatch } = useStore();
   const initialized = useRef(false);
+  const prevEnabled = useRef(enabled);
 
   useEffect(() => {
+    // 用户状态变化时重置初始化标记
+    if (prevEnabled.current !== enabled) {
+      prevEnabled.current = enabled;
+      initialized.current = false;
+    }
     if (!enabled || initialized.current) return;
     initialized.current = true;
 

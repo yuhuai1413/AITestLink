@@ -13,9 +13,9 @@ const emptyState: AppState = {
 };
 
 const sampleProject = {
-  id: "p-1", name: "Test Project", version: "V1.0", owner: "张三",
-  testType: "功能测试" as const, status: "设计中" as const,
-  description: "", caseCount: 0, passRate: 0, riskLevel: "中" as const,
+  id: "p-1", name: "Test Project",
+  testType: "功能测试" as const, testStatus: "待测试" as const, docStatus: "待解析" as const,
+  description: "", caseCount: 0, passRate: 0, priority: "中" as const,
   createdAt: "2025-01-01", updatedAt: "2025-01-01",
 };
 

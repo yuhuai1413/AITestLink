@@ -14,6 +14,7 @@ import type {
   Requirement,
   TestCase,
   TestPoint,
+  AppNotification,
 } from "../shared/types/platform";
 import {
   initialFiles,
@@ -33,6 +34,8 @@ export interface AppState {
   testCases: TestCase[];
   aiTasks: AITask[];
   scripts: AutomationScript[];
+  notifications: AppNotification[];
+  activeAITasks: string[];
 }
 
 const STORAGE_KEY = "aitestlink-store";
@@ -64,6 +67,8 @@ const initialState: AppState = {
   testCases: initialTestCases,
   aiTasks: [],
   scripts: [],
+  notifications: [],
+  activeAITasks: [],
 };
 
 // ─── Actions ───
@@ -93,7 +98,13 @@ type Action =
   | { type: "ADD_SCRIPT"; payload: AutomationScript }
   | { type: "ADD_SCRIPTS"; payload: AutomationScript[] }
   | { type: "UPDATE_SCRIPT"; payload: AutomationScript }
-  | { type: "DELETE_SCRIPT"; payload: string };
+  | { type: "DELETE_SCRIPT"; payload: string }
+  | { type: "ADD_NOTIFICATION"; payload: AppNotification }
+  | { type: "MARK_NOTIFICATION_READ"; payload: string }
+  | { type: "MARK_ALL_NOTIFICATIONS_READ" }
+  | { type: "CLEAR_NOTIFICATIONS" }
+  | { type: "START_ACTIVE_AI_TASK"; payload: string }
+  | { type: "STOP_ACTIVE_AI_TASK"; payload: string };
 
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -274,6 +285,36 @@ export function reducer(state: AppState, action: Action): AppState {
         scripts: state.scripts.filter((s) => s.id !== action.payload),
       };
 
+    case "ADD_NOTIFICATION":
+      return {
+        ...state,
+        notifications: [action.payload, ...state.notifications].slice(0, 50),
+      };
+
+    case "MARK_NOTIFICATION_READ":
+      return {
+        ...state,
+        notifications: state.notifications.map((n) =>
+          n.id === action.payload ? { ...n, read: true } : n,
+        ),
+      };
+
+    case "MARK_ALL_NOTIFICATIONS_READ":
+      return {
+        ...state,
+        notifications: state.notifications.map((n) => ({ ...n, read: true })),
+      };
+
+    case "CLEAR_NOTIFICATIONS":
+      return { ...state, notifications: [] };
+
+    case "START_ACTIVE_AI_TASK":
+      if (state.activeAITasks.includes(action.payload)) return state;
+      return { ...state, activeAITasks: [...state.activeAITasks, action.payload] };
+
+    case "STOP_ACTIVE_AI_TASK":
+      return { ...state, activeAITasks: state.activeAITasks.filter((t) => t !== action.payload) };
+
     default:
       return state;
   }
@@ -362,5 +403,13 @@ export function useProjectScripts(projectId: string | undefined) {
   return useMemo(
     () => state.scripts.filter((s) => s.projectId === projectId),
     [state.scripts, projectId],
+  );
+}
+
+export function useUnreadCount() {
+  const { state } = useStore();
+  return useMemo(
+    () => state.notifications.filter((n) => !n.read).length,
+    [state.notifications],
   );
 }

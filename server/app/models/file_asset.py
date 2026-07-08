@@ -16,4 +16,5 @@ class FileAsset(Base):
     size = Column(String(50), default="")
     storage_path = Column(String(500), default="")
     parse_status = Column(String(50), default="待解析")
+    parse_error = Column(String(2000), default="")
     uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

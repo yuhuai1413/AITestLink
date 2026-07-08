@@ -80,6 +80,21 @@
   padding-top: var(--sp-sm);
 }
 
+.page-stack--fill {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-stack--fill > * {
+  min-height: 0;
+}
+
+.page-stack--fill .work-panel {
+  flex: 1;
+  min-height: 0;
+}
+
 @media (max-width: 860px) {
   .main-area {
     height: auto;

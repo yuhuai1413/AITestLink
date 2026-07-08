@@ -3,6 +3,8 @@
 .dashboard {
   display: grid;
   gap: var(--sp-sm);
+  grid-template-rows: auto auto 1fr;
+  min-height: 100%;
 }
 
 .dash-stats {
@@ -58,6 +60,8 @@
 }
 
 .dash-card {
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--line);
   border-radius: var(--radius-l2);
   background: var(--surface);
@@ -72,7 +76,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  
 }
 
 .dash-card-title {
@@ -85,6 +89,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 0;
 }
 
 .dash-chart-center {
@@ -171,6 +178,20 @@
   color: var(--text);
 }
 
+.dash-card--fill {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dash-card--fill .dash-recent-table {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .dash-recent-table {
   overflow-x: auto;
 }
@@ -182,7 +203,7 @@
 }
 
 .dash-recent-table th {
-  text-align: left;
+  text-align: center;
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 700;
@@ -193,6 +214,7 @@
 .dash-recent-table td {
   padding: 10px 12px;
   border-bottom: 1px solid var(--line);
+  text-align: center;
 }
 
 .dash-recent-row {
@@ -220,4 +242,9 @@
   .dash-stats {
     grid-template-columns: 1fr;
   }
+}
+
+.dash-recent-table td:first-child,
+.dash-recent-table th:first-child {
+  text-align: left;
 }
