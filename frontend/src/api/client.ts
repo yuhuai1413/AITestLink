@@ -108,6 +108,7 @@ export interface ApiRequirement {
   rule: string;
   question: string;
   confirmed: boolean;
+  reviewStatus: string;
 }
 
 export const requirementsApi = {
@@ -158,6 +159,9 @@ export interface ApiTestCase {
   steps: string;
   testData: string;
   expectedResult: string;
+  testType: string;
+  actualResult: string;
+  passed: string;
   automation: string;
   reviewStatus: string;
   remark: string;
@@ -197,6 +201,10 @@ export const aiApi = {
     request<ApiAITask>(`/projects/${projectId}/ai/generate-test-points`, { method: "POST" }),
   generateTestCases: (projectId: string) =>
     request<ApiAITask>(`/projects/${projectId}/ai/generate-test-cases`, { method: "POST" }),
+  reviewTestCases: (projectId: string) =>
+    request<ApiAITask>(`/projects/${projectId}/ai/review-test-cases`, { method: "POST" }),
+  generateDocs: (projectId: string) =>
+    request<ApiAITask>(`/projects/${projectId}/ai/generate-docs`, { method: "POST" }),
 };
 
 // ─── Model Config ───

@@ -50,6 +50,17 @@
   50% { opacity: 0.5; }
 }
 
+
+
+/* text-button 内的 status-pill：悬浮时只显示外层背景 */
+.text-button:has(.status-pill) {
+  padding: 0 4px;
+}
+
+.text-button:has(.status-pill):hover .status-pill {
+  background: transparent;
+}
+
 /* 多选标签样式 */
 .multi-select-tag {
   min-width: auto;

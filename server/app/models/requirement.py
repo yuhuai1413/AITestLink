@@ -18,4 +18,5 @@ class Requirement(Base):
     rule = Column(Text, default="")
     question = Column(Text, default="")
     confirmed = Column(Boolean, default=False)
+    review_status = Column(String(50), default="待评审")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

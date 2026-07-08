@@ -6,6 +6,7 @@ class RequirementUpdate(BaseModel):
     rule: Optional[str] = None
     question: Optional[str] = None
     confirmed: Optional[bool] = None
+    reviewStatus: Optional[str] = None
 
 
 class RequirementResponse(BaseModel):
@@ -18,6 +19,7 @@ class RequirementResponse(BaseModel):
     rule: str
     question: str
     confirmed: bool
+    reviewStatus: str = "待评审" 
 
     class Config:
         from_attributes = True

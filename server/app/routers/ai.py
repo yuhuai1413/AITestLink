@@ -77,8 +77,7 @@ def _module_counter(items: list[dict], prefix: str) -> list[tuple[str, str]]:
     for item in items:
         module = item["module"]
         counters[module] = counters.get(module, 0) + 1
-        short = module[:4] if len(module) >= 4 else module
-        result.append((f"{prefix}_{short}_{counters[module]:03d}", module))
+        result.append((f"{prefix}_{module}_{counters[module]:03d}", module))
     return result
 
 
@@ -373,4 +372,231 @@ async def generate_test_cases(
     await db.commit()
 
     background_tasks.add_task(run_generate_test_cases, task.id, project_id, user["sub"])
+    return model_to_dict(task)
+
+
+# ─── 用例评审 ───
+
+async def run_review_test_cases(task_id: str, project_id: str, user_id: str):
+    async with async_session() as db:
+        try:
+            result = await db.execute(
+                select(TestCase).where(TestCase.project_id == project_id)
+            )
+            cases = result.scalars().all()
+            if not cases:
+                await _update_task_status(db, task_id, "失败", "测试用例列表为空，无法评审")
+                return
+
+            tc_text = "\n".join(
+                f"- 编号:{c.case_code} 模块:{c.module} 标题:{c.title} 优先级:{c.priority} "
+                f"步骤:{c.steps or '无'} 预期结果:{c.expected_result or '无'} "
+                f"自动化:{c.automation} 评审状态:{c.review_status or '待评审'}"
+                for c in cases
+            )
+
+            review_result = await ai_service.review_test_cases(tc_text, user_id)
+
+            # 将评审结果保存到 AITask 的 result 字段
+            task_result = await db.execute(select(AITask).where(AITask.id == task_id))
+            task = task_result.scalar_one_or_none()
+            if task:
+                import json
+                task.result = json.dumps(review_result, ensure_ascii=False) if isinstance(review_result, dict) else str(review_result)
+
+            await _update_task_status(db, task_id, "成功")
+        except Exception as e:
+            logger.exception("run_review_test_cases failed")
+            await _update_task_status(db, task_id, "失败", _friendly_error(e))
+
+
+@router.post("/projects/{project_id}/ai/review-test-cases")
+async def review_test_cases(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await verify_project_owner(db, project_id, user["sub"])
+
+    # 检查是否有测试用例
+    tc_result = await db.execute(
+        select(TestCase).where(TestCase.project_id == project_id)
+    )
+    if not tc_result.scalars().first():
+        raise HTTPException(status_code=400, detail="测试用例列表为空，请先生成测试用例")
+
+    # 检查配置
+    config_check = await check_config_for_task("用例评审", user["sub"])
+    if not config_check["configured"]:
+        raise HTTPException(status_code=400, detail=config_check["message"])
+
+    task = AITask(
+        id=str(uuid.uuid4()),
+        project_id=project_id,
+        type="用例评审",
+        status="执行中",
+        model_name="AI",
+    )
+    db.add(task)
+    await db.commit()
+
+    background_tasks.add_task(run_review_test_cases, task.id, project_id, user["sub"])
+    return model_to_dict(task)
+
+
+# ─── 执行脚本分析 ───
+
+async def run_execute_scripts_analysis(task_id: str, project_id: str, user_id: str):
+    async with async_session() as db:
+        try:
+            from app.models.automation_script import AutomationScript
+            result = await db.execute(
+                select(AutomationScript).where(AutomationScript.project_id == project_id)
+            )
+            scripts = result.scalars().all()
+            if not scripts:
+                await _update_task_status(db, task_id, "失败", "自动化脚本列表为空，无法分析")
+                return
+
+            scripts_text = "\n".join(
+                f"- ID:{s.id} 类型:{s.script_type} 框架:{s.framework} 语言:{s.language} "
+                f"状态:{s.status} 代码片段:{(s.code or '')[:200]}"
+                for s in scripts
+            )
+
+            execution_results = "当前脚本状态统计：" + "\n".join(
+                f"- {s.status}: {sum(1 for x in scripts if x.status == s.status)} 个"
+                for s in scripts
+            )
+
+            analysis = await ai_service.analyze_script_execution(scripts_text, execution_results, user_id)
+
+            task_result = await db.execute(select(AITask).where(AITask.id == task_id))
+            task = task_result.scalar_one_or_none()
+            if task:
+                import json
+                task.result = json.dumps(analysis, ensure_ascii=False) if isinstance(analysis, dict) else str(analysis)
+
+            await _update_task_status(db, task_id, "成功")
+        except Exception as e:
+            logger.exception("run_execute_scripts_analysis failed")
+            await _update_task_status(db, task_id, "失败", _friendly_error(e))
+
+
+@router.post("/projects/{project_id}/ai/execute-scripts")
+async def execute_scripts(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await verify_project_owner(db, project_id, user["sub"])
+
+    from app.models.automation_script import AutomationScript
+    script_result = await db.execute(
+        select(AutomationScript).where(AutomationScript.project_id == project_id)
+    )
+    if not script_result.scalars().first():
+        raise HTTPException(status_code=400, detail="自动化脚本列表为空，请先生成脚本")
+
+    config_check = await check_config_for_task("执行脚本", user["sub"])
+    if not config_check["configured"]:
+        raise HTTPException(status_code=400, detail=config_check["message"])
+
+    task = AITask(
+        id=str(uuid.uuid4()),
+        project_id=project_id,
+        type="执行脚本",
+        status="执行中",
+        model_name="AI",
+    )
+    db.add(task)
+    await db.commit()
+
+    background_tasks.add_task(run_execute_scripts_analysis, task.id, project_id, user["sub"])
+    return model_to_dict(task)
+
+
+# ─── 文档生成 ───
+
+async def run_generate_docs(task_id: str, project_id: str, user_id: str):
+    async with async_session() as db:
+        try:
+            from app.models.project import Project
+
+            # 获取项目信息
+            proj_result = await db.execute(select(Project).where(Project.id == project_id))
+            project = proj_result.scalar_one_or_none()
+            project_info = f"项目名称:{project.name if project else '未知'}"
+
+            # 获取需求
+            req_result = await db.execute(
+                select(Requirement).where(Requirement.project_id == project_id)
+            )
+            requirements = req_result.scalars().all()
+            req_text = "\n".join(
+                f"- 模块:{r.module} 功能:{r.feature} 规则:{r.rule}" for r in requirements
+            ) if requirements else "暂无需求"
+
+            # 获取测试点
+            tp_result = await db.execute(
+                select(TestPoint).where(TestPoint.project_id == project_id)
+            )
+            points = tp_result.scalars().all()
+            tp_text = "\n".join(
+                f"- 编号:{tp.id} 模块:{tp.module} 标题:{tp.title} 优先级:{tp.priority}"
+                for tp in points
+            ) if points else "暂无测试点"
+
+            # 获取测试用例
+            tc_result = await db.execute(
+                select(TestCase).where(TestCase.project_id == project_id)
+            )
+            cases = tc_result.scalars().all()
+            tc_text = "\n".join(
+                f"- 编号:{c.case_code} 模块:{c.module} 标题:{c.title} 优先级:{c.priority} 自动化:{c.automation}"
+                for c in cases
+            ) if cases else "暂无测试用例"
+
+            doc_result = await ai_service.generate_test_documents(
+                project_info, req_text, tp_text, tc_text, user_id
+            )
+
+            task_result = await db.execute(select(AITask).where(AITask.id == task_id))
+            task = task_result.scalar_one_or_none()
+            if task:
+                import json
+                task.result = json.dumps(doc_result, ensure_ascii=False) if isinstance(doc_result, dict) else str(doc_result)
+
+            await _update_task_status(db, task_id, "成功")
+        except Exception as e:
+            logger.exception("run_generate_docs failed")
+            await _update_task_status(db, task_id, "失败", _friendly_error(e))
+
+
+@router.post("/projects/{project_id}/ai/generate-docs")
+async def generate_docs(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await verify_project_owner(db, project_id, user["sub"])
+
+    config_check = await check_config_for_task("文档生成", user["sub"])
+    if not config_check["configured"]:
+        raise HTTPException(status_code=400, detail=config_check["message"])
+
+    task = AITask(
+        id=str(uuid.uuid4()),
+        project_id=project_id,
+        type="文档生成",
+        status="执行中",
+        model_name="AI",
+    )
+    db.add(task)
+    await db.commit()
+
+    background_tasks.add_task(run_generate_docs, task.id, project_id, user["sub"])
     return model_to_dict(task)

@@ -15,5 +15,6 @@ class AITask(Base):
     status = Column(String(50), default="等待")
     model_name = Column(String(100), default="")
     error_message = Column(Text, nullable=True)
+    result = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     finished_at = Column(DateTime, nullable=True)

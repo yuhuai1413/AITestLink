@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, WandSparkles, Loader2, FileUp, Upload, Trash2, Download, CheckCircle2, Play, Code, Eye } from "lucide-react";
 import { useStore } from "../../app/store";
 import { useProjectData } from "./useProjectData";
 import { useAPISync } from "../../api/useAPISync";
 import { useAIAction } from "../../shared/hooks/useAIAction";
-import { requirementsApi, scriptsApi, testCasesApi, testPointsApi, type ApiFile, type ApiRequirement, type ApiTestPoint, type ApiTestCase, type ApiScript } from "../../api/client";
+import { aiApi, requirementsApi, scriptsApi, testCasesApi, testPointsApi, type ApiFile, type ApiRequirement, type ApiTestPoint, type ApiTestCase, type ApiScript } from "../../api/client";
 import { DataTable } from "../../shared/components/DataTable";
 import { SectionHeader } from "../../shared/components/SectionHeader";
 import { StatusPill } from "../../shared/components/StatusPill";
@@ -157,7 +157,8 @@ function FilesTab({ projectId }: { projectId: string }) {
     <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="文档管理" description="上传需求文档、接口文档、原型和变更说明，支持拖拽上传。"
         actions={<>
-          {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
+          {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
+              {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
           <input ref={inputRef} type="file" multiple accept=".docx,.doc,.pdf,.md,.json,.yaml,.yml,.xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => handleUpload(e.target.files)} />
           <button className="ghost-button" type="button" onClick={() => inputRef.current?.click()} disabled={uploading}>手动上传</button>
         </>} />
@@ -210,10 +211,29 @@ function RequirementsTab({ projectId }: { projectId: string }) {
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
+  const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
   const batchDelete = async () => {
     for (const id of selectedIds) { try { await requirementsApi.delete(id); } catch {} }
     selectedIds.forEach((id) => dispatch({ type: "DELETE_REQUIREMENT", payload: id }));
     toast.success(`已删除 ${selectedIds.size} 条需求`);
+    setSelectedIds(new Set());
+    await refreshData();
+  };
+  const toggleReview = async (r: any) => {
+    const newStatus = (r.reviewStatus === "已通过") ? "待评审" : "已通过";
+    try { await requirementsApi.update(r.id, { reviewStatus: newStatus } as any); } catch {}
+    dispatch({ type: "UPDATE_REQUIREMENT", payload: { ...r, reviewStatus: newStatus } });
+    await refreshData();
+  };
+  const batchApprove = async () => {
+    for (const id of selectedIds) {
+      const r = requirements.find((x) => x.id === id);
+      if (r && r.reviewStatus !== "已通过") {
+        try { await requirementsApi.update(r.id, { reviewStatus: "已通过" } as any); } catch {}
+        dispatch({ type: "UPDATE_REQUIREMENT", payload: { ...r, reviewStatus: "已通过" } });
+      }
+    }
+    toast.success(`已通过 ${selectedIds.size} 条需求`);
     setSelectedIds(new Set());
     await refreshData();
   };
@@ -242,7 +262,8 @@ function RequirementsTab({ projectId }: { projectId: string }) {
     <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="需求列表" description="从上传的文档中解析需求，支持查看和确认。"
         actions={<>
-          {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
+          {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
+              {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
           <button className="primary-button" type="button" onClick={handleParse} disabled={parsing}>
             {parsing ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}
             {parsing ? "解析中..." : "需求解析"}
@@ -256,13 +277,13 @@ function RequirementsTab({ projectId }: { projectId: string }) {
         ) : (
           <DataTable rows={requirements} getRowKey={(r) => r.id} columns={[
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
-            { key: "module", label: "模块", render: (r) => r.module },
-            { key: "feature", label: "功能点", align: "left", render: (r) => r.feature },
-            { key: "source", label: "来源", render: (r) => r.source },
+            { key: "module", label: "模块", width: "10%", render: (r) => r.module },
+            { key: "feature", label: "功能点", width: "10%", align: "left", render: (r) => r.feature },
+            { key: "source", label: "来源", width: "10%", render: (r) => r.source },
             { key: "risk", label: "风险", align: "center", render: (r) => <StatusPill tone={r.risk === "高" ? "red" : r.risk === "中" ? "amber" : "green"}>{r.risk}</StatusPill> },
-            { key: "rule", label: "业务规则", align: "left", render: (r) => r.rule },
-            { key: "question", label: "待确认", align: "left", render: (r) => r.question || <span style={{ color: "var(--muted)" }}>-</span> },
-            { key: "confirmed", label: "状态", width: "10%", align: "center", render: (r) => <StatusPill tone={r.confirmed ? "green" : "slate"}>{r.confirmed ? "已确认" : "待确认"}</StatusPill> },
+            { key: "rule", label: "业务规则", width: "20%", align: "left", render: (r) => r.rule },
+            { key: "question", label: "待确认", width: "20%", align: "left", render: (r) => r.question || <span style={{ color: "var(--muted)" }}>-</span> },
+            { key: "reviewStatus", label: "评审", width: "8%", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={r.reviewStatus === "已通过" ? "green" : "slate"}>{r.reviewStatus || "待评审"}</StatusPill></button> },
             { key: "actions", label: "操作", align: "center", render: (r) => (
               <div className="inline-actions">
                 <button className="text-button" type="button" onClick={() => setViewReq(r)}>查看</button>
@@ -284,7 +305,7 @@ function RequirementsTab({ projectId }: { projectId: string }) {
             <div className="detail-row"><span className="detail-label">风险等级</span><StatusPill tone={viewReq.risk === "高" ? "red" : viewReq.risk === "中" ? "amber" : "green"}>{viewReq.risk}</StatusPill></div>
             <div className="detail-row detail-row--full"><span className="detail-label">业务规则</span><pre className="detail-pre">{viewReq.rule || "无"}</pre></div>
             <div className="detail-row detail-row--full"><span className="detail-label">待确认问题</span><pre className="detail-pre">{viewReq.question || "无"}</pre></div>
-            <div className="detail-row"><span className="detail-label">状态</span><StatusPill tone={viewReq.confirmed ? "green" : "slate"}>{viewReq.confirmed ? "已确认" : "待确认"}</StatusPill></div>
+            <div className="detail-row"><span className="detail-label">评审状态</span><StatusPill tone={viewReq.reviewStatus === "已通过" ? "green" : "slate"}>{viewReq.reviewStatus || "待评审"}</StatusPill></div>
           </div>
         )}
       </Modal>
@@ -316,6 +337,7 @@ function RequirementsTab({ projectId }: { projectId: string }) {
       </Modal>
 
       <ConfirmDialog open={showReparseConfirm} title="重新解析" message="部分文件已解析完成，再次解析将覆盖之前的解析数据和需求，是否继续？" confirmLabel="继续解析" onConfirm={() => { setShowReparseConfirm(false); doParse(); }} onCancel={() => setShowReparseConfirm(false)} />
+      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 条需求标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
       <ConfirmDialog open={showBatchDeleteConfirm} title="批量删除需求" message={`确定删除选中的 ${selectedIds.size} 条需求？`} confirmLabel="删除" onConfirm={() => { setShowBatchDeleteConfirm(false); batchDelete(); }} onCancel={() => setShowBatchDeleteConfirm(false)} />
       <ConfirmDialog open={!!deletingReq} title="删除需求" message={`确定删除需求「${deletingReq?.name}」？`} confirmLabel="删除" onConfirm={async () => {
         if (!deletingReq) return;
@@ -333,9 +355,9 @@ function RequirementsTab({ projectId }: { projectId: string }) {
 function TestPointsTab({ projectId }: { projectId: string }) {
   const { testPoints, files, requirements, refresh: refreshData, refreshTestPoints } = useProjectData(projectId);
   const { dispatch } = useStore();
-  const { loading, error, generateTestPoints } = useAIAction(projectId);
-  const prevLoadingRef = useRef(loading);
-  useEffect(() => { if (prevLoadingRef.current && !loading) { refreshTestPoints(); } prevLoadingRef.current = loading; }, [loading, refreshTestPoints]);
+  const { loadingTestPoints, error, generateTestPoints } = useAIAction(projectId);
+  const prevLoadingRef = useRef(loadingTestPoints);
+  useEffect(() => { if (prevLoadingRef.current && !loadingTestPoints) { refreshTestPoints(); } prevLoadingRef.current = loadingTestPoints; }, [loadingTestPoints, refreshTestPoints]);
   const [moduleFilter, setModuleFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
@@ -345,8 +367,10 @@ function TestPointsTab({ projectId }: { projectId: string }) {
   const [editDesc, setEditDesc] = useState("");
 
   const hasPrerequisite = requirements.length > 0;
+  const unreviewedReqCount = requirements.filter((r) => (r as any).reviewStatus !== "已通过").length;
   const handleGenerate = () => {
     if (!hasPrerequisite) { toast.warning("请先在「需求列表」页面完成需求解析"); return; }
+    if (unreviewedReqCount > 0) { toast.warning(`还有 ${unreviewedReqCount} 条需求未评审通过，请先完成需求评审`); return; }
     if (testPoints.length > 0) { setShowGenerateConfirm(true); return; }
     generateTestPoints();
   };
@@ -355,7 +379,13 @@ function TestPointsTab({ projectId }: { projectId: string }) {
   const allSelected = filtered.length > 0 && filtered.every((tp) => selectedIds.has(tp.id));
   const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(filtered.map((tp) => tp.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleReview = (tp: any) => { dispatch({ type: "UPDATE_TEST_POINT", payload: { ...tp, reviewStatus: tp.reviewStatus === "已通过" ? "待评审" : "已通过" } }); };
+  const toggleReview = async (tp: any) => {
+    const newStatus = tp.reviewStatus === "已通过" ? "待评审" : "已通过";
+    try { await testPointsApi.update(tp.id, { reviewStatus: newStatus } as any); } catch {}
+    dispatch({ type: "UPDATE_TEST_POINT", payload: { ...tp, reviewStatus: newStatus } });
+    await refreshTestPoints();
+  };
+  const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
   const batchDelete = async () => {
     for (const id of selectedIds) { try { await testPointsApi.delete(id); } catch {} }
@@ -364,13 +394,17 @@ function TestPointsTab({ projectId }: { projectId: string }) {
     setSelectedIds(new Set());
     await refreshTestPoints();
   };
-  const batchApprove = () => {
-    selectedIds.forEach((id) => {
+  const batchApprove = async () => {
+    for (const id of selectedIds) {
       const tp = testPoints.find((t) => t.id === id);
-      if (tp && tp.reviewStatus !== "已通过") dispatch({ type: "UPDATE_TEST_POINT", payload: { ...tp, reviewStatus: "已通过" } });
-    });
+      if (tp && tp.reviewStatus !== "已通过") {
+        try { await testPointsApi.update(tp.id, { reviewStatus: "已通过" } as any); } catch {}
+        dispatch({ type: "UPDATE_TEST_POINT", payload: { ...tp, reviewStatus: "已通过" } });
+      }
+    }
     toast.success(`已通过 ${selectedIds.size} 个测试点`);
     setSelectedIds(new Set());
+    await refreshTestPoints();
   };
 
   const handleSaveEdit = async () => {
@@ -389,9 +423,9 @@ function TestPointsTab({ projectId }: { projectId: string }) {
     <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="测试点生成" description="AI 从文档中提取测试点，支持评审和删除。"
         actions={<>
-          {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={batchApprove}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
-          {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
-          <button className="primary-button" type="button" onClick={handleGenerate} disabled={loading}>{loading ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loading ? "生成中..." : "生成测试点"}</button>
+          {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
+              {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
+          <button className="primary-button" type="button" onClick={handleGenerate} disabled={loadingTestPoints}>{loadingTestPoints ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loadingTestPoints ? "生成中..." : "生成测试点"}</button>
         </>} />
       {error && <div className="error-banner"><span>{error}</span></div>}
       {modules.length > 0 && <div className="filter-bar"><span className="filter-label">模块筛选</span><select className="filter-select" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}><option value="all">全部模块</option>{modules.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>}
@@ -452,6 +486,7 @@ function TestPointsTab({ projectId }: { projectId: string }) {
       </Modal>
 
       <ConfirmDialog open={showGenerateConfirm} title="重新生成测试点" message={`当前已有 ${testPoints.length} 个测试点，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={() => { setShowGenerateConfirm(false); generateTestPoints(); }} onCancel={() => setShowGenerateConfirm(false)} />
+      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 个测试点标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
       <ConfirmDialog open={showBatchDeleteConfirm} title="批量删除测试点" message={`确定删除选中的 ${selectedIds.size} 个测试点？`} confirmLabel="删除" onConfirm={() => { setShowBatchDeleteConfirm(false); batchDelete(); }} onCancel={() => setShowBatchDeleteConfirm(false)} />
     </div>
   );
@@ -464,9 +499,9 @@ function TestPointsTab({ projectId }: { projectId: string }) {
 function TestCasesTab({ projectId }: { projectId: string }) {
   const { testCases, testPoints, refreshTestCases, refreshTestPoints } = useProjectData(projectId);
   const { dispatch } = useStore();
-  const { loading, error, generateTestCases } = useAIAction(projectId);
-  const prevLoadingRef = useRef(loading);
-  useEffect(() => { if (prevLoadingRef.current && !loading) { refreshTestCases(); } prevLoadingRef.current = loading; }, [loading, refreshTestCases]);
+  const { loadingTestCases, loadingReview, error, generateTestCases, reviewTestCases } = useAIAction(projectId);
+  const prevLoadingRef = useRef(loadingTestCases);
+  useEffect(() => { if (prevLoadingRef.current && !loadingTestCases) { refreshTestCases(); } prevLoadingRef.current = loadingTestCases; }, [loadingTestCases, refreshTestCases]);
   const [detailCase, setDetailCase] = useState<TestCase | null>(null);
   const [editCase, setEditCase] = useState<TestCase | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -475,10 +510,45 @@ function TestCasesTab({ projectId }: { projectId: string }) {
   const [moduleFilter, setModuleFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
+  const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
+  const [reviewResult, setReviewResult] = useState<any>(null);
+  const [showReviewResult, setShowReviewResult] = useState(false);
+
+  // 组件挂载时加载最近一次评审结果
+  useEffect(() => {
+    (async () => {
+      try {
+        const tasks = await aiApi.listTasks(projectId);
+        const latestReview = tasks.find((t: any) => t.type === "用例评审" && t.status === "成功");
+        if (latestReview && latestReview.result) {
+          const parsed = typeof latestReview.result === "string" ? JSON.parse(latestReview.result) : latestReview.result;
+          setReviewResult(parsed);
+        }
+      } catch {}
+    })();
+  }, [projectId]);
+
+  const handleAIReview = async () => {
+    if (testCases.length === 0) { toast.warning("暂无测试用例，请先生成"); return; }
+    const result = await reviewTestCases();
+    if (result.success) {
+      try {
+        const tasks = await aiApi.listTasks(projectId);
+        const latestReview = tasks.find((t: any) => t.type === "用例评审" && t.status === "成功");
+        if (latestReview && latestReview.result) {
+          const parsed = typeof latestReview.result === "string" ? JSON.parse(latestReview.result) : latestReview.result;
+          setReviewResult(parsed);
+          setShowReviewResult(true);
+        }
+      } catch {}
+    }
+  };
 
   const hasPrerequisite = testPoints.length > 0;
+  const unreviewedTPCount = testPoints.filter((tp) => tp.reviewStatus !== "已通过").length;
   const handleGenerate = () => {
     if (!hasPrerequisite) { toast.warning("请先生成测试点"); return; }
+    if (unreviewedTPCount > 0) { toast.warning(`还有 ${unreviewedTPCount} 个测试点未评审通过，请先完成测试点评审`); return; }
     if (testCases.length > 0) { setShowGenerateConfirm(true); return; }
     generateTestCases();
   };
@@ -487,7 +557,12 @@ function TestCasesTab({ projectId }: { projectId: string }) {
   const allSelected = filtered.length > 0 && filtered.every((tc) => selectedIds.has(tc.id));
   const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(filtered.map((tc) => tc.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleReview = (tc: any) => { dispatch({ type: "UPDATE_TEST_CASE", payload: { ...tc, reviewStatus: tc.reviewStatus === "已通过" ? "待评审" : "已通过", updatedAt: new Date().toISOString().slice(0, 10) } }); };
+  const toggleReview = async (tc: any) => {
+    const newStatus = tc.reviewStatus === "已通过" ? "待评审" : "已通过";
+    try { await testCasesApi.update(tc.id, { reviewStatus: newStatus } as any); } catch {}
+    dispatch({ type: "UPDATE_TEST_CASE", payload: { ...tc, reviewStatus: newStatus } });
+    await refreshTestCases();
+  };
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
   const batchDelete = async () => {
     for (const id of selectedIds) { try { await testCasesApi.delete(id); } catch {} }
@@ -496,13 +571,17 @@ function TestCasesTab({ projectId }: { projectId: string }) {
     setSelectedIds(new Set());
     await refreshTestCases();
   };
-  const batchApprove = () => {
-    selectedIds.forEach((id) => {
+  const batchApprove = async () => {
+    for (const id of selectedIds) {
       const tc = testCases.find((c) => c.id === id);
-      if (tc && tc.reviewStatus !== "已通过") dispatch({ type: "UPDATE_TEST_CASE", payload: { ...tc, reviewStatus: "已通过", updatedAt: new Date().toISOString().slice(0, 10) } });
-    });
+      if (tc && tc.reviewStatus !== "已通过") {
+        try { await testCasesApi.update(tc.id, { reviewStatus: "已通过" } as any); } catch {}
+        dispatch({ type: "UPDATE_TEST_CASE", payload: { ...tc, reviewStatus: "已通过" } });
+      }
+    }
     toast.success(`已通过 ${selectedIds.size} 条用例`);
     setSelectedIds(new Set());
+    await refreshTestCases();
   };
 
   const handleSaveEdit = async () => {
@@ -541,10 +620,12 @@ function TestCasesTab({ projectId }: { projectId: string }) {
     <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="用例生成" description="从测试点生成可执行用例，支持评审和删除。"
         actions={<>
-          {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={batchApprove}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
-          {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
+          {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
+              {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
+          {reviewResult && <button className="ghost-button" type="button" onClick={() => setShowReviewResult(true)}><Eye size={13} /> 查看评审报告</button>}
+          <button className="primary-button" type="button" onClick={handleAIReview} disabled={loadingReview || testCases.length === 0}>{loadingReview ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}{loadingReview ? "评审中..." : "AI 评审"}</button>
           <button className="primary-button" type="button" onClick={handleExportManual} disabled={testCases.length === 0}><Download size={13} /> 导出手动测试用例</button>
-          <button className="primary-button" type="button" onClick={handleGenerate} disabled={loading}>{loading ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loading ? "生成中..." : "生成用例"}</button>
+          <button className="primary-button" type="button" onClick={handleGenerate} disabled={loadingTestCases}>{loadingTestCases ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loadingTestCases ? "生成中..." : "生成用例"}</button>
         </>} />
       {error && <div className="error-banner"><span>{error}</span></div>}
       {modules.length > 0 && <div className="filter-bar"><span className="filter-label">模块筛选</span><select className="filter-select" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}><option value="all">全部模块</option>{modules.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>}
@@ -589,8 +670,51 @@ function TestCasesTab({ projectId }: { projectId: string }) {
         )}
       </Modal>
 
+      {/* AI 评审结果弹窗 */}
+      <Modal open={showReviewResult} onClose={() => setShowReviewResult(false)} title="AI 用例评审报告" width={640}>
+        {reviewResult && (
+          <div className="review-report">
+            <div className="review-score-section" style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 20, padding: 16, background: "var(--bg-secondary)", borderRadius: 8 }}>
+              <div style={{ fontSize: 48, fontWeight: 700, color: reviewResult.overallScore >= 80 ? "var(--green)" : reviewResult.overallScore >= 60 ? "var(--amber)" : "var(--red)" }}>{reviewResult.overallScore ?? "-"}</div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>总体评分</div>
+                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{reviewResult.overallLevel ?? ""}</div>
+              </div>
+            </div>
+            {reviewResult.summary && <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>{reviewResult.summary}</p>}
+            {Array.isArray(reviewResult.dimensions) && reviewResult.dimensions.map((dim: any, i: number) => (
+              <div key={i} style={{ marginBottom: 12, padding: 12, border: "1px solid var(--border)", borderRadius: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontWeight: 600, fontSize: 13 }}>{dim.name}</span>
+                  <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{dim.score}/5</span>
+                </div>
+                {Array.isArray(dim.issues) && dim.issues.length > 0 && (
+                  <div style={{ marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--red)" }}>问题：</span>
+                    {dim.issues.map((issue: string, j: number) => <div key={j} style={{ fontSize: 12, color: "var(--text-secondary)", paddingLeft: 8 }}>• {issue}</div>)}
+                  </div>
+                )}
+                {Array.isArray(dim.suggestions) && dim.suggestions.length > 0 && (
+                  <div>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--green)" }}>建议：</span>
+                    {dim.suggestions.map((sug: string, j: number) => <div key={j} style={{ fontSize: 12, color: "var(--text-secondary)", paddingLeft: 8 }}>• {sug}</div>)}
+                  </div>
+                )}
+              </div>
+            ))}
+            {Array.isArray(reviewResult.mustFix) && reviewResult.mustFix.length > 0 && (
+              <div style={{ marginTop: 12, padding: 12, background: "#fef2f2", borderRadius: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--red)", marginBottom: 4 }}>必须修复</div>
+                {reviewResult.mustFix.map((item: string, i: number) => <div key={i} style={{ fontSize: 12, paddingLeft: 8 }}>• {item}</div>)}
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
       <ConfirmDialog open={showGenerateConfirm} title="重新生成用例" message={`当前已有 ${testCases.length} 条用例，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={() => { setShowGenerateConfirm(false); generateTestCases(); }} onCancel={() => setShowGenerateConfirm(false)} />
       <ConfirmDialog open={showBatchDeleteConfirm} title="批量删除用例" message={`确定删除选中的 ${selectedIds.size} 条用例？`} confirmLabel="删除" onConfirm={() => { setShowBatchDeleteConfirm(false); batchDelete(); }} onCancel={() => setShowBatchDeleteConfirm(false)} />
+      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 条用例标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
     </div>
   );
 }
@@ -611,10 +735,12 @@ function ScriptsTab({ projectId }: { projectId: string }) {
   const [deletingScript, setDeletingScript] = useState<{ id: string; name: string } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
+  const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
 
   const automatable = useMemo(() => testCases.filter((tc) => tc.automation === "适合"), [testCases]);
   const existingScriptCount = scripts.length;
   const hasPrerequisite = automatable.length > 0;
+  const unreviewedTCCount = automatable.filter((tc) => tc.reviewStatus !== "已通过").length;
   const allSelected = automatable.length > 0 && automatable.every((tc) => selectedIds.has(tc.id));
   const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(automatable.map((tc) => tc.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -628,9 +754,28 @@ function ScriptsTab({ projectId }: { projectId: string }) {
     setSelectedIds(new Set());
     await refreshScripts();
   };
+  const toggleReview = async (script: AutomationScript) => {
+    const newStatus = (script as any).reviewStatus === "已通过" ? "待评审" : "已通过";
+    try { await scriptsApi.update(script.id, { reviewStatus: newStatus } as any); } catch {}
+    dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, reviewStatus: newStatus } as any });
+    await refreshScripts();
+  };
+  const batchApprove = async () => {
+    for (const id of selectedIds) {
+      const script = scripts.find((s) => s.testCaseId === id);
+      if (script && (script as any).reviewStatus !== "已通过") {
+        try { await scriptsApi.update(script.id, { reviewStatus: "已通过" } as any); } catch {}
+        dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, reviewStatus: "已通过" } as any });
+      }
+    }
+    toast.success(`已通过 ${selectedIds.size} 个脚本`);
+    setSelectedIds(new Set());
+    await refreshScripts();
+  };
 
   const handleGenerate = async () => {
     if (!hasPrerequisite) { toast.warning("请先生成测试用例并标记适合自动化的用例"); return; }
+    if (unreviewedTCCount > 0) { toast.warning(`还有 ${unreviewedTCCount} 条用例未评审通过，请先完成用例评审`); return; }
     setGenerating(true);
     setError(null);
     try {
@@ -697,9 +842,11 @@ function ScriptsTab({ projectId }: { projectId: string }) {
         actions={<>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
+              {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
               {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
               <button className="primary-button" type="button" onClick={() => {
                 if (!hasPrerequisite) { toast.warning("请先生成测试用例并标记适合自动化的用例"); return; }
+                if (unreviewedTCCount > 0) { toast.warning(`还有 ${unreviewedTCCount} 条用例未评审通过，请先完成用例评审`); return; }
                 if (existingScriptCount > 0) { setShowGenerateConfirm(true); return; }
                 handleGenerate();
               }} disabled={generating}>
@@ -723,6 +870,12 @@ function ScriptsTab({ projectId }: { projectId: string }) {
               { key: "script", label: "脚本状态", align: "center", render: (r) => {
                 const script = scripts.find((s) => s.testCaseId === r.id);
                 return script ? <StatusPill tone={script.status === "成功" ? "green" : script.status === "失败" ? "red" : "blue"}>{script.status}</StatusPill> : <span style={{ color: "var(--muted)" }}>未生成</span>;
+              }},
+              { key: "review", label: "评审", align: "center", render: (r) => {
+                const script = scripts.find((s) => s.testCaseId === r.id);
+                if (!script) return <span style={{ color: "var(--muted)" }}>-</span>;
+                const rev = (script as any).reviewStatus || "待评审";
+                return <button type="button" className="text-button" onClick={() => toggleReview(script)}><StatusPill tone={rev === "已通过" ? "green" : "slate"}>{rev}</StatusPill></button>;
               }},
               { key: "actions", label: "操作", align: "center", render: (r) => {
                 const script = scripts.find((s) => s.testCaseId === r.id);
@@ -799,6 +952,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
       )}
 
       <ConfirmDialog open={showGenerateConfirm} title="重新生成脚本" message={`当前已有 ${existingScriptCount} 个脚本，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={handleGenerate} onCancel={() => setShowGenerateConfirm(false)} />
+      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 个脚本标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
       <ConfirmDialog open={showBatchDeleteConfirm} title="批量删除脚本" message={`确定删除选中的 ${selectedIds.size} 个脚本？`} confirmLabel="删除" onConfirm={() => { setShowBatchDeleteConfirm(false); batchDelete(); }} onCancel={() => setShowBatchDeleteConfirm(false)} />
       <ConfirmDialog open={!!deletingScript} title="删除脚本" message={`确定删除脚本「${deletingScript?.name}」？`} confirmLabel="删除" onConfirm={handleDelete} onCancel={() => setDeletingScript(null)} />
     </div>
@@ -816,6 +970,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
   const [runningId, setRunningId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
+  const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
   const [runningAll, setRunningAll] = useState(false);
 
   const allSelected = scripts.length > 0 && scripts.every((s) => selectedIds.has(s.id));
@@ -828,9 +983,29 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
     setSelectedIds(new Set());
     await refreshScripts();
   };
+  const toggleReview = async (script: AutomationScript) => {
+    const newStatus = (script as any).reviewStatus === "已通过" ? "待评审" : "已通过";
+    try { await scriptsApi.update(script.id, { reviewStatus: newStatus } as any); } catch {}
+    dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, reviewStatus: newStatus } as any });
+    await refreshScripts();
+  };
+  const batchApprove = async () => {
+    for (const id of selectedIds) {
+      const script = scripts.find((s) => s.id === id);
+      if (script && (script as any).reviewStatus !== "已通过") {
+        try { await scriptsApi.update(script.id, { reviewStatus: "已通过" } as any); } catch {}
+        dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, reviewStatus: "已通过" } as any });
+      }
+    }
+    toast.success(`已通过 ${selectedIds.size} 个脚本`);
+    setSelectedIds(new Set());
+    await refreshScripts();
+  };
 
+  const unreviewedScriptCount = scripts.filter((s) => (s as any).reviewStatus !== "已通过").length;
   const runAll = async () => {
     if (scripts.length === 0) { toast.warning("请先在「自动化脚本」页面生成脚本"); return; }
+    if (unreviewedScriptCount > 0) { toast.warning(`还有 ${unreviewedScriptCount} 个脚本未评审通过，请先完成脚本评审`); return; }
     setRunningAll(true);
     for (const script of scripts) {
       if (script.status === "成功") continue;
@@ -844,6 +1019,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
   };
 
   const handleRun = async (script: AutomationScript) => {
+    if ((script as any).reviewStatus !== "已通过") { toast.warning("该脚本未评审通过，请先完成评审"); return; }
     setRunningId(script.id);
     dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, status: "执行中" } });
 
@@ -877,7 +1053,8 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
     <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="执行脚本" description="管理和执行已生成的自动化脚本。"
         actions={<>
-          {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
+          {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
+              {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
           <button className="primary-button" type="button" onClick={runAll} disabled={runningAll}>
             {runningAll ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
             {runningAll ? "执行中..." : "全部执行"}
@@ -900,6 +1077,10 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
                 {r.status}
               </StatusPill>
             )},
+            { key: "review", label: "评审", align: "center", render: (r) => {
+              const rev = (r as any).reviewStatus || "待评审";
+              return <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={rev === "已通过" ? "green" : "slate"}>{rev}</StatusPill></button>;
+            }},
             { key: "actions", label: "操作", align: "center", render: (r) => (
               <div className="inline-actions">
                 <button className="text-button" type="button" onClick={() => setSelectedScript(r)}>查看</button>
@@ -939,6 +1120,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
           </div>
         </div>
       )}
+      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 个脚本标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
       <ConfirmDialog open={showBatchDeleteConfirm} title="批量删除脚本" message={`确定删除选中的 ${selectedIds.size} 个脚本？`} confirmLabel="删除" onConfirm={() => { setShowBatchDeleteConfirm(false); batchDelete(); }} onCancel={() => setShowBatchDeleteConfirm(false)} />
     </div>
   );
@@ -950,22 +1132,129 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
 
 function SummaryTab({ projectId }: { projectId: string }) {
   const { files, testPoints, testCases } = useProjectData(projectId);
-  const passedTP = testPoints.filter((tp) => tp.reviewStatus === "已通过").length;
-  const passedTC = testCases.filter((tc) => tc.reviewStatus === "已通过").length;
-  const autoCount = testCases.filter((tc) => tc.automation === "适合").length;
-  const stats = [
-    { label: "文档总数", value: files.length },
-    { label: "测试点总数", value: testPoints.length, sub: `已通过 ${passedTP}` },
-    { label: "用例总数", value: testCases.length, sub: `已通过 ${passedTC}` },
-    { label: "自动化用例", value: autoCount, sub: `覆盖率 ${testCases.length > 0 ? Math.round(autoCount / testCases.length * 100) : 0}%` },
-    { label: "P0 用例", value: testCases.filter((c) => c.priority === "P0").length },
-    { label: "需修改", value: testCases.filter((c) => c.reviewStatus === "需修改").length },
-  ];
+  const total = testCases.length;
+  const passed = testCases.filter((c) => c.reviewStatus === "已通过").length;
+  const failed = testCases.filter((c) => c.reviewStatus === "需修改").length;
+  const pending = testCases.filter((c) => c.reviewStatus !== "已通过" && c.reviewStatus !== "需修改").length;
+  const passRate = total > 0 ? Math.round(passed / total * 100) : 0;
+  const isPass = passRate >= 80;
+  const autoCount = testCases.filter((c) => c.automation === "适合").length;
+
+  // 按模块统计
+  const modules = useMemo(() => {
+    const map = new Map<string, { total: number; passed: number; failed: number }>();
+    testCases.forEach((c) => {
+      const m = map.get(c.module) || { total: 0, passed: 0, failed: 0 };
+      m.total++;
+      if (c.reviewStatus === "已通过") m.passed++;
+      if (c.reviewStatus === "需修改") m.failed++;
+      map.set(c.module, m);
+    });
+    return Array.from(map.entries()).map(([name, data]) => ({ name, ...data, rate: data.total > 0 ? Math.round(data.passed / data.total * 100) : 0 }));
+  }, [testCases]);
+
+  // 按优先级统计
+  const priorities = useMemo(() => {
+    const map = new Map<string, { total: number; passed: number }>();
+    testCases.forEach((c) => {
+      const p = map.get(c.priority) || { total: 0, passed: 0 };
+      p.total++;
+      if (c.reviewStatus === "已通过") p.passed++;
+      map.set(c.priority, p);
+    });
+    return Array.from(map.entries()).map(([name, data]) => ({ name, ...data, rate: data.total > 0 ? Math.round(data.passed / data.total * 100) : 0 }));
+  }, [testCases]);
+
+  // 未通过用例
+  const failedCases = useMemo(() => testCases.filter((c) => c.reviewStatus !== "已通过"), [testCases]);
+
+  const toneForRate = (r: number) => r >= 80 ? "green" : r >= 50 ? "amber" : "red";
+
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="测试进度概览" description="手动测试数据与自动化测试结果的汇总统计。" />
+      {/* 测试结论 */}
+      <div style={{ padding: 20, borderRadius: 8, background: isPass ? "#f0fdf4" : "#fef2f2", border: `1px solid ${isPass ? "#bbf7d0" : "#fecaca"}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+          <StatusPill tone={isPass ? "green" : "red"}>{isPass ? "测试通过" : "测试未通过"}</StatusPill>
+          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+            用例通过率 <strong>{passRate}%</strong>（{passed}/{total}）
+            {!isPass && passRate < 80 && `，低于 80% 阈值`}
+          </span>
+        </div>
+        {!isPass && <p style={{ margin: 0, fontSize: 12, color: "var(--text-secondary)" }}>存在 {failed} 条失败用例和 {pending} 条待评审用例，建议排查后重新执行。</p>}
+      </div>
+
+      {/* 核心指标 */}
+      <div className="dash-stats" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+        {[
+          { label: "用例总数", value: total },
+          { label: "通过", value: passed, sub: `${passRate}%`, color: "var(--green)" },
+          { label: "失败", value: failed, sub: failed > 0 ? "需排查" : "", color: "var(--red)" },
+          { label: "待评审", value: pending, sub: pending > 0 ? "待处理" : "", color: "var(--amber)" },
+        ].map((s) => <div className="dash-stat-card" key={s.label}><div className="dash-stat-body"><span className="dash-stat-label">{s.label}</span><strong className="dash-stat-value" style={s.color ? { color: s.color } : undefined}>{s.value}</strong>{s.sub && <span className="dash-stat-sub">{s.sub}</span>}</div></div>)}
+      </div>
+
+      {/* 模块通过率 + 优先级通过率 并排 */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <section className="work-panel">
+          <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>模块通过率</h3>
+          {modules.length === 0 ? <div className="empty-state"><p>暂无数据</p></div> : (
+            <div style={{ display: "grid", gap: 8 }}>
+              {modules.map((m) => (
+                <div key={m.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ width: 80, fontSize: 13, flexShrink: 0, textAlign: "right" }}>{m.name}</span>
+                  <div style={{ flex: 1, height: 8, background: "var(--line)", borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ width: `${m.rate}%`, height: "100%", background: m.rate >= 80 ? "var(--green)" : m.rate >= 50 ? "var(--amber)" : "var(--red)", borderRadius: 4, transition: "width 0.3s" }} />
+                  </div>
+                  <span style={{ width: 50, fontSize: 12, color: "var(--text-secondary)" }}>{m.passed}/{m.total}</span>
+                  <StatusPill tone={toneForRate(m.rate)}>{m.rate}%</StatusPill>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="work-panel">
+          <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>优先级通过率</h3>
+          {priorities.length === 0 ? <div className="empty-state"><p>暂无数据</p></div> : (
+            <div style={{ display: "grid", gap: 8 }}>
+              {priorities.sort((a, b) => a.name.localeCompare(b.name)).map((p) => (
+                <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ width: 40, fontSize: 13, fontWeight: 600, flexShrink: 0 }}><StatusPill tone={priorityTone(p.name)}>{p.name}</StatusPill></span>
+                  <div style={{ flex: 1, height: 8, background: "var(--line)", borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ width: `${p.rate}%`, height: "100%", background: p.rate >= 80 ? "var(--green)" : p.rate >= 50 ? "var(--amber)" : "var(--red)", borderRadius: 4, transition: "width 0.3s" }} />
+                  </div>
+                  <span style={{ width: 50, fontSize: 12, color: "var(--text-secondary)" }}>{p.passed}/{p.total}</span>
+                  <StatusPill tone={toneForRate(p.rate)}>{p.rate}%</StatusPill>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* 未通过用例列表 */}
+      <section className="work-panel">
+        <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>未通过用例（{failedCases.length}）</h3>
+        {failedCases.length === 0 ? <div className="empty-state"><p>所有用例已通过，无待处理问题</p></div> : (
+          <DataTable rows={failedCases} getRowKey={(r) => r.id} columns={[
+            { key: "caseCode", label: "编号", render: (r) => r.caseCode },
+            { key: "module", label: "模块", render: (r) => r.module },
+            { key: "title", label: "用例标题", align: "left", render: (r) => r.title },
+            { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
+            { key: "reviewStatus", label: "状态", align: "center", render: (r) => <StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus}</StatusPill> },
+            { key: "automation", label: "是否自动化", align: "center", render: (r) => r.automation === "适合" ? "是" : "否" },
+          ]} />
+        )}
+      </section>
+
+      {/* 补充信息 */}
       <div className="dash-stats" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
-        {stats.map((s) => <div className="dash-stat-card" key={s.label}><div className="dash-stat-body"><span className="dash-stat-label">{s.label}</span><strong className="dash-stat-value">{s.value}</strong>{s.sub && <span className="dash-stat-sub">{s.sub}</span>}</div></div>)}
+        {[
+          { label: "测试点", value: testPoints.length, sub: `通过 ${testPoints.filter((tp) => tp.reviewStatus === "已通过").length}` },
+          { label: "自动化用例", value: autoCount, sub: `覆盖率 ${total > 0 ? Math.round(autoCount / total * 100) : 0}%` },
+          { label: "需求文档", value: files.length },
+        ].map((s) => <div className="dash-stat-card" key={s.label}><div className="dash-stat-body"><span className="dash-stat-label">{s.label}</span><strong className="dash-stat-value">{s.value}</strong>{s.sub && <span className="dash-stat-sub">{s.sub}</span>}</div></div>)}
       </div>
     </div>
   );
@@ -1021,13 +1310,21 @@ function DocFusionTab({ projectId }: { projectId: string }) {
       <section className="work-panel">
         {testCases.length === 0 ? <div className="empty-state"><p>暂无测试用例数据</p></div> : (
           <DataTable rows={testCases} getRowKey={(r) => r.id} columns={[
+            { key: "module", label: "模块", render: (r) => r.module },
             { key: "caseCode", label: "用例编号", render: (r) => r.caseCode },
             { key: "title", label: "用例标题", align: "left", render: (r) => r.title },
-            { key: "module", label: "模块", render: (r) => r.module },
-            { key: "priority", label: "优先级", align: "center", render: (r) => r.priority },
-            { key: "automation", label: "自动化状态", align: "center", render: (r) => r.automation },
-            { key: "reviewStatus", label: "评审结果", align: "center", render: (r) => <StatusPill tone={r.reviewStatus === "已通过" ? "green" : r.reviewStatus === "需修改" ? "red" : "amber"}>{r.reviewStatus}</StatusPill> },
-            { key: "manualResult", label: "手动执行结果", align: "center", render: (r) => { const result = manualResults[r.caseCode]; return result ? <StatusPill tone={result === "通过" ? "green" : result === "失败" ? "red" : "amber"}>{result}</StatusPill> : <StatusPill tone="slate">未执行</StatusPill>; } },
+            { key: "testType", label: "测试类型", align: "center", render: (r) => r.testType || "功能测试" },
+            { key: "steps", label: "测试步骤", align: "left", render: (r) => <span style={{ fontSize: 12, maxWidth: 200, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.steps || "-"}</span> },
+            { key: "expectedResult", label: "预期结果", align: "left", render: (r) => <span style={{ fontSize: 12, maxWidth: 200, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.expectedResult || "-"}</span> },
+            { key: "actualResult", label: "实测结果", align: "left", render: (r) => <span style={{ fontSize: 12, maxWidth: 200, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.actualResult || <span style={{ color: "var(--text-secondary)" }}>-</span>}</span> },
+            { key: "passed", label: "是否通过", align: "center", render: (r) => r.passed === "通过" ? <StatusPill tone="green">通过</StatusPill> : r.passed === "失败" ? <StatusPill tone="red">失败</StatusPill> : <StatusPill tone="slate">未执行</StatusPill> },
+            { key: "actions", label: "操作", align: "center", render: (r) => (
+              <div className="inline-actions">
+                <button className="text-button" type="button" onClick={() => toast.info(`查看用例 ${r.caseCode}`)}>查看</button>
+                <button className="text-button" type="button" onClick={() => toast.info(`编辑用例 ${r.caseCode}`)}>编辑</button>
+                <button className="text-button text-button--danger" type="button" onClick={async () => { try { await testCasesApi.delete(r.id); } catch {} toast.success("已删除"); }}>删除</button>
+              </div>
+            ) },
           ]} />
         )}
       </section>
@@ -1133,20 +1430,20 @@ const TAB_STORAGE_KEY = "aitestlink-project-tab";
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
   const { project } = useProjectData(id);
-  // 优先从路由 state 读取（通知跳转），否则用 "overview"
-  const initialTab: TabKey = (location.state?.targetTab as TabKey) || "overview";
-  const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    return (localStorage.getItem(TAB_STORAGE_KEY) as TabKey) || "overview";
+  });
   const tabContentRef = useRef<HTMLDivElement>(null);
   const handleTabChange = (tab: TabKey) => { setActiveTab(tab); localStorage.setItem(TAB_STORAGE_KEY, tab); };
 
-  // 监听通知点击的 CustomEvent，实时切换 tab
+  // 监听通知点击的 CustomEvent，实时切换 tab 并持久化
   useEffect(() => {
     const handler = (e: Event) => {
       const { tab, projectId } = (e as CustomEvent).detail;
       if (projectId === id && tab) {
         setActiveTab(tab as TabKey);
+        localStorage.setItem(TAB_STORAGE_KEY, tab);
       }
     };
     window.addEventListener("aitestlink:navigate-tab", handler);

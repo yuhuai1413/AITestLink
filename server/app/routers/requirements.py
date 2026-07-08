@@ -40,8 +40,10 @@ async def update_requirement(
     await verify_project_owner(db, req.project_id, user["sub"])
 
     update_data = data.model_dump(exclude_unset=True)
+    field_map = {"reviewStatus": "review_status"}
     for key, value in update_data.items():
-        setattr(req, key, value)
+        db_key = field_map.get(key, key)
+        setattr(req, db_key, value)
 
     await db.commit()
     await db.refresh(req)

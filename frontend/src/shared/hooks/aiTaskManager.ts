@@ -95,6 +95,7 @@ const TASK_TAB_MAP: Record<string, string> = {
   "需求解析": "requirements",
   "测试点生成": "testPoints",
   "用例生成": "testCases",
+  "用例评审": "testCases",
 };
 
 function getTargetTab(projectId: string, _taskType: string): string {
@@ -251,6 +252,7 @@ export async function startGenerateTestCases(projectId: string) {
             caseCode: tc.caseCode, module: tc.module, feature: tc.feature, title: tc.title,
             priority: tc.priority, precondition: tc.precondition, steps: tc.steps,
             testData: tc.testData, expectedResult: tc.expectedResult,
+            testType: tc.testType ?? "功能测试", actualResult: tc.actualResult ?? "", passed: tc.passed ?? "未执行",
             automation: tc.automation, reviewStatus: tc.reviewStatus, remark: tc.remark,
             createdAt: tc.createdAt, updatedAt: tc.updatedAt,
           },
@@ -261,6 +263,18 @@ export async function startGenerateTestCases(projectId: string) {
 }
 
 /** 查询某个项目是否有正在运行的任务 */
+export async function startReviewTestCases(projectId: string) {
+  const configured = await checkConfig(projectId, "用例评审");
+  if (!configured) {
+    addNotification("任务失败", "用例评审", projectId, "用例评审失败：模型未配置", `/projects/${projectId}`);
+    return { success: false, error: "模型未配置" };
+  }
+
+  toast.info("AI 用例评审已启动，完成后会在通知列表中提醒");
+  const result = await runTask(projectId, "用例评审", () => aiApi.reviewTestCases(projectId));
+  return result;
+}
+
 export function hasActiveTask(projectId: string, taskType?: string): boolean {
   for (const key of activeTasks.keys()) {
     if (taskType ? key === `${projectId}:${taskType}` : key.startsWith(`${projectId}:`)) {

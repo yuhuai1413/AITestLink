@@ -121,6 +121,9 @@ export interface TestCase {
   steps: string;
   testData: string;
   expectedResult: string;
+  testType: string;
+  actualResult: string;
+  passed: string;
   automation: AutomationFlag;
   reviewStatus: ReviewStatus;
   remark: string;
