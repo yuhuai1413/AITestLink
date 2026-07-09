@@ -62,9 +62,10 @@ function reviewTone(s: string) {
 // ═══════════════════════════════════════
 
 function OverviewTab({ projectId }: { projectId: string }) {
-  const { project, files, testPoints, testCases, scripts } = useProjectData(projectId);
+  const { project, files, testPoints, testCases, scripts, loading, initialLoading } = useProjectData(projectId);
 
 
+  if (initialLoading && !project) return <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div>;
   if (!project) return null;
   const p0Cases = testCases.filter((c) => c.priority === "P0").length;
   const autoCount = testCases.filter((c) => c.automation === "适合").length;
@@ -111,7 +112,7 @@ function OverviewTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function FilesTab({ projectId }: { projectId: string }) {
-  const { files, refreshFiles } = useProjectData(projectId);
+  const { files, refreshFiles, loading, initialLoading } = useProjectData(projectId);
   const { uploadFile, deleteFile } = useAPISync();
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -189,7 +190,7 @@ function FilesTab({ projectId }: { projectId: string }) {
         <p style={{ margin: "4px 0 0", color: "var(--subtle)", fontSize: 12 }}>支持 .docx .doc .pdf .md .json .yaml .xlsx .csv 等格式</p>
       </div>
       <section className="work-panel">
-        {files.length === 0 ? <div className="empty-state"><p>暂无文档，请上传文件。</p></div> : (
+        {initialLoading && files.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : files.length === 0 ? <div className="empty-state"><p>暂无文档，请上传文件。</p></div> : (
           <DataTable rows={files} getRowKey={(r) => r.id} columns={[
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "name", label: "文件名称", align: "left", render: (r) => <strong>{r.name}</strong> },
@@ -222,7 +223,7 @@ function FilesTab({ projectId }: { projectId: string }) {
 const truncateText = (text: string, maxLen = 50) => text.length > maxLen ? text.slice(0, maxLen) + "..." : text;
 
 function RequirementsTab({ projectId }: { projectId: string }) {
-  const { files, requirements, refresh } = useProjectData(projectId);
+  const { files, requirements, refresh, loading, initialLoading } = useProjectData(projectId);
   const { state, dispatch } = useStore();
   const parsing = useMemo(() => state.activeAITasks.includes("需求解析"), [state.activeAITasks]);
   const [showReparseConfirm, setShowReparseConfirm] = useState(false);
@@ -309,7 +310,9 @@ function RequirementsTab({ projectId }: { projectId: string }) {
           </div>
         </>} />
       <section className="work-panel">
-        {requirements.length === 0 ? (
+        {initialLoading && requirements.length === 0 ? (
+          <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div>
+        ) : requirements.length === 0 ? (
           <div className="empty-state">
             {hasFiles ? <p>暂无需求数据，请点击「需求解析」按钮</p> : <p>暂无需求数据，请先在「输入资料」页面上传文件</p>}
           </div>
@@ -392,7 +395,7 @@ function RequirementsTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function TestPointsTab({ projectId }: { projectId: string }) {
-  const { testPoints, files, requirements, refresh, refreshTestPoints } = useProjectData(projectId);
+  const { testPoints, files, requirements, refresh, refreshTestPoints, loading, initialLoading } = useProjectData(projectId);
   const { dispatch } = useStore();
   const { loadingTestPoints, error, generateTestPoints } = useAIAction(projectId);
   const prevLoadingRef = useRef(loadingTestPoints);
@@ -473,7 +476,7 @@ function TestPointsTab({ projectId }: { projectId: string }) {
       {error && <div className="error-banner"><span>{error}</span></div>}
       {modules.length > 0 && <div className="filter-bar"><span className="filter-label">模块筛选</span><select className="filter-select" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}><option value="all">全部模块</option>{modules.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>}
       <section className="work-panel">
-        {filtered.length === 0 ? <div className="empty-state"><p>暂无测试点</p></div> : (
+        {initialLoading && filtered.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : filtered.length === 0 ? <div className="empty-state"><p>暂无测试点</p></div> : (
           <DataTable rows={filtered} getRowKey={(r) => r.id} columns={[
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "id", label: "编号", render: (r) => r.id },
@@ -543,7 +546,7 @@ function TestPointsTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function TestCasesTab({ projectId }: { projectId: string }) {
-  const { project, testCases, testPoints, refresh, refreshTestCases, refreshTestPoints } = useProjectData(projectId);
+  const { project, testCases, testPoints, refresh, refreshTestCases, refreshTestPoints, loading, initialLoading } = useProjectData(projectId);
   const { dispatch } = useStore();
   const { loadingTestCases, loadingReview, error, generateTestCases, reviewTestCases } = useAIAction(projectId);
   const prevLoadingRef = useRef(loadingTestCases);
@@ -667,7 +670,7 @@ function TestCasesTab({ projectId }: { projectId: string }) {
       {error && <div className="error-banner"><span>{error}</span></div>}
       {modules.length > 0 && <div className="filter-bar"><span className="filter-label">模块筛选</span><select className="filter-select" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}><option value="all">全部模块</option>{modules.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>}
       <section className="work-panel">
-        {filtered.length === 0 ? <div className="empty-state"><p>暂无测试用例</p></div> : (
+        {initialLoading && filtered.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : filtered.length === 0 ? <div className="empty-state"><p>暂无测试用例</p></div> : (
           <DataTable rows={filtered} getRowKey={(r) => r.id} columns={[
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "module", label: "模块", render: (r) => r.module },
@@ -768,7 +771,7 @@ function TestCasesTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function ScriptsTab({ projectId }: { projectId: string }) {
-  const { testCases, scripts, refresh, refreshScripts } = useProjectData(projectId);
+  const { testCases, scripts, refresh, refreshScripts, loading, initialLoading } = useProjectData(projectId);
   const { dispatch } = useStore();
   const [generating, setGenerating] = useState(false);
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
@@ -903,7 +906,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
         </>} />
       {error && <div className="error-banner"><span>{error}</span></div>}
       <section className="work-panel" style={{ minHeight: 0 }}>
-        {scripts.length === 0 ? <div className="empty-state"><p>暂无自动化脚本，请点击上方「生成自动化脚本」按钮生成</p></div> : (
+        {initialLoading && scripts.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : scripts.length === 0 ? <div className="empty-state"><p>暂无自动化脚本，请点击上方「生成自动化脚本」按钮生成</p></div> : (
           <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <DataTable rows={scripts} getRowKey={(r) => r.id} columns={[
               { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
@@ -1009,7 +1012,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function ExecuteScriptsTab({ projectId }: { projectId: string }) {
-  const { scripts, testCases, refreshScripts } = useProjectData(projectId);
+  const { scripts, testCases, refreshScripts, loading, initialLoading } = useProjectData(projectId);
   const { dispatch } = useStore();
   const [viewScript, setViewScript] = useState<AutomationScript | null>(null);
   const [runningId, setRunningId] = useState<string | null>(null);
@@ -1086,7 +1089,9 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
           </div>
         </>} />
       <section className="work-panel">
-        {scripts.length === 0 ? (
+        {initialLoading && scripts.length === 0 ? (
+          <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div>
+        ) : scripts.length === 0 ? (
           <div className="empty-state">
             <p>暂无脚本，请先在「自动化脚本」页面生成脚本</p>
           </div>
@@ -1217,7 +1222,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function SummaryTab({ projectId }: { projectId: string }) {
-  const { files, testPoints, testCases, refresh } = useProjectData(projectId);
+  const { files, testPoints, testCases, refresh, loading, initialLoading } = useProjectData(projectId);
 
   // 判断用例是否通过：实测结果与预期结果一致
   const isCasePassed = (c: ApiTestCase) => {
@@ -1301,7 +1306,7 @@ function SummaryTab({ projectId }: { projectId: string }) {
         {/* 模块通过率 */}
         <section className="work-panel" style={{ display: "flex", flexDirection: "column" }}>
           <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>模块通过率</h3>
-          {modules.length === 0 ? <div className="empty-state"><p>暂无数据</p></div> : (
+          {initialLoading && modules.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : modules.length === 0 ? <div className="empty-state"><p>暂无数据</p></div> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1, overflow: "auto" }}>
               {modules.map((m) => (
                 <div key={m.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1325,7 +1330,7 @@ function SummaryTab({ projectId }: { projectId: string }) {
         {/* 优先级通过率 */}
         <section className="work-panel" style={{ display: "flex", flexDirection: "column" }}>
           <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>优先级通过率</h3>
-          {priorities.length === 0 ? <div className="empty-state"><p>暂无数据</p></div> : (
+          {initialLoading && priorities.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : priorities.length === 0 ? <div className="empty-state"><p>暂无数据</p></div> : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1, justifyContent: "center", overflow: "auto" }}>
               {priorities.map((p) => (
                 <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1364,7 +1369,7 @@ function SummaryTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function DocManageTab({ projectId }: { projectId: string }) {
-  const { files, refresh } = useProjectData(projectId);
+  const { files, refresh, loading } = useProjectData(projectId);
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="项目文档" description="项目已上传的文档列表。" actions={<span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{files.length}</strong> 个文件</span>} />
@@ -1556,7 +1561,7 @@ function DocFusionTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function DocGenerateTab({ projectId }: { projectId: string }) {
-  const { files, testCases, refresh } = useProjectData(projectId);
+  const { files, testCases, refresh, loading, initialLoading } = useProjectData(projectId);
   const templates = [
     { id: "tpl-plan", name: "软件测试计划", desc: "测试范围、策略、资源、进度安排", needs: ["files"] },
     { id: "tpl-spec", name: "软件测试说明", desc: "测试环境、用例设计、执行方法", needs: ["files", "testCases"] },
@@ -1617,12 +1622,33 @@ const tabComponents: Record<TabKey, React.FC<{ projectId: string }>> = {
   docGenerate: DocGenerateTab,
 };
 
+
+
+function TabLoadingSkeleton() {
+  return (
+    <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="skeleton-line" style={{ width: '40%', height: 20, borderRadius: 4, background: 'var(--line)' }} />
+      <div className="skeleton-line" style={{ width: '70%', height: 14, borderRadius: 4, background: 'var(--line)' }} />
+      <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+        {[1,2,3,4].map(i => (
+          <div key={i} className="skeleton-card" style={{ flex: 1, height: 80, borderRadius: 'var(--radius-l1)', background: 'var(--line)', opacity: 0.5 }} />
+        ))}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+        {[1,2,3,4,5].map(i => (
+          <div key={i} className="skeleton-line" style={{ width: `${60 + Math.random() * 35}%`, height: 14, borderRadius: 4, background: 'var(--line)', opacity: 0.4 }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const TAB_STORAGE_PREFIX = "aitestlink-project-tab-";
 
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { project } = useProjectData(id);
+  const { project, loading } = useProjectData(id);
   const prevIdRef = useRef<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
     if (id) {
@@ -1666,6 +1692,20 @@ export function ProjectDetailPage() {
   }, [activeTab]);
 
   if (!project) {
+    if (loading) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <div className="detail-header">
+            <button className="ghost-button" type="button" onClick={() => navigate("/projects")}><ArrowLeft size={13} /> 返回</button>
+            <div className="skeleton-line" style={{ width: 200, height: 24, borderRadius: 4, background: 'var(--line)' }} />
+          </div>
+          <div className="tab-bar">
+            {allTabs.map((tab) => <div key={tab.key} className="skeleton-line" style={{ width: 60, height: 16, borderRadius: 4, background: 'var(--line)', opacity: 0.4 }} />)}
+          </div>
+          <div className="tab-content"><TabLoadingSkeleton /></div>
+        </div>
+      );
+    }
     return <div className="page-stack page-stack--spaced page-stack--fill"><div className="empty-state"><p>项目不存在或已删除。</p><button className="primary-button" type="button" onClick={() => navigate("/projects")}>返回项目列表</button></div></div>;
   }
 

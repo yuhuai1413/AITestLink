@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   projectsApi,
   filesApi,
@@ -22,6 +22,7 @@ export interface ProjectData {
   testCases: ApiTestCase[];
   scripts: ApiScript[];
   loading: boolean;
+  initialLoading: boolean;
   refresh: () => Promise<void>;
   refreshFiles: () => Promise<void>;
   refreshRequirements: () => Promise<void>;
@@ -38,6 +39,7 @@ export function useProjectData(projectId: string | undefined): ProjectData {
   const [testCases, setTestCases] = useState<ApiTestCase[]>([]);
   const [scripts, setScripts] = useState<ApiScript[]>([]);
   const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const refreshProject = useCallback(async () => {
     if (!projectId) return;
@@ -111,6 +113,7 @@ export function useProjectData(projectId: string | undefined): ProjectData {
       refreshScripts(),
     ]);
     setLoading(false);
+    setInitialLoading(false);
   }, [projectId, refreshProject, refreshFiles, refreshRequirements, refreshTestPoints, refreshTestCases, refreshScripts]);
 
   useEffect(() => {
@@ -135,6 +138,7 @@ export function useProjectData(projectId: string | undefined): ProjectData {
     testCases,
     scripts,
     loading,
+    initialLoading,
     refresh,
     refreshFiles,
     refreshRequirements,
