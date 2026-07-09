@@ -103,6 +103,9 @@ type Action =
   | { type: "MARK_NOTIFICATION_READ"; payload: string }
   | { type: "MARK_ALL_NOTIFICATIONS_READ" }
   | { type: "CLEAR_NOTIFICATIONS" }
+  | { type: "CLEAR_REQUIREMENTS"; payload: string }
+  | { type: "CLEAR_TEST_POINTS"; payload: string }
+  | { type: "CLEAR_TEST_CASES"; payload: string }
   | { type: "START_ACTIVE_AI_TASK"; payload: string }
   | { type: "STOP_ACTIVE_AI_TASK"; payload: string }
   | { type: "SET_PROJECTS"; payload: any[] };
@@ -307,6 +310,24 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         notifications: state.notifications.map((n) => ({ ...n, read: true })),
+      };
+
+    case "CLEAR_REQUIREMENTS":
+      return {
+        ...state,
+        requirements: state.requirements.filter((r) => r.projectId !== action.payload),
+      };
+
+    case "CLEAR_TEST_POINTS":
+      return {
+        ...state,
+        testPoints: state.testPoints.filter((tp) => tp.projectId !== action.payload),
+      };
+
+    case "CLEAR_TEST_CASES":
+      return {
+        ...state,
+        testCases: state.testCases.filter((tc) => tc.projectId !== action.payload),
       };
 
     case "CLEAR_NOTIFICATIONS":

@@ -196,6 +196,7 @@ export async function startParseRequirements(projectId: string) {
     const reqs = await requirementsApi.list(projectId);
     if (_dispatch) {
       // 先清空该项目的旧需求，再添加新的
+      _dispatch({ type: "CLEAR_REQUIREMENTS", payload: projectId });
       reqs.forEach((r: ApiRequirement) => {
         _dispatch!({
           type: "ADD_REQUIREMENT",
@@ -221,6 +222,7 @@ export async function startGenerateTestPoints(projectId: string) {
   return runTask(projectId, "测试点生成", () => aiApi.generateTestPoints(projectId), async () => {
     const tps = await testPointsApi.list(projectId);
     if (_dispatch) {
+      _dispatch({ type: "CLEAR_TEST_POINTS", payload: projectId });
       tps.forEach((tp: ApiTestPoint) => {
         _dispatch!({
           type: "ADD_TEST_POINT",
@@ -247,6 +249,7 @@ export async function startGenerateTestCases(projectId: string) {
   return runTask(projectId, "用例生成", () => aiApi.generateTestCases(projectId), async () => {
     const tcs = await testCasesApi.list(projectId);
     if (_dispatch) {
+      _dispatch({ type: "CLEAR_TEST_CASES", payload: projectId });
       tcs.forEach((tc: ApiTestCase) => {
         _dispatch!({
           type: "ADD_TEST_CASE",
