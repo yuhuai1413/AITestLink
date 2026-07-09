@@ -1118,7 +1118,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
             { key: "executedAt", label: "执行时间", render: (r) => r.executedAt ? formatTime(r.executedAt) : <span style={{ color: "var(--muted)" }}>-</span> },
             { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
               <div className="inline-actions">
-                <button className="text-button" type="button" onClick={() => handleRun(r)} disabled={runningId === r.id || (r as any).reviewStatus !== "已通过"}>
+                <button className="text-button" type="button" onClick={() => handleRun(r)} disabled={runningId === r.id}>
                   {runningId === r.id ? "执行中" : "执行"}
                 </button>
                 <button className="text-button" type="button" onClick={() => setViewScript(r)}>查看</button>
