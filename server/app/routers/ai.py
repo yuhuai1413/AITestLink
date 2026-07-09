@@ -23,10 +23,24 @@ from app.utils import verify_project_owner
 logger = logging.getLogger(__name__)
 
 
-def _friendly_error(err: Exception) -> str:
+def _friendly_error(err: Exception, task_type: str = "") -> str:
     """将后端异常转换为中文用户友好提示"""
     msg = str(err)
-    # HTTP 状态码错误
+    # httpx HTTPStatusError: 检查 status_code 属性
+    status_code = getattr(err, "response", None)
+    if status_code is not None:
+        code = getattr(status_code, "status_code", 0)
+        if code == 400:
+            return f"{task_type or '请求'}参数错误（400），请检查输入数据后重试"
+        if code == 401 or code == 403:
+            return "API Key 无效或无权限，请在模型配置中检查 API Key"
+        if code == 404:
+            return "模型服务地址不可用（404），请在模型配置中检查 API 地址是否正确"
+        if code == 429:
+            return "模型服务请求过于频繁（限流），请稍后重试"
+        if code >= 500:
+            return "模型服务暂时不可用，请稍后重试"
+    # HTTP 状态码错误（字符串匹配兜底）
     if "404" in msg or "Not Found" in msg:
         return "模型服务地址不可用（404），请在模型配置中检查 API 地址是否正确"
     if "401" in msg or "Unauthorized" in msg or "403" in msg or "Forbidden" in msg:
@@ -50,8 +64,9 @@ def _friendly_error(err: Exception) -> str:
         return msg  # 已经是中文了
     if "请先" in msg:
         return msg
-    # 默认兜底
-    return f"解析失败：{msg[:200]}"
+    # 默认兜底：根据任务类型显示对应提示
+    label = task_type or "任务"
+    return f"{label}失败：{msg[:200]}"
 
 
 
@@ -237,7 +252,7 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
             await _update_task_status(db, task_id, "成功")
 
         except Exception as e:
-            error_msg = _friendly_error(e)
+            error_msg = _friendly_error(e, "需求解析")
             logger.exception("run_parse_requirements failed")
             try:
                 file_result = await db.execute(
@@ -252,7 +267,7 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
                 await db.commit()
             except Exception:
                 logger.exception("Failed to update file status on error")
-            await _update_task_status(db, task_id, "失败", _friendly_error(e))
+            await _update_task_status(db, task_id, "失败", _friendly_error(e, "需求解析"))
 
 
 async def run_generate_test_points(task_id: str, project_id: str, user_id: str):
@@ -311,7 +326,7 @@ async def run_generate_test_points(task_id: str, project_id: str, user_id: str):
 
         except Exception as e:
             logger.exception("run_generate_test_points failed")
-            await _update_task_status(db, task_id, "失败", _friendly_error(e))
+            await _update_task_status(db, task_id, "失败", _friendly_error(e, "测试点生成"))
 
 
 async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
@@ -375,7 +390,7 @@ async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
 
         except Exception as e:
             logger.exception("run_generate_test_cases failed")
-            await _update_task_status(db, task_id, "失败", _friendly_error(e))
+            await _update_task_status(db, task_id, "失败", _friendly_error(e, "用例生成"))
 
 
 # ─── 路由 ───
@@ -539,7 +554,7 @@ async def run_review_test_cases(task_id: str, project_id: str, user_id: str):
             await _update_task_status(db, task_id, "成功")
         except Exception as e:
             logger.exception("run_review_test_cases failed")
-            await _update_task_status(db, task_id, "失败", _friendly_error(e))
+            await _update_task_status(db, task_id, "失败", _friendly_error(e, "用例评审"))
 
 
 @router.post("/projects/{project_id}/ai/review-test-cases")
@@ -613,7 +628,7 @@ async def run_execute_scripts_analysis(task_id: str, project_id: str, user_id: s
             await _update_task_status(db, task_id, "成功")
         except Exception as e:
             logger.exception("run_execute_scripts_analysis failed")
-            await _update_task_status(db, task_id, "失败", _friendly_error(e))
+            await _update_task_status(db, task_id, "失败", _friendly_error(e, "执行脚本"))
 
 
 @router.post("/projects/{project_id}/ai/execute-scripts")
@@ -745,12 +760,12 @@ async def run_generate_docs(task_id: str, project_id: str, user_id: str):
                         old_value="生成中",
                         new_value="待生成",
                         change_type="auto",
-                        reason=f"文档生成失败: {_friendly_error(e)[:100]}"
+                        reason=f"文档生成失败: {_friendly_error(e, "文档生成")[:100]}"
                     ))
                     await db.commit()
             except Exception:
                 logger.exception("Failed to update doc_status on error")
-            await _update_task_status(db, task_id, "失败", _friendly_error(e))
+            await _update_task_status(db, task_id, "失败", _friendly_error(e, "文档生成"))
 
 
 @router.post("/projects/{project_id}/ai/generate-docs")
