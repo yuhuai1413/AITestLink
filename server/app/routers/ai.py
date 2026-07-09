@@ -72,16 +72,59 @@ async def _update_task_status(db: AsyncSession, task_id: str, status: str, error
         await db.commit()
 
 
+# 中文模块名 -> 英文缩写映射
+_MODULE_ABBR: dict[str, str] = {
+    "用户管理": "USER", "登录": "LOGIN", "权限": "PERM",
+    "角色": "ROLE", "菜单": "MENU", "部门": "DEPT",
+    "客户管理": "CUST", "客户": "CUST", "订单": "ORDER",
+    "商品": "GOODS", "产品": "PROD", "库存": "STOCK",
+    "审批": "APPROVE", "通知": "NOTIF", "消息": "MSG",
+    "报表": "REPORT", "统计": "STAT", "日志": "LOG",
+    "设置": "SETTING", "配置": "CONFIG", "系统": "SYS",
+    "文件": "FILE", "文档": "DOC", "模板": "TPL",
+    "搜索": "SEARCH", "筛选": "FILT", "导入": "IMPORT",
+    "导出": "EXPORT", "上传": "UPLOAD", "下载": "DL",
+    "编辑": "EDIT", "删除": "DEL", "新增": "ADD",
+    "详情": "DETAIL", "列表": "LIST", "弹窗": "DLG",
+    "表单": "FORM", "表格": "TABLE", "分页": "PAGE",
+    "导航": "NAV", "首页": "HOME", "仪表盘": "DASH",
+    "数据汇总": "SUMMARY", "测试": "TEST", "缺陷": "BUG",
+    "需求": "REQ", "脚本": "SCRIPT", "用例": "CASE",
+    "执行": "EXEC", "评审": "REVIEW", "生成": "GEN",
+    "接口": "API", "性能": "PERF", "安全": "SEC",
+    "兼容": "COMPAT", "回归": "REG", "冒烟": "SMOKE",
+    "核心": "CORE", "基础": "BASE", "公共": "COMMON",
+    "个人": "PERSONAL", "账号": "ACCOUNT", "密码": "PWD",
+    "头像": "AVATAR", "邮箱": "EMAIL", "手机": "PHONE",
+    "短信": "SMS", "验证码": "CODE", "注册": "REG",
+    "忘记密码": "FORGOT", "退出": "LOGOUT", "切换": "SWITCH",
+}
+
+# 已使用的英文缩写，防止重复
+_used_abbrs: dict[str, int] = {}
+
+
+def _to_eng_abbr(module: str) -> str:
+    """将中文模块名转为英文缩写，未知模块用 MOD_ + 编号。"""
+    if module in _MODULE_ABBR:
+        return _MODULE_ABBR[module]
+    # 短模块名直接取每个字首字母（大写）
+    if len(module) <= 4:
+        return "".join(c.upper() for c in module if c.isalpha()) or "MOD"
+    return "MOD"
+
+
 def _module_counter(items: list[dict], prefix: str) -> list[tuple[str, str]]:
     """为按模块分组的项目生成编号。返回 [(id, module), ...]
-    编号格式: PREFIX_NNN（纯英文+数字，不含中文）
+    编号格式: PREFIX_ABBR_NNN（纯英文+数字，不含中文）
     """
-    counter = 0
+    module_counters: dict[str, int] = {}
     result = []
     for item in items:
         module = item["module"]
-        counter += 1
-        result.append((f"{prefix}_{counter:03d}", module))
+        abbr = _to_eng_abbr(module)
+        module_counters[abbr] = module_counters.get(abbr, 0) + 1
+        result.append((f"{prefix}_{abbr}_{module_counters[abbr]:03d}", module))
     return result
 
 

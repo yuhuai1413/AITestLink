@@ -265,7 +265,7 @@ class AIService:
 
 ## 用例编号规则
 
-- 编号由系统自动生成（格式 TC_NNN，如 TC_001、TC_002），不需要提供 caseCode 字段
+- 编号由系统自动生成（格式 TC_XXX_NNN，如 TC_USER_001、TC_MENU_001），不需要提供 caseCode 字段
 - 编号只包含英文字母和数字，禁止包含中文
 
 ## 用例编写规范
