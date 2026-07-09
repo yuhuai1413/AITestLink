@@ -173,6 +173,7 @@ export interface AutomationScript {
   language: string;
   code: string;
   status: ScriptStatus;
+  executedAt: string | null;
   generatedByAi: boolean;
   createdAt: string;
   updatedAt: string;

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Plus, X, RotateCcw } from "lucide-react";
 import { useStore } from "../../app/store";
+import { toast } from "sonner";
 import { useAPISync } from "../../api/useAPISync";
 import { projectsApi } from "../../api/client";
 import { DataTable } from "./DataTable";
@@ -26,7 +27,7 @@ function testStatusTone(status: string) {
 
 function docStatusTone(status: string) {
   if (status === "已完成") return "green" as const;
-  if (status === "解析中") return "blue" as const;
+  if (status === "生成中") return "blue" as const;
   return "amber" as const;
 }
 
@@ -37,7 +38,7 @@ export function ProjectListPage({ mode }: ProjectListPageProps) {
   const [showCreate, setShowCreate] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [deletingProject, setDeletingProject] = useState<Project | null>(null);
-  const [page, setPage] = useState(1);
+    const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [nameFilter, setNameFilter] = useState("");
   const [testTypeFilter, setTestTypeFilter] = useState("all");
@@ -55,6 +56,20 @@ export function ProjectListPage({ mode }: ProjectListPageProps) {
 
   useEffect(() => {
     fetchProjects();
+  }, [fetchProjects]);
+
+  const location = useLocation();
+
+  // 路由变化时重新拉取数据（从详情页返回等场景）
+  useEffect(() => {
+    fetchProjects();
+  }, [location.pathname, fetchProjects]);
+
+  // 监听数据变更事件，删除文件等操作后立即刷新
+  useEffect(() => {
+    const handler = () => fetchProjects();
+    window.addEventListener("aitestlink:data-refresh", handler);
+    return () => window.removeEventListener("aitestlink:data-refresh", handler);
   }, [fetchProjects]);
 
   const filteredProjects = useMemo(() => {
@@ -140,8 +155,8 @@ export function ProjectListPage({ mode }: ProjectListPageProps) {
           )}
           {mode !== "testCenter" && (
             <optgroup label="文档状态">
-              <option value="待解析">待解析</option>
-              <option value="解析中">解析中</option>
+              <option value="待生成">待生成</option>
+              <option value="生成中">生成中</option>
               <option value="已完成">已完成</option>
             </optgroup>
           )}
@@ -281,7 +296,13 @@ export function ProjectListPage({ mode }: ProjectListPageProps) {
                         <button className="text-button" type="button" onClick={() => setEditingProject(row)}>
                           编辑
                         </button>
-                        <button className="text-button text-button--danger" type="button" onClick={() => setDeletingProject(row)}>
+                        <button className="text-button text-button--danger" type="button" onClick={() => {
+                          if (row.testStatus === "测试中") {
+                            toast.error("该项目正在测试中，无法删除");
+                            return;
+                          }
+                          setDeletingProject(row);
+                        }}>
                           删除
                         </button>
                       </>
@@ -305,10 +326,15 @@ export function ProjectListPage({ mode }: ProjectListPageProps) {
         title="删除项目"
         message={deletingProject ? `确定删除项目「${deletingProject.name}」？此操作不可撤销。` : ""}
         confirmLabel="删除"
-        onConfirm={() => {
-          if (deletingProject) {
-            deleteProject(deletingProject.id);
-            setDeletingProject(null);
+        onConfirm={async () => {
+          const proj = deletingProject;
+          setDeletingProject(null);
+          if (proj) {
+            try {
+              await deleteProject(proj.id);
+            } catch (err: any) {
+              toast.error(err?.message || "删除失败");
+            }
           }
         }}
         onCancel={() => setDeletingProject(null)}

@@ -292,6 +292,7 @@ export interface ApiScript {
   language: string;
   code: string;
   status: string;
+  executedAt: string | null;
   generatedByAi: boolean;
   createdAt: string;
   updatedAt: string;
@@ -305,4 +306,21 @@ export const scriptsApi = {
   delete: (id: string) => request<{ ok: boolean }>(`/scripts/${id}`, { method: "DELETE" }),
   generate: (projectId: string) =>
     request<{ ok: boolean; count: number; scripts: ApiScript[] }>(`/projects/${projectId}/scripts/generate`, { method: "POST" }),
+};
+
+// 状态变更日志 API
+export interface ApiStatusLog {
+  id: string;
+  projectId: string;
+  userId: string;
+  fieldName: string;
+  oldValue: string | null;
+  newValue: string;
+  changeType: string;
+  reason: string | null;
+  createdAt: string;
+}
+
+export const statusLogsApi = {
+  list: (projectId: string) => request<ApiStatusLog[]>(`/projects/${projectId}/status-logs`),
 };

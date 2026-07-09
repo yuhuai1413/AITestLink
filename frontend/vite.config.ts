@@ -7,6 +7,12 @@ const API_PORT = process.env.API_PORT || "8001";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
+    host: "::",
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
+    },
     proxy: {
       "/api": {
         target: `http://localhost:${API_PORT}`,

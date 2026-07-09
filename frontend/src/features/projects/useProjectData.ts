@@ -117,6 +117,16 @@ export function useProjectData(projectId: string | undefined): ProjectData {
     refresh();
   }, [refresh]);
 
+  // 监听全局数据刷新事件（删除文件等操作后触发）
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { projectId: pid } = (e as CustomEvent).detail || {};
+      if (pid === projectId) refresh();
+    };
+    window.addEventListener("aitestlink:data-refresh", handler);
+    return () => window.removeEventListener("aitestlink:data-refresh", handler);
+  }, [projectId, refresh]);
+
   return {
     project,
     files,

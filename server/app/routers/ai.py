@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import async_session, get_db
 from app.models.ai_task import AITask
 from app.models.file_asset import FileAsset
+from app.models.status_log import StatusLog
+from app.models.project import Project
 from app.models.requirement import Requirement
 from app.models.test_point import TestPoint
 from app.models.test_case import TestCase
@@ -142,6 +144,29 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
             await db.commit()
 
             requirements = await ai_service.parse_requirements(file_content, user_id)
+            logger.info(f"parse_requirements: type={type(requirements).__name__}, len={len(requirements) if isinstance(requirements, (list, dict)) else 'N/A'}")
+
+            # 确保返回的是列表；如果 LLM 返回了 dict，尝试从各种常见结构中提取列表
+            if isinstance(requirements, dict):
+                for v in requirements.values():
+                    if isinstance(v, list) and v and isinstance(v[0], dict) and "module" in v[0]:
+                        requirements = v
+                        break
+                if isinstance(requirements, dict):
+                    for k, v in requirements.items():
+                        if isinstance(v, list) and v and isinstance(v[0], dict):
+                            requirements = v
+                            logger.info(f"extracted list from dict key '{k}', len={len(v)}")
+                            break
+            if not isinstance(requirements, list) or not requirements:
+                logger.error(f"parse_requirements: invalid result, type={type(requirements).__name__}, preview={str(requirements)[:500]}")
+                for f in files:
+                    f.parse_status = "失败"
+                    f.parse_error = "AI 未返回有效的解析数据"
+                await db.commit()
+                await _update_task_status(db, task_id, "失败", "AI 未返回有效的解析数据，请检查模型配置或文件内容后重试")
+                return
+
             for req in requirements:
                 db.add(Requirement(
                     id=str(uuid.uuid4()),
@@ -158,6 +183,7 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
                 f.parse_status = "已完成"
                 f.parse_error = ""
 
+            await db.commit()
             await _update_task_status(db, task_id, "成功")
 
         except Exception as e:
@@ -170,6 +196,9 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
                 for f in file_result.scalars().all():
                     f.parse_status = "失败"
                     f.parse_error = error_msg
+                
+                # 记录解析失败日志（不改变test_status，保持"测试中"状态）
+                
                 await db.commit()
             except Exception:
                 logger.exception("Failed to update file status on error")
@@ -190,6 +219,24 @@ async def run_generate_test_points(task_id: str, project_id: str, user_id: str):
                 f"- 模块:{r.module} 功能:{r.feature} 规则:{r.rule}" for r in requirements
             )
             points = await ai_service.generate_test_points(req_text, user_id)
+            logger.info(f"generate_test_points: type={type(points).__name__}, len={len(points) if isinstance(points, (list, dict)) else 'N/A'}")
+
+            # 确保返回的是列表；如果 LLM 返回了 dict，尝试从各种常见结构中提取列表
+            if isinstance(points, dict):
+                for v in points.values():
+                    if isinstance(v, list) and v and isinstance(v[0], dict) and "module" in v[0]:
+                        points = v
+                        break
+                if isinstance(points, dict):
+                    for k, v in points.items():
+                        if isinstance(v, list) and v and isinstance(v[0], dict):
+                            points = v
+                            logger.info(f"extracted list from dict key '{k}', len={len(v)}")
+                            break
+            if not isinstance(points, list) or not points:
+                logger.error(f"generate_test_points: invalid result, type={type(points).__name__}, preview={str(points)[:500]}")
+                await _update_task_status(db, task_id, "失败", "AI 未返回有效的测试点数据，请检查模型配置或需求数据后重试")
+                return
 
             for (tp_id, _), pt in zip(_module_counter(points, "TP"), points):
                 db.add(TestPoint(
@@ -203,6 +250,8 @@ async def run_generate_test_points(task_id: str, project_id: str, user_id: str):
                     automatable=pt.get("automatable", False),
                 ))
 
+
+            await db.commit()
             await _update_task_status(db, task_id, "成功")
 
         except Exception as e:
@@ -222,6 +271,26 @@ async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
                 for tp in points
             )
             cases = await ai_service.generate_test_cases(pt_text, user_id)
+            logger.info(f"generate_test_cases: type={type(cases).__name__}, len={len(cases) if isinstance(cases, (list, dict)) else 'N/A'}")
+
+            # 确保返回的是列表；如果 LLM 返回了 dict，尝试从各种常见结构中提取列表
+            if isinstance(cases, dict):
+                # 方式1: 直接检查第一个值是否为 dict list
+                for v in cases.values():
+                    if isinstance(v, list) and v and isinstance(v[0], dict) and "module" in v[0]:
+                        cases = v
+                        break
+                # 方式2: key 名包含 cases/test_cases/testcase 的 dict
+                if isinstance(cases, dict):
+                    for k, v in cases.items():
+                        if isinstance(v, list) and v and isinstance(v[0], dict):
+                            cases = v
+                            logger.info(f"extracted list from dict key '{k}', len={len(v)}")
+                            break
+            if not isinstance(cases, list) or not cases:
+                logger.error(f"generate_test_cases: invalid result, type={type(cases).__name__}, preview={str(cases)[:500]}")
+                await _update_task_status(db, task_id, "失败", "AI 未返回有效的测试用例数据，请检查模型配置或测试点数据后重试")
+                return
 
             for (case_code, _), c in zip(_module_counter(cases, "TC"), cases):
                 db.add(TestCase(
@@ -240,6 +309,8 @@ async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
                     automation=c.get("automation", "待评估"),
                 ))
 
+
+            await db.commit()
             await _update_task_status(db, task_id, "成功")
 
         except Exception as e:
@@ -529,6 +600,21 @@ async def run_generate_docs(task_id: str, project_id: str, user_id: str):
             # 获取项目信息
             proj_result = await db.execute(select(Project).where(Project.id == project_id))
             project = proj_result.scalar_one_or_none()
+            
+            # 更新项目文档状态为"生成中"
+            if project:
+                old_doc_status = project.doc_status
+                project.doc_status = "生成中"
+                db.add(StatusLog(
+                    project_id=project_id,
+                    user_id=user_id,
+                    field_name="doc_status",
+                    old_value=old_doc_status,
+                    new_value="生成中",
+                    change_type="auto",
+                    reason="开始生成测试文档"
+                ))
+            
             project_info = f"项目名称:{project.name if project else '未知'}"
 
             # 获取需求
@@ -570,9 +656,40 @@ async def run_generate_docs(task_id: str, project_id: str, user_id: str):
                 import json
                 task.result = json.dumps(doc_result, ensure_ascii=False) if isinstance(doc_result, dict) else str(doc_result)
 
+            # 更新项目文档状态为"已完成"
+            if project:
+                project.doc_status = "已完成"
+                db.add(StatusLog(
+                    project_id=project_id,
+                    user_id=user_id,
+                    field_name="doc_status",
+                    old_value="生成中",
+                    new_value="已完成",
+                    change_type="auto",
+                    reason="测试文档生成完成"
+                ))
+
             await _update_task_status(db, task_id, "成功")
         except Exception as e:
             logger.exception("run_generate_docs failed")
+            # 文档生成失败，回退doc_status到"待生成"
+            try:
+                proj_result = await db.execute(select(Project).where(Project.id == project_id))
+                project = proj_result.scalar_one_or_none()
+                if project:
+                    project.doc_status = "待生成"
+                    db.add(StatusLog(
+                        project_id=project_id,
+                        user_id=user_id,
+                        field_name="doc_status",
+                        old_value="生成中",
+                        new_value="待生成",
+                        change_type="auto",
+                        reason=f"文档生成失败: {_friendly_error(e)[:100]}"
+                    ))
+                    await db.commit()
+            except Exception:
+                logger.exception("Failed to update doc_status on error")
             await _update_task_status(db, task_id, "失败", _friendly_error(e))
 
 

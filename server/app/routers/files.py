@@ -8,6 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.file_asset import FileAsset
+from app.models.project import Project
+from app.models.requirement import Requirement
+from app.models.test_point import TestPoint
+from app.models.test_case import TestCase
+from app.models.automation_script import AutomationScript
+from app.models.status_log import StatusLog
 from app.routers.auth import get_current_user
 from app.utils import model_to_dict
 from app.utils import verify_project_owner
@@ -85,6 +91,22 @@ async def upload_file(
         storage_path=filepath,
     )
     db.add(file_asset)
+
+    # 上传文件后，若项目测试状态为「待测试」则自动变为「测试中」
+    proj_result = await db.execute(select(Project).where(Project.id == project_id))
+    project = proj_result.scalar_one_or_none()
+    if project and project.test_status == "待测试":
+        project.test_status = "测试中"
+        db.add(StatusLog(
+            project_id=project_id,
+            user_id=user["sub"],
+            field_name="test_status",
+            old_value="待测试",
+            new_value="测试中",
+            change_type="auto",
+            reason="上传了输入资料，进入测试流程",
+        ))
+
     await db.commit()
     await db.refresh(file_asset)
 
@@ -104,10 +126,56 @@ async def delete_file(
 
     await verify_project_owner(db, file_asset.project_id, user["sub"])
 
+    project_id = file_asset.project_id
+
     # 删除物理文件
     if file_asset.storage_path and os.path.exists(file_asset.storage_path):
         os.remove(file_asset.storage_path)
 
+    # 级联删除该项目的所有下游数据
+    # 删除自动化脚本
+    scripts = (await db.execute(select(AutomationScript).where(AutomationScript.project_id == project_id))).scalars().all()
+    for s in scripts:
+        await db.delete(s)
+
+    # 删除测试用例
+    cases = (await db.execute(select(TestCase).where(TestCase.project_id == project_id))).scalars().all()
+    for c in cases:
+        await db.delete(c)
+
+    # 删除测试点
+    points = (await db.execute(select(TestPoint).where(TestPoint.project_id == project_id))).scalars().all()
+    for p in points:
+        await db.delete(p)
+
+    # 删除需求
+    reqs = (await db.execute(select(Requirement).where(Requirement.project_id == project_id))).scalars().all()
+    for r in reqs:
+        await db.delete(r)
+
+    # 删除文件
     await db.delete(file_asset)
+    await db.flush()
+
+    # 删除后检查项目是否还有剩余文件，若无则测试状态回退为「待测试」
+    remaining = await db.execute(
+        select(FileAsset.id).where(FileAsset.project_id == project_id).limit(1)
+    )
+    if remaining.scalar_one_or_none() is None:
+        proj_result = await db.execute(select(Project).where(Project.id == project_id))
+        project = proj_result.scalar_one_or_none()
+        if project and project.test_status != "待测试":
+            old_status = project.test_status
+            project.test_status = "待测试"
+            db.add(StatusLog(
+                project_id=project_id,
+                user_id=user["sub"],
+                field_name="test_status",
+                old_value=old_status,
+                new_value="待测试",
+                change_type="auto",
+                reason="输入资料已全部删除，回退至待测试状态",
+            ))
+
     await db.commit()
-    return {"ok": True}
+    return {"ok": True, "deleted": {"files": 1, "requirements": len(reqs), "testPoints": len(points), "testCases": len(cases), "scripts": len(scripts)}}

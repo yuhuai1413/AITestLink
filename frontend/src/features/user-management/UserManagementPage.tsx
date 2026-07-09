@@ -298,8 +298,9 @@ export function UserManagementPage() {
         open={deleteDialogOpen}
         title="删除用户"
         message={`确定要删除用户"${userToDelete?.nickname || userToDelete?.phone}"吗？此操作不可撤销。`}
-        confirmLabel={deleting ? "删除中..." : "删除"}
-        onConfirm={handleDeleteConfirm}
+        confirmLabel="删除"
+        confirmLoading={deleting}
+        onConfirm={() => { setDeleteDialogOpen(false); handleDeleteConfirm(); }}
         onCancel={handleDeleteCancel}
         danger={true}
       />

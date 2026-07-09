@@ -1,10 +1,31 @@
+/* ─── Modal Overlay ─── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.45);
+  animation: dialogOverlayIn 0.2s ease;
+}
+
+@keyframes dialogOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dialogContentIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 /* ─── Modal Dialog ─── */
 
 .modal-dialog {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  position: relative;
+  animation: dialogContentIn 0.2s ease;
   border: 1px solid var(--line);
   border-radius: var(--radius-l1);
   background: var(--surface);
@@ -13,10 +34,6 @@
   max-height: 85vh;
   overflow: hidden;
   margin: 0;
-}
-
-.modal-dialog::backdrop {
-  background: rgba(15, 23, 42, 0.4);
 }
 
 .modal-dialog__header {

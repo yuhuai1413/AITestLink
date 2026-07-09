@@ -8,6 +8,7 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   onCancel: () => void;
   danger?: boolean;
+  confirmLoading?: boolean;
 }
 
 export function ConfirmDialog({
@@ -18,6 +19,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   danger = true,
+  confirmLoading = false,
 }: ConfirmDialogProps) {
   if (!open) return null;
 
@@ -41,8 +43,9 @@ export function ConfirmDialog({
             className={`primary-button ${danger ? "primary-button--danger" : ""}`}
             type="button"
             onClick={onConfirm}
+            disabled={confirmLoading}
           >
-            {confirmLabel}
+            {confirmLoading ? "处理中..." : confirmLabel}
           </button>
         </div>
       </div>

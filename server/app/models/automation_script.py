@@ -18,6 +18,7 @@ class AutomationScript(Base):
     code = Column(Text, default="")
     status = Column(String(20), default="待执行")  # 待执行 / 执行中 / 成功 / 失败
     review_status = Column(String(50), default="待评审")
+    executed_at = Column(DateTime, nullable=True)
     generated_by_ai = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

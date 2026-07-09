@@ -85,7 +85,7 @@ export function PersonalSettingsModal({ open, onClose, userInfo, onSaved }: Pers
   const tabs: { key: TabKey; label: string }[] = [{ key: "info", label: "基本信息" }, { key: "password", label: "修改密码" }];
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.4)", animation: "dialogOverlayIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both" }} onClick={onClose} />
       <div style={{ position: "relative", width: 460, background: "#fff", zIndex: 10, padding: 24, borderRadius: 38, animation: "dialogContentIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both" }}>
         <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.4)", borderRadius: "50%", border: "none", cursor: "pointer" }}>

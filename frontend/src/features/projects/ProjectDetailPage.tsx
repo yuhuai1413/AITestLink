@@ -5,7 +5,7 @@ import { useStore, useProjectTestCases } from "../../app/store";
 import { useProjectData } from "./useProjectData";
 import { useAPISync } from "../../api/useAPISync";
 import { useAIAction } from "../../shared/hooks/useAIAction";
-import { aiApi, requirementsApi, scriptsApi, testCasesApi, testPointsApi, type ApiFile, type ApiRequirement, type ApiTestPoint, type ApiTestCase, type ApiScript } from "../../api/client";
+import { aiApi, filesApi, requirementsApi, scriptsApi, testCasesApi, testPointsApi, type ApiFile, type ApiRequirement, type ApiTestPoint, type ApiTestCase, type ApiScript } from "../../api/client";
 import { DataTable } from "../../shared/components/DataTable";
 import { SectionHeader } from "../../shared/components/SectionHeader";
 import { StatusPill } from "../../shared/components/StatusPill";
@@ -15,6 +15,7 @@ import { TestCaseDetailModal } from "../test-design/TestCaseDetailModal";
 import { toast } from "sonner";
 import { startParseRequirements } from "../../shared/hooks/aiTaskManager";
 import type { Priority, TestCase, AutomationScript } from "../../shared/types/platform";
+import { exportManualTestCasesToExcel } from "../../shared/utils/exportExcel";
 
 function formatTime(iso: string | undefined): string {
   if (!iso) return "-";
@@ -62,6 +63,8 @@ function reviewTone(s: string) {
 
 function OverviewTab({ projectId }: { projectId: string }) {
   const { project, files, testPoints, testCases, scripts } = useProjectData(projectId);
+
+
   if (!project) return null;
   const p0Cases = testCases.filter((c) => c.priority === "P0").length;
   const autoCount = testCases.filter((c) => c.automation === "适合").length;
@@ -116,6 +119,16 @@ function FilesTab({ projectId }: { projectId: string }) {
   const [deletingFile, setDeletingFile] = useState<{ id: string; name: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // 监听 AI 任务完成后刷新文件列表
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { projectId: pid } = (e as CustomEvent).detail || {};
+      if (pid === projectId) refreshFiles();
+    };
+    window.addEventListener("aitestlink:files-refresh", handler);
+    return () => window.removeEventListener("aitestlink:files-refresh", handler);
+  }, [projectId, refreshFiles]);
+
   const allSelected = files.length > 0 && files.every((f) => selectedIds.has(f.id));
   const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(files.map((f) => f.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -130,6 +143,7 @@ function FilesTab({ projectId }: { projectId: string }) {
     try {
       for (const file of newFiles) { await uploadFile(projectId, file); }
       toast.success(skipped > 0 ? `上传 ${newFiles.length} 个，跳过 ${skipped} 个重复` : `上传成功，共 ${newFiles.length} 个文件`); await refreshFiles();
+      window.dispatchEvent(new CustomEvent('aitestlink:data-refresh', { detail: { projectId } }));
     } catch (err) { toast.error(err instanceof Error ? err.message : "上传失败"); }
     finally { setUploading(false); if (inputRef.current) inputRef.current.value = ""; }
   };
@@ -138,28 +152,34 @@ function FilesTab({ projectId }: { projectId: string }) {
     e.preventDefault(); setDragOver(false); handleUpload(e.dataTransfer.files);
   }, [projectId, files]);
 
+
+
   const handleDelete = async () => {
     if (!deletingFile) return;
-    try { await deleteFile(deletingFile.id); toast.success("删除成功"); await refreshFiles(); } catch { toast.error("删除失败"); }
+    try { 
+      const result = await deleteFile(deletingFile.id);
+      toast.success("删除成功，关联的需求、测试点、用例和脚本已一并清除"); 
+      await refreshFiles();
+      // 通知其他 tab 刷新数据
+      window.dispatchEvent(new CustomEvent("aitestlink:data-refresh", { detail: { projectId } })); 
+    } catch { toast.error("删除失败"); }
     setDeletingFile(null);
   };
 
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
-  const batchDelete = async () => {
-    for (const id of selectedIds) { try { await deleteFile(id); } catch {} }
-    toast.success(`已删除 ${selectedIds.size} 个文件`);
-    await refreshFiles();
-    setSelectedIds(new Set());
-  };
+
 
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="文档管理" description="上传需求文档、接口文档、原型和变更说明，支持拖拽上传。"
         actions={<>
-          {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
-              {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
-          <input ref={inputRef} type="file" multiple accept=".docx,.doc,.pdf,.md,.json,.yaml,.yml,.xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => handleUpload(e.target.files)} />
-          <button className="ghost-button" type="button" onClick={() => inputRef.current?.click()} disabled={uploading}>手动上传</button>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input ref={inputRef} type="file" multiple accept=".docx,.doc,.pdf,.md,.json,.yaml,.yml,.xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => handleUpload(e.target.files)} />
+              <button className="ghost-button" type="button" onClick={() => inputRef.current?.click()} disabled={uploading}>手动上传</button>
+            </div>
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{files.length}</strong> 个文件</span>
+          </div>
         </>} />
       <div onDrop={handleDrop} onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
         style={{ border: `2px dashed ${dragOver ? "#6366f1" : "var(--line)"}`, borderRadius: "var(--radius-l2)", padding: "32px 20px", textAlign: "center", background: dragOver ? "rgba(99,102,241,0.05)" : "transparent", transition: "all 0.2s", cursor: "pointer" }}
@@ -178,11 +198,19 @@ function FilesTab({ projectId }: { projectId: string }) {
             { key: "parseStatus", label: "解析状态", align: "center", render: (r) => <span title={r.parseError || undefined}><StatusPill tone={r.parseStatus === "已完成" ? "green" : r.parseStatus === "解析中" ? "blue" : r.parseStatus === "失败" ? "red" : "slate"}>{r.parseStatus}</StatusPill></span> },
             { key: "date", label: "上传时间", render: (r) => formatTime(r.uploadedAt) },
             { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => <button className="text-button text-button--danger" type="button" onClick={() => setDeletingFile({ id: r.id, name: r.name })}>删除</button> },
+
           ]} />
         )}
       </section>
-      <ConfirmDialog open={!!deletingFile} title="删除文件" message={`确定删除文件「${deletingFile?.name}」？`} confirmLabel="删除" onConfirm={handleDelete} onCancel={() => setDeletingFile(null)} />
-      <ConfirmDialog open={showBatchDeleteConfirm} title="批量删除文件" message={`确定删除选中的 ${selectedIds.size} 个文件？`} confirmLabel="删除" onConfirm={() => { setShowBatchDeleteConfirm(false); batchDelete(); }} onCancel={() => setShowBatchDeleteConfirm(false)} />
+
+      <ConfirmDialog
+        open={!!deletingFile}
+        title="删除文件"
+        message={`确定删除文件「${deletingFile?.name}」？\n\n⚠️ 删除文件将同时清除该项目已生成的需求、测试点、测试用例和自动化脚本。`}
+        confirmLabel="删除"
+        onConfirm={handleDelete}
+        onCancel={() => setDeletingFile(null)}
+      />
     </div>
   );
 }
@@ -194,7 +222,7 @@ function FilesTab({ projectId }: { projectId: string }) {
 const truncateText = (text: string, maxLen = 50) => text.length > maxLen ? text.slice(0, maxLen) + "..." : text;
 
 function RequirementsTab({ projectId }: { projectId: string }) {
-  const { files, requirements, refresh: refreshData } = useProjectData(projectId);
+  const { files, requirements, refresh } = useProjectData(projectId);
   const { state, dispatch } = useStore();
   const parsing = useMemo(() => state.activeAITasks.includes("需求解析"), [state.activeAITasks]);
   const [showReparseConfirm, setShowReparseConfirm] = useState(false);
@@ -213,18 +241,12 @@ function RequirementsTab({ projectId }: { projectId: string }) {
 
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
   const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
-  const batchDelete = async () => {
-    for (const id of selectedIds) { try { await requirementsApi.delete(id); } catch {} }
-    selectedIds.forEach((id) => dispatch({ type: "DELETE_REQUIREMENT", payload: id }));
-    toast.success(`已删除 ${selectedIds.size} 条需求`);
-    setSelectedIds(new Set());
-    await refreshData();
-  };
+
   const toggleReview = async (r: any) => {
     const newStatus = (r.reviewStatus === "已通过") ? "待评审" : "已通过";
     try { await requirementsApi.update(r.id, { reviewStatus: newStatus } as any); } catch {}
     dispatch({ type: "UPDATE_REQUIREMENT", payload: { ...r, reviewStatus: newStatus } });
-    await refreshData();
+    await refresh();
   };
   const batchApprove = async () => {
     for (const id of selectedIds) {
@@ -236,7 +258,7 @@ function RequirementsTab({ projectId }: { projectId: string }) {
     }
     toast.success(`已通过 ${selectedIds.size} 条需求`);
     setSelectedIds(new Set());
-    await refreshData();
+    await refresh();
   };
 
   const doParse = async () => {
@@ -244,7 +266,9 @@ function RequirementsTab({ projectId }: { projectId: string }) {
       const result = await startParseRequirements(projectId);
       if (result.success) {
         toast.success("需求解析完成！");
-        await refreshData();
+        await refresh();
+        // 通知 FilesTab 刷新文件列表（解析状态已变更）
+        window.dispatchEvent(new CustomEvent("aitestlink:files-refresh", { detail: { projectId } }));
       } else if (result.error && result.error !== "模型未配置") {
         toast.error(result.error);
       }
@@ -253,8 +277,18 @@ function RequirementsTab({ projectId }: { projectId: string }) {
     }
   };
 
-  const handleParse = () => {
-    if (!hasFiles) { toast.warning("请先在「输入资料」页面上传文件"); return; }
+  const handleParse = async () => {
+    // 直接调 API 检查文件数量，避免跨实例状态不同步
+    try {
+      const freshFiles = await filesApi.list(projectId);
+      if (!Array.isArray(freshFiles) || freshFiles.length === 0) {
+        toast.warning("请先在「输入资料」页面上传文件");
+        return;
+      }
+    } catch {
+      toast.warning("请先在「输入资料」页面上传文件");
+      return;
+    }
     if (hasParsedFiles) { setShowReparseConfirm(true); return; }
     doParse();
   };
@@ -263,12 +297,16 @@ function RequirementsTab({ projectId }: { projectId: string }) {
     <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="需求列表" description="从上传的文档中解析需求，支持查看和确认。"
         actions={<>
-          {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
-              {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
-          <button className="primary-button" type="button" onClick={handleParse} disabled={parsing}>
-            {parsing ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}
-            {parsing ? "解析中..." : "需求解析"}
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
+              <button className="primary-button" type="button" onClick={handleParse} disabled={parsing}>
+                {parsing ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}
+                {parsing ? "解析中..." : "需求解析"}
+              </button>
+            </div>
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{requirements.length}</strong> 条需求</span>
+          </div>
         </>} />
       <section className="work-panel">
         {requirements.length === 0 ? (
@@ -291,7 +329,7 @@ function RequirementsTab({ projectId }: { projectId: string }) {
               <div className="inline-actions">
                 <button className="text-button" type="button" onClick={() => setViewReq(r)}>查看</button>
                 <button className="text-button" type="button" onClick={() => { setEditReq(r); setEditRule(r.rule); setEditQuestion(r.question); }}>编辑</button>
-                <button className="text-button text-button--danger" type="button" onClick={() => setDeletingReq({ id: r.id, name: `${r.module} - ${r.feature}` })}>删除</button>
+
               </div>
             )},
           ]} />
@@ -343,22 +381,18 @@ function RequirementsTab({ projectId }: { projectId: string }) {
 
       <ConfirmDialog open={showReparseConfirm} title="重新解析" message="部分文件已解析完成，再次解析将覆盖之前的解析数据和需求，是否继续？" confirmLabel="继续解析" onConfirm={() => { setShowReparseConfirm(false); doParse(); }} onCancel={() => setShowReparseConfirm(false)} />
       <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 条需求标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
-      <ConfirmDialog open={showBatchDeleteConfirm} title="批量删除需求" message={`确定删除选中的 ${selectedIds.size} 条需求？`} confirmLabel="删除" onConfirm={() => { setShowBatchDeleteConfirm(false); batchDelete(); }} onCancel={() => setShowBatchDeleteConfirm(false)} />
-      <ConfirmDialog open={!!deletingReq} title="删除需求" message={`确定删除需求「${deletingReq?.name}」？`} confirmLabel="删除" onConfirm={async () => {
-        if (!deletingReq) return;
-        try { await requirementsApi.delete(deletingReq.id); dispatch({ type: "DELETE_REQUIREMENT", payload: deletingReq.id }); toast.success("删除成功"); await refreshData(); } catch { toast.error("删除失败"); }
-        setDeletingReq(null);
-      }} onCancel={() => setDeletingReq(null)} />
+
+
     </div>
   );
 }
 
 // ═══════════════════════════════════════
-// 测试点（AI 生成 + 评审 + 删除）
+// 测试点（AI 生成 + 评审）
 // ═══════════════════════════════════════
 
 function TestPointsTab({ projectId }: { projectId: string }) {
-  const { testPoints, files, requirements, refresh: refreshData, refreshTestPoints } = useProjectData(projectId);
+  const { testPoints, files, requirements, refresh, refreshTestPoints } = useProjectData(projectId);
   const { dispatch } = useStore();
   const { loadingTestPoints, error, generateTestPoints } = useAIAction(projectId);
   const prevLoadingRef = useRef(loadingTestPoints);
@@ -426,11 +460,15 @@ function TestPointsTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="测试点生成" description="AI 从文档中提取测试点，支持评审和删除。"
+      <SectionHeader title="测试点生成" description="AI 从文档中提取测试点，支持评审。"
         actions={<>
-          {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
-              {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
-          <button className="primary-button" type="button" onClick={handleGenerate} disabled={loadingTestPoints}>{loadingTestPoints ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loadingTestPoints ? "生成中..." : "生成测试点"}</button>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
+              <button className="primary-button" type="button" onClick={handleGenerate} disabled={loadingTestPoints}>{loadingTestPoints ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loadingTestPoints ? "生成中..." : "生成测试点"}</button>
+            </div>
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{testPoints.length}</strong> 个测试点</span>
+          </div>
         </>} />
       {error && <div className="error-banner"><span>{error}</span></div>}
       {modules.length > 0 && <div className="filter-bar"><span className="filter-label">模块筛选</span><select className="filter-select" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}><option value="all">全部模块</option>{modules.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>}
@@ -450,7 +488,7 @@ function TestPointsTab({ projectId }: { projectId: string }) {
               <div className="inline-actions">
                 <button className="text-button" type="button" onClick={() => setViewTP(r)}>查看</button>
                 <button className="text-button" type="button" onClick={() => { setEditTP(r); setEditTitle(r.title); setEditDesc(r.description); }}>编辑</button>
-                <button className="text-button text-button--danger" type="button" onClick={async () => { try { await testPointsApi.delete(r.id); } catch {} dispatch({ type: "DELETE_TEST_POINT", payload: r.id }); refreshTestPoints(); }}>删除</button>
+
               </div>
             )},
           ]} />
@@ -495,17 +533,17 @@ function TestPointsTab({ projectId }: { projectId: string }) {
 
       <ConfirmDialog open={showGenerateConfirm} title="重新生成测试点" message={`当前已有 ${testPoints.length} 个测试点，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={() => { setShowGenerateConfirm(false); generateTestPoints(); }} onCancel={() => setShowGenerateConfirm(false)} />
       <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 个测试点标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
-      <ConfirmDialog open={showBatchDeleteConfirm} title="批量删除测试点" message={`确定删除选中的 ${selectedIds.size} 个测试点？`} confirmLabel="删除" onConfirm={() => { setShowBatchDeleteConfirm(false); batchDelete(); }} onCancel={() => setShowBatchDeleteConfirm(false)} />
+
     </div>
   );
 }
 
 // ═══════════════════════════════════════
-// 测试用例（AI 生成 + 评审 + 删除）
+// 测试用例（AI 生成 + 评审）
 // ═══════════════════════════════════════
 
 function TestCasesTab({ projectId }: { projectId: string }) {
-  const { testCases, testPoints, refreshTestCases, refreshTestPoints } = useProjectData(projectId);
+  const { project, testCases, testPoints, refresh, refreshTestCases, refreshTestPoints } = useProjectData(projectId);
   const { dispatch } = useStore();
   const { loadingTestCases, loadingReview, error, generateTestCases, reviewTestCases } = useAIAction(projectId);
   const prevLoadingRef = useRef(loadingTestCases);
@@ -607,33 +645,24 @@ function TestCasesTab({ projectId }: { projectId: string }) {
   const handleExportManual = () => {
     const manualCases = testCases.filter((tc) => tc.automation !== "适合");
     if (manualCases.length === 0) { toast.warning("暂无手动测试用例"); return; }
-    const headers = ["编号", "模块", "功能点", "标题", "优先级", "前置条件", "测试步骤", "测试数据", "预期结果", "评审状态", "备注"];
-    const rows = manualCases.map((tc) => [
-      tc.caseCode, tc.module, tc.feature, tc.title, tc.priority,
-      tc.precondition, tc.steps, tc.testData, tc.expectedResult,
-      tc.reviewStatus, tc.remark,
-    ]);
-    const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `手动测试用例_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    exportManualTestCasesToExcel(manualCases, project?.name || "未命名项目");
     toast.success(`已导出 ${manualCases.length} 条手动测试用例`);
   };
 
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="用例生成" description="从测试点生成可执行用例，支持评审和删除。"
+      <SectionHeader title="用例生成" description="从测试点生成可执行用例，支持评审。"
         actions={<>
-          {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
-              {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
-          {reviewResult && <button className="ghost-button" type="button" onClick={() => setShowReviewResult(true)}><Eye size={13} /> 查看评审报告</button>}
-          <button className="primary-button" type="button" onClick={handleAIReview} disabled={loadingReview || testCases.length === 0}>{loadingReview ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}{loadingReview ? "评审中..." : "AI 评审"}</button>
-          <button className="primary-button" type="button" onClick={handleExportManual} disabled={testCases.length === 0}><Download size={13} /> 导出手动测试用例</button>
-          <button className="primary-button" type="button" onClick={handleGenerate} disabled={loadingTestCases}>{loadingTestCases ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loadingTestCases ? "生成中..." : "生成用例"}</button>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
+              {reviewResult && <button className="ghost-button" type="button" onClick={() => setShowReviewResult(true)}><Eye size={13} /> 查看评审报告</button>}
+              <button className="primary-button" type="button" onClick={handleAIReview} disabled={loadingReview || testCases.length === 0}>{loadingReview ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}{loadingReview ? "评审中..." : "AI 评审"}</button>
+              <button className="primary-button" type="button" onClick={handleExportManual} disabled={testCases.length === 0}><Download size={13} /> 导出手动测试用例</button>
+              <button className="primary-button" type="button" onClick={handleGenerate} disabled={loadingTestCases}>{loadingTestCases ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loadingTestCases ? "生成中..." : "生成用例"}</button>
+            </div>
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{testCases.length}</strong> 条用例</span>
+          </div>
         </>} />
       {error && <div className="error-banner"><span>{error}</span></div>}
       {modules.length > 0 && <div className="filter-bar"><span className="filter-label">模块筛选</span><select className="filter-select" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}><option value="all">全部模块</option>{modules.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>}
@@ -649,13 +678,14 @@ function TestCasesTab({ projectId }: { projectId: string }) {
             { key: "steps", label: "测试步骤", align: "left", render: (r) => <span title={r.steps}>{truncateText(r.steps, 40)}</span> },
             { key: "expectedResult", label: "预期结果", align: "left", render: (r) => <span title={r.expectedResult}>{truncateText(r.expectedResult, 35)}</span> },
             { key: "reviewStatus", label: "评审", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus}</StatusPill></button> },
+            { key: "automation", label: "是否自动化", align: "center", render: (r) => <StatusPill tone={r.automation === "适合" ? "green" : "slate"}>{r.automation === "适合" ? "适合" : "不适合"}</StatusPill> },
             { key: "createdAt", label: "生成时间", render: (r) => formatTime(r.createdAt) },
             { key: "updatedAt", label: "更新时间", render: (r) => formatTime(r.updatedAt) },
             { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
               <div className="inline-actions">
                 <button className="text-button" type="button" onClick={() => setDetailCase(r)}>查看</button>
                 <button className="text-button" type="button" onClick={() => { setEditCase(r); setEditTitle(r.title); setEditSteps(r.steps); setEditExpected(r.expectedResult); }}>编辑</button>
-                <button className="text-button text-button--danger" type="button" onClick={async () => { try { await testCasesApi.delete(r.id); } catch {} dispatch({ type: "DELETE_TEST_CASE", payload: r.id }); refreshTestCases(); }}>删除</button>
+
               </div>
             )},
           ]} />
@@ -727,7 +757,7 @@ function TestCasesTab({ projectId }: { projectId: string }) {
       </Modal>
 
       <ConfirmDialog open={showGenerateConfirm} title="重新生成用例" message={`当前已有 ${testCases.length} 条用例，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={() => { setShowGenerateConfirm(false); generateTestCases(); }} onCancel={() => setShowGenerateConfirm(false)} />
-      <ConfirmDialog open={showBatchDeleteConfirm} title="批量删除用例" message={`确定删除选中的 ${selectedIds.size} 条用例？`} confirmLabel="删除" onConfirm={() => { setShowBatchDeleteConfirm(false); batchDelete(); }} onCancel={() => setShowBatchDeleteConfirm(false)} />
+
       <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 条用例标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
     </div>
   );
@@ -738,7 +768,7 @@ function TestCasesTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function ScriptsTab({ projectId }: { projectId: string }) {
-  const { testCases, scripts, refreshScripts } = useProjectData(projectId);
+  const { testCases, scripts, refresh, refreshScripts } = useProjectData(projectId);
   const { dispatch } = useStore();
   const [generating, setGenerating] = useState(false);
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
@@ -755,8 +785,8 @@ function ScriptsTab({ projectId }: { projectId: string }) {
   const existingScriptCount = scripts.length;
   const hasPrerequisite = automatable.length > 0;
   const unreviewedTCCount = automatable.filter((tc) => tc.reviewStatus !== "已通过").length;
-  const allSelected = automatable.length > 0 && automatable.every((tc) => selectedIds.has(tc.id));
-  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(automatable.map((tc) => tc.id)));
+  const allSelected = scripts.length > 0 && scripts.every((s) => selectedIds.has(s.id));
+  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(scripts.map((s) => s.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const batchDelete = async () => {
@@ -857,7 +887,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
               {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
-              {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
+
               <button className="primary-button" type="button" onClick={() => {
                 if (!hasPrerequisite) { toast.warning("请先生成测试用例并标记适合自动化的用例"); return; }
                 if (unreviewedTCCount > 0) { toast.warning(`还有 ${unreviewedTCCount} 条用例未评审通过，请先完成用例评审`); return; }
@@ -872,44 +902,34 @@ function ScriptsTab({ projectId }: { projectId: string }) {
           </div>
         </>} />
       {error && <div className="error-banner"><span>{error}</span></div>}
-      <section className="work-panel">
-        {automatable.length === 0 ? <div className="empty-state"><p>暂无可自动化的用例，请先在测试用例中标记适合自动化的用例</p></div> : (
-          <div>
-            <DataTable rows={automatable} getRowKey={(r) => r.id} columns={[
+      <section className="work-panel" style={{ minHeight: 0 }}>
+        {scripts.length === 0 ? <div className="empty-state"><p>暂无自动化脚本，请点击上方「生成自动化脚本」按钮生成</p></div> : (
+          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+            <DataTable rows={scripts} getRowKey={(r) => r.id} columns={[
               { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
-              { key: "caseCode", label: "用例编号", render: (r) => r.caseCode },
-            { key: "module", label: "模块", render: (r) => r.module },
-              { key: "title", label: "用例标题", align: "left", render: (r) => r.title },
-              { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
-              { key: "script", label: "脚本状态", align: "center", render: (r) => {
-                const script = scripts.find((s) => s.testCaseId === r.id);
-                return script ? <StatusPill tone={script.status === "成功" ? "green" : script.status === "失败" ? "red" : "blue"}>{script.status}</StatusPill> : <span style={{ color: "var(--muted)" }}>未生成</span>;
+              { key: "testCase", label: "关联用例", align: "left", render: (r) => {
+                const tc = testCases.find((t) => t.id === r.testCaseId);
+                return tc ? <span title={tc.title} style={{ maxWidth: 200, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tc.title}</span> : <span style={{ color: "var(--muted)" }}>-</span>;
               }},
+              { key: "module", label: "模块", align: "center", render: (r) => {
+                const tc = testCases.find((t) => t.id === r.testCaseId);
+                return tc ? tc.module : <span style={{ color: "var(--muted)" }}>-</span>;
+              }},
+              { key: "scriptType", label: "脚本类型", align: "center", render: (r) => r.scriptType },
+              { key: "framework", label: "框架", align: "center", render: (r) => r.framework },
+              { key: "status", label: "状态", align: "center", render: (r) => <StatusPill tone={r.status === "成功" ? "green" : r.status === "失败" ? "red" : "blue"}>{r.status}</StatusPill> },
               { key: "review", label: "评审", align: "center", render: (r) => {
-                const script = scripts.find((s) => s.testCaseId === r.id);
-                if (!script) return <span style={{ color: "var(--muted)" }}>-</span>;
-                const rev = (script as any).reviewStatus || "待评审";
-                return <button type="button" className="text-button" onClick={() => toggleReview(script)}><StatusPill tone={rev === "已通过" ? "green" : "slate"}>{rev}</StatusPill></button>;
+                const rev = (r as any).reviewStatus || "待评审";
+                return <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={rev === "已通过" ? "green" : "slate"}>{rev}</StatusPill></button>;
               }},
-              { key: "createdAt", label: "生成时间", align: "center", render: (r) => {
-                const script = scripts.find((s) => s.testCaseId === r.id);
-                return script ? formatTime(script.createdAt) : <span style={{ color: "var(--muted)" }}>-</span>;
-              }},
-              { key: "updatedAt", label: "更新时间", align: "center", render: (r) => {
-                const script = scripts.find((s) => s.testCaseId === r.id);
-                return script ? formatTime(script.updatedAt) : <span style={{ color: "var(--muted)" }}>-</span>;
-              }},
-              { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => {
-                const script = scripts.find((s) => s.testCaseId === r.id);
-                if (!script) return <span style={{ color: "var(--muted)" }}>-</span>;
-                return (
-                  <div className="inline-actions">
-                    <button className="text-button" type="button" onClick={() => setViewScript(script)}>查看</button>
-                    <button className="text-button" type="button" onClick={() => { setEditScript(script); setEditCode(script.code); }}>编辑</button>
-                    <button className="text-button text-button--danger" type="button" onClick={() => setDeletingScript({ id: script.id, name: `脚本 ${script.id.slice(0, 8)}` })}>删除</button>
-                  </div>
-                );
-              }},
+              { key: "createdAt", label: "生成时间", align: "center", render: (r) => formatTime(r.createdAt) },
+              { key: "updatedAt", label: "更新时间", align: "center", render: (r) => formatTime(r.updatedAt) },
+              { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
+                <div className="inline-actions">
+                  <button className="text-button" type="button" onClick={() => setViewScript(r)}>查看</button>
+                  <button className="text-button" type="button" onClick={() => { setEditScript(r); setEditCode(r.code); }}>编辑</button>
+                </div>
+              )},
             ]} /></div>
         )}
       </section>
@@ -977,10 +997,9 @@ function ScriptsTab({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      <ConfirmDialog open={showGenerateConfirm} title="重新生成脚本" message={`当前已有 ${existingScriptCount} 个脚本，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={handleGenerate} onCancel={() => setShowGenerateConfirm(false)} />
+      <ConfirmDialog open={showGenerateConfirm} title="重新生成脚本" message={`当前已有 ${existingScriptCount} 个脚本，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" confirmLoading={generating} onConfirm={() => { setShowGenerateConfirm(false); handleGenerate(); }} onCancel={() => setShowGenerateConfirm(false)} />
       <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 个脚本标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
-      <ConfirmDialog open={showBatchDeleteConfirm} title="批量删除脚本" message={`确定删除选中的 ${selectedIds.size} 个脚本？`} confirmLabel="删除" onConfirm={() => { setShowBatchDeleteConfirm(false); batchDelete(); }} onCancel={() => setShowBatchDeleteConfirm(false)} />
-      <ConfirmDialog open={!!deletingScript} title="删除脚本" message={`确定删除脚本「${deletingScript?.name}」？`} confirmLabel="删除" onConfirm={handleDelete} onCancel={() => setDeletingScript(null)} />
+
     </div>
   );
 }
@@ -992,81 +1011,40 @@ function ScriptsTab({ projectId }: { projectId: string }) {
 function ExecuteScriptsTab({ projectId }: { projectId: string }) {
   const { scripts, testCases, refreshScripts } = useProjectData(projectId);
   const { dispatch } = useStore();
-  const [selectedScript, setSelectedScript] = useState<AutomationScript | null>(null);
+  const [viewScript, setViewScript] = useState<AutomationScript | null>(null);
   const [runningId, setRunningId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
-  const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
   const [runningAll, setRunningAll] = useState(false);
 
   const allSelected = scripts.length > 0 && scripts.every((s) => selectedIds.has(s.id));
   const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(scripts.map((s) => s.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  const batchDelete = async () => {
-    for (const id of selectedIds) { try { await scriptsApi.delete(id); dispatch({ type: "DELETE_SCRIPT", payload: id }); } catch {} }
-    toast.success(`已删除 ${selectedIds.size} 个脚本`);
-    setSelectedIds(new Set());
-    await refreshScripts();
-  };
-  const toggleReview = async (script: AutomationScript) => {
-    const newStatus = (script as any).reviewStatus === "已通过" ? "待评审" : "已通过";
-    try { await scriptsApi.update(script.id, { reviewStatus: newStatus } as any); } catch {}
-    dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, reviewStatus: newStatus } as any });
-    await refreshScripts();
-  };
-  const batchApprove = async () => {
-    for (const id of selectedIds) {
-      const script = scripts.find((s) => s.id === id);
-      if (script && (script as any).reviewStatus !== "已通过") {
-        try { await scriptsApi.update(script.id, { reviewStatus: "已通过" } as any); } catch {}
-        dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, reviewStatus: "已通过" } as any });
-      }
-    }
-    toast.success(`已通过 ${selectedIds.size} 个脚本`);
-    setSelectedIds(new Set());
-    await refreshScripts();
-  };
-
-  const unreviewedScriptCount = scripts.filter((s) => (s as any).reviewStatus !== "已通过").length;
   const runAll = async () => {
     if (scripts.length === 0) { toast.warning("请先在「自动化脚本」页面生成脚本"); return; }
-    if (unreviewedScriptCount > 0) { toast.warning(`还有 ${unreviewedScriptCount} 个脚本未评审通过，请先完成脚本评审`); return; }
     setRunningAll(true);
     for (const script of scripts) {
       if (script.status === "成功") continue;
       dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, status: "执行中" } });
       await new Promise((r) => setTimeout(r, 1000));
       const success = Math.random() > 0.3;
-      dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, status: success ? "成功" : "失败" } });
+      const now = new Date().toISOString();
+      dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, status: success ? "成功" : "失败", executedAt: now } });
       toast[success ? "success" : "error"](`${script.id.slice(0, 8)} ${success ? "执行成功" : "执行失败"}`);
     }
     setRunningAll(false);
   };
 
   const handleRun = async (script: AutomationScript) => {
-    if ((script as any).reviewStatus !== "已通过") { toast.warning("该脚本未评审通过，请先完成评审"); return; }
     setRunningId(script.id);
     dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, status: "执行中" } });
-
-    // 模拟执行（实际应调用后端执行接口）
     setTimeout(() => {
       const success = Math.random() > 0.3;
-      dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, status: success ? "成功" : "失败" } });
+      const now = new Date().toISOString();
+      dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, status: success ? "成功" : "失败", executedAt: now } });
       setRunningId(null);
       toast[success ? "success" : "error"](`脚本 ${script.id.slice(0, 8)} ${success ? "执行成功" : "执行失败"}`);
     }, 2000);
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      await scriptsApi.delete(id);
-      dispatch({ type: "DELETE_SCRIPT", payload: id });
-      toast.success("删除成功");
-      await refreshScripts();
-    } catch {
-      toast.error("删除失败");
-    }
   };
 
   const getTestCaseTitle = (testCaseId: string | null | undefined) => {
@@ -1075,16 +1053,37 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
     return tc ? tc.title : "-";
   };
 
+  // 模拟执行结果数据
+  const getMockResults = (script: AutomationScript) => {
+    const passed = script.status === "成功";
+    return {
+      duration: `${(Math.random() * 8 + 1).toFixed(1)}s`,
+      steps: [
+        { name: "打开页面", status: "通过" as const, time: "0.3s" },
+        { name: "填写表单", status: passed ? ("通过" as const) : ("失败" as const), time: "1.2s" },
+        { name: "提交数据", status: "通过" as const, time: "0.8s" },
+        { name: "验证结果", status: passed ? ("通过" as const) : ("失败" as const), time: "0.5s" },
+      ],
+      screenshots: passed
+        ? ["页面加载完成", "表单填写成功", "提交确认页面"]
+        : ["页面加载完成", "表单填写失败 - 元素未找到"],
+      errors: passed ? [] : ["TimeoutError: 等待元素 #submit-btn 超时 (30s)", "ElementNotFound: 无法定位 XPath //div[@class='result']"],
+    };
+  };
+
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="执行脚本" description="管理和执行已生成的自动化脚本。"
         actions={<>
-          {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
-              {selectedIds.size > 0 && <button className="ghost-button" type="button" style={{ color: "var(--red)" }} onClick={() => setShowBatchDeleteConfirm(true)}>删除选中（{selectedIds.size}）</button>}
-          <button className="primary-button" type="button" onClick={runAll} disabled={runningAll}>
-            {runningAll ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-            {runningAll ? "执行中..." : "全部执行"}
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="primary-button" type="button" onClick={runAll} disabled={runningAll}>
+                {runningAll ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                {runningAll ? "执行中..." : "全部执行"}
+              </button>
+            </div>
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{scripts.length}</strong> 个脚本</span>
+          </div>
         </>} />
       <section className="work-panel">
         {scripts.length === 0 ? (
@@ -1103,51 +1102,112 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
                 {r.status}
               </StatusPill>
             )},
-            { key: "review", label: "评审", align: "center", render: (r) => {
-              const rev = (r as any).reviewStatus || "待评审";
-              return <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={rev === "已通过" ? "green" : "slate"}>{rev}</StatusPill></button>;
-            }},
+            { key: "executedAt", label: "执行时间", render: (r) => r.executedAt ? formatTime(r.executedAt) : <span style={{ color: "var(--muted)" }}>-</span> },
             { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
               <div className="inline-actions">
-                <button className="text-button" type="button" onClick={() => setSelectedScript(r)}>查看</button>
                 <button className="text-button" type="button" onClick={() => handleRun(r)} disabled={runningId === r.id}>
                   {runningId === r.id ? "执行中" : "执行"}
                 </button>
-                <button className="text-button text-button--danger" type="button" onClick={() => handleDelete(r.id)}>删除</button>
+                <button className="text-button" type="button" onClick={() => setViewScript(r)}>查看</button>
               </div>
             )},
           ]} />
         )}
       </section>
 
-      {/* 代码查看弹窗 */}
-      {selectedScript && (
-        <div className="confirm-overlay" onClick={() => setSelectedScript(null)}>
-          <div className="confirm-dialog" style={{ width: 700, maxWidth: "90vw" }} onClick={(e) => e.stopPropagation()}>
-            <div className="confirm-dialog__body" style={{ flexDirection: "column", gap: 12 }}>
-              <h3 style={{ margin: 0, fontSize: 16 }}>脚本代码 - {selectedScript.framework}</h3>
-              <pre style={{
-                background: "#1e1e2e",
-                color: "#cdd6f4",
-                padding: 16,
-                borderRadius: 8,
-                fontSize: 13,
-                lineHeight: 1.6,
-                overflow: "auto",
-                maxHeight: 400,
-                margin: 0,
-              }}>
-                {selectedScript.code || "// 暂无代码"}
-              </pre>
-            </div>
-            <div className="confirm-dialog__actions">
-              <button className="ghost-button" type="button" onClick={() => setSelectedScript(null)}>关闭</button>
+      {/* 执行结果查看弹窗 */}
+      {viewScript && (() => {
+        const results = getMockResults(viewScript);
+        return (
+          <div className="confirm-overlay" onClick={() => setViewScript(null)}>
+            <div className="confirm-dialog" style={{ width: 780, maxWidth: "92vw", maxHeight: "85vh" }} onClick={(e) => e.stopPropagation()}>
+              <div className="confirm-dialog__body" style={{ flexDirection: "column", gap: 16, overflow: "auto" }}>
+                {/* 头部：脚本信息 + 总体状态 */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>执行结果 - {viewScript.framework}</h3>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--muted)" }}>脚本 ID: {viewScript.id.slice(0, 8)} | 类型: {viewScript.scriptType}</p>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 12, color: "var(--muted)" }}>执行时间</div>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{viewScript.executedAt ? formatTime(viewScript.executedAt) : "未执行"}</div>
+                    </div>
+                    <StatusPill tone={viewScript.status === "成功" ? "green" : viewScript.status === "失败" ? "red" : "slate"}>
+                      {viewScript.status}
+                    </StatusPill>
+                  </div>
+                </div>
+
+                {/* 执行耗时 */}
+                <div style={{ display: "flex", gap: 16 }}>
+                  <div style={{ flex: 1, padding: 12, background: "var(--bg-secondary)", borderRadius: 8 }}>
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>执行耗时</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text)" }}>{results.duration}</div>
+                  </div>
+                  <div style={{ flex: 1, padding: 12, background: "var(--bg-secondary)", borderRadius: 8 }}>
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>步骤统计</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>
+                      <span style={{ color: "var(--green)" }}>{results.steps.filter((s) => s.status === "通过").length}</span>
+                      <span style={{ color: "var(--muted)", fontSize: 14 }}> / {results.steps.length}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 步骤详情 */}
+                <div>
+                  <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600 }}>执行步骤</h4>
+                  <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+                    {results.steps.map((step, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderBottom: i < results.steps.length - 1 ? "1px solid var(--border)" : "none", gap: 10 }}>
+                        <StatusPill tone={step.status === "通过" ? "green" : "red"}>{step.status}</StatusPill>
+                        <span style={{ flex: 1, fontSize: 13 }}>{step.name}</span>
+                        <span style={{ fontSize: 12, color: "var(--muted)" }}>{step.time}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 截图/快照 */}
+                <div>
+                  <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600 }}>执行截图</h4>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
+                    {results.screenshots.map((desc, i) => (
+                      <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+                        <div style={{ height: 120, background: "linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary, var(--bg-secondary)) 100%)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 12 }}>
+                          截图 {i + 1}
+                        </div>
+                        <div style={{ padding: "6px 10px", fontSize: 12, color: "var(--text-secondary)" }}>{desc}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 错误信息 */}
+                {results.errors.length > 0 && (
+                  <div>
+                    <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600, color: "var(--red)" }}>错误日志</h4>
+                    <pre style={{ background: "#1e1e2e", color: "#f38ba8", padding: 12, borderRadius: 8, fontSize: 12, lineHeight: 1.6, margin: 0, overflow: "auto", maxHeight: 150 }}>
+                      {results.errors.join("\n")}
+                    </pre>
+                  </div>
+                )}
+
+                {/* 脚本代码 */}
+                <div>
+                  <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600 }}>脚本代码</h4>
+                  <pre style={{ background: "#1e1e2e", color: "#cdd6f4", padding: 12, borderRadius: 8, fontSize: 12, lineHeight: 1.6, margin: 0, overflow: "auto", maxHeight: 200 }}>
+                    {viewScript.code || "// 暂无代码"}
+                  </pre>
+                </div>
+              </div>
+              <div className="confirm-dialog__actions">
+                <button className="ghost-button" type="button" onClick={() => setViewScript(null)}>关闭</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 个脚本标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
-      <ConfirmDialog open={showBatchDeleteConfirm} title="批量删除脚本" message={`确定删除选中的 ${selectedIds.size} 个脚本？`} confirmLabel="删除" onConfirm={() => { setShowBatchDeleteConfirm(false); batchDelete(); }} onCancel={() => setShowBatchDeleteConfirm(false)} />
+        );
+      })()}
     </div>
   );
 }
@@ -1157,7 +1217,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function SummaryTab({ projectId }: { projectId: string }) {
-  const { files, testPoints, testCases } = useProjectData(projectId);
+  const { files, testPoints, testCases, refresh } = useProjectData(projectId);
 
   // 判断用例是否通过：实测结果与预期结果一致
   const isCasePassed = (c: ApiTestCase) => {
@@ -1304,10 +1364,10 @@ function SummaryTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function DocManageTab({ projectId }: { projectId: string }) {
-  const { files } = useProjectData(projectId);
+  const { files, refresh } = useProjectData(projectId);
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="项目文档" description="项目已上传的文档列表。" />
+      <SectionHeader title="项目文档" description="项目已上传的文档列表。" actions={<span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{files.length}</strong> 个文件</span>} />
       <section className="work-panel">
         {files.length === 0 ? <div className="empty-state"><p>暂无文档</p></div> : (
           <DataTable rows={files} getRowKey={(r) => r.id} columns={[
@@ -1329,8 +1389,7 @@ function DocManageTab({ projectId }: { projectId: string }) {
 
 function DocFusionTab({ projectId }: { projectId: string }) {
   const { dispatch } = useStore();
-  const testCases = useProjectTestCases(projectId);
-  const { scripts } = useProjectData(projectId);
+  const { testCases, scripts } = useProjectData(projectId);
   const [manualResults, setManualResults] = useState<Record<string, string>>({});
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -1401,9 +1460,14 @@ function DocFusionTab({ projectId }: { projectId: string }) {
     <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="手动 + 自动化结果合并" description="上传手动测试结果文档，与自动化测试数据按用例编号合并展示。"
         actions={<>
-          {selectedIds.size > 0 && <button className="primary-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}>批量评审通过 ({selectedIds.size})</button>}
-          <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} onChange={handleUploadManual} />
-          <button className="primary-button" type="button" onClick={() => inputRef.current?.click()}><FileUp size={13} /> 上传手动测试结果</button>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              {selectedIds.size > 0 && <button className="primary-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}>批量评审通过 ({selectedIds.size})</button>}
+              <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} onChange={handleUploadManual} />
+              <button className="primary-button" type="button" onClick={() => inputRef.current?.click()}><FileUp size={13} /> 上传手动测试结果</button>
+            </div>
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{testCases.length}</strong> 条用例</span>
+          </div>
         </>} />
       <section className="work-panel">
         {testCases.length === 0 ? <div className="empty-state"><p>暂无测试用例数据</p></div> : (
@@ -1492,7 +1556,7 @@ function DocFusionTab({ projectId }: { projectId: string }) {
 // ═══════════════════════════════════════
 
 function DocGenerateTab({ projectId }: { projectId: string }) {
-  const { files, testCases } = useProjectData(projectId);
+  const { files, testCases, refresh } = useProjectData(projectId);
   const templates = [
     { id: "tpl-plan", name: "软件测试计划", desc: "测试范围、策略、资源、进度安排", needs: ["files"] },
     { id: "tpl-spec", name: "软件测试说明", desc: "测试环境、用例设计、执行方法", needs: ["files", "testCases"] },
@@ -1507,7 +1571,7 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="文档生成" description="选择文档模板，系统将根据项目数据自动生成 Word 文档。" />
+      <SectionHeader title="文档生成" description="选择文档模板，系统将根据项目数据自动生成 Word 文档。" actions={<span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{templates.length}</strong> 个模板</span>} />
       <section className="work-panel">
         <DataTable rows={templates} getRowKey={(r) => r.id} columns={[
           { key: "name", label: "模板名称", render: (r) => r.name },
@@ -1565,6 +1629,12 @@ export function ProjectDetailPage() {
   const tabContentRef = useRef<HTMLDivElement>(null);
   const handleTabChange = (tab: TabKey) => { setActiveTab(tab); localStorage.setItem(TAB_STORAGE_KEY, tab); };
 
+  // 项目切换时重置到概览页
+  useEffect(() => {
+    setActiveTab("overview");
+    localStorage.setItem(TAB_STORAGE_KEY, "overview");
+  }, [id]);
+
   // 监听通知点击的 CustomEvent，实时切换 tab 并持久化
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1577,6 +1647,11 @@ export function ProjectDetailPage() {
     window.addEventListener("aitestlink:navigate-tab", handler);
     return () => window.removeEventListener("aitestlink:navigate-tab", handler);
   }, [id]);
+
+  // tab 切换时通知所有 useProjectData 实例刷新数据
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("aitestlink:data-refresh", { detail: { projectId: id } }));
+  }, [activeTab, id]);
 
   useEffect(() => {
     tabContentRef.current?.scrollTo({ top: 0 });

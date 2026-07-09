@@ -104,6 +104,11 @@ async def generate_scripts(
     if not test_cases:
         raise HTTPException(status_code=400, detail="没有适合自动化的测试用例")
 
+    # 删除该脚本项目已有的脚本，避免重复生成
+    from sqlalchemy import delete
+    await db.execute(delete(AutomationScript).where(AutomationScript.project_id == project_id))
+    await db.flush()
+
     # 构建测试用例文本
     tc_text = "\n".join(
         f"- 编号:{tc.case_code} 模块:{tc.module} 标题:{tc.title} 优先级:{tc.priority} "

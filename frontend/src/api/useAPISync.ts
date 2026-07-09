@@ -72,7 +72,7 @@ export function useAPISync(enabled = true) {
     }, [dispatch]),
 
     deleteProject: useCallback(async (id: string) => {
-      try { await projectsApi.delete(id); } catch { /* local-only project */ }
+      await projectsApi.delete(id);
       dispatch({ type: "DELETE_PROJECT", payload: id });
     }, [dispatch]),
 

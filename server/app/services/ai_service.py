@@ -94,7 +94,7 @@ async def check_config_for_task(task_type: str, user_id: str) -> dict:
 
 
 class AIService:
-    async def _call_llm(self, system_prompt: str, user_prompt: str, task_type: str = "", user_id: str = "") -> str:
+    async def _call_llm(self, system_prompt: str, user_prompt: str, task_type: str = "", user_id: str = "", max_tokens: int = 16000) -> str:
         """Call LLM API and return the response content."""
         config = await _get_config_for_task(task_type, user_id)
 
@@ -109,7 +109,7 @@ class AIService:
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": 0.3,
-            "max_tokens": 8000,
+            "max_tokens": max_tokens,
         }
 
         async with httpx.AsyncClient(timeout=120) as client:
@@ -152,6 +152,19 @@ class AIService:
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse LLM response as JSON: {e}")
             logger.error(f"Response preview: {text[:500]}")
+            # 尝试修复截断的 JSON：逐个去掉末尾不完整的元素
+            if text.startswith("["):
+                try:
+                    # 找到最后一个完整的 JSON 对象
+                    last_brace = text.rfind("}")
+                    if last_brace > 0:
+                        repaired = text[:last_brace + 1] + "]"
+                        result = json.loads(repaired)
+                        if isinstance(result, list):
+                            logger.warning(f"Recovered {len(result)} items from truncated JSON")
+                            return result
+                except json.JSONDecodeError:
+                    pass
             return []
 
     async def parse_requirements(self, file_content: str, user_id: str = "") -> list[dict]:
@@ -329,7 +342,7 @@ class AIService:
             f"\n\n测试点列表：\n\n{test_points_text[:3000]}"
         )
 
-        response = await self._call_llm(system_prompt, user_prompt, "用例生成", user_id)
+        response = await self._call_llm(system_prompt, user_prompt, "用例生成", user_id, max_tokens=16000)
         return self._parse_json_response(response)
 
     async def review_test_cases(self, test_cases_text: str, user_id: str = "") -> dict:

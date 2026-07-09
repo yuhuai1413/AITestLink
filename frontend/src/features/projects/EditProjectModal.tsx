@@ -18,7 +18,7 @@ const testTypeOptions: { value: TestType; label: string }[] = [
 ];
 
 const testStatusOptions = ["待测试", "测试中", "已测试"];
-const docStatusOptions = ["待解析", "解析中", "已完成"];
+const docStatusOptions = ["待生成", "生成中", "已完成"];
 
 export function EditProjectModal({ open, onClose, project }: EditProjectModalProps) {
   const { updateProject } = useAPISync();
@@ -41,15 +41,46 @@ export function EditProjectModal({ open, onClose, project }: EditProjectModalPro
     }
   }, [open, project]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // 检查是否为状态回退操作
+  const isStatusRegression = (oldStatus: string, newStatus: string, statusOrder: string[]) => {
+    const oldIndex = statusOrder.indexOf(oldStatus);
+    const newIndex = statusOrder.indexOf(newStatus);
+    return oldIndex > newIndex;
+  };
+
+  const testStatusOrder = ["待测试", "测试中", "已测试"];
+  const docStatusOrder = ["待生成", "生成中", "已完成"];
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!project) return;
-    updateProject(project.id, { name, testType, description, priority, testStatus, docStatus }).then(() => {
+    
+    // 检查状态回退
+    const isTestRegression = isStatusRegression(project.testStatus, testStatus, testStatusOrder);
+    const isDocRegression = isStatusRegression(project.docStatus, docStatus, docStatusOrder);
+    
+    if (isTestRegression || isDocRegression) {
+      // 确认回退操作
+      const confirmMessage = [];
+      if (isTestRegression) {
+        confirmMessage.push(`测试状态将从「${project.testStatus}」回退到「${testStatus}」`);
+      }
+      if (isDocRegression) {
+        confirmMessage.push(`文档状态将从「${project.docStatus}」回退到「${docStatus}」`);
+      }
+      
+      if (!window.confirm(`检测到状态回退操作：\n\n${confirmMessage.join('\n')}\n\n确定要继续吗？`)) {
+        return;
+      }
+    }
+    
+    try {
+      await updateProject(project.id, { name, testType, description, priority, testStatus, docStatus });
       toast.success("项目更新成功");
       onClose();
-    }).catch((err: Error) => {
+    } catch (err: any) {
       toast.error(err.message || "更新失败");
-    });
+    }
   };
 
   return (

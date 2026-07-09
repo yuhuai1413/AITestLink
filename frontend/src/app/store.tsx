@@ -104,10 +104,14 @@ type Action =
   | { type: "MARK_ALL_NOTIFICATIONS_READ" }
   | { type: "CLEAR_NOTIFICATIONS" }
   | { type: "START_ACTIVE_AI_TASK"; payload: string }
-  | { type: "STOP_ACTIVE_AI_TASK"; payload: string };
+  | { type: "STOP_ACTIVE_AI_TASK"; payload: string }
+  | { type: "SET_PROJECTS"; payload: any[] };
 
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case "SET_PROJECTS":
+      return { ...state, projects: action.payload };
+
     case "ADD_PROJECT":
       if (state.projects.some((p) => p.id === action.payload.id)) return state;
       return { ...state, projects: [...state.projects, action.payload] };
