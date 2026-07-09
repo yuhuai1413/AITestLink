@@ -59,11 +59,11 @@ async function pollAITask(
   projectId: string,
   taskId: string,
   signal: AbortSignal,
-): Promise<boolean> {
+): Promise<{ success: boolean; error?: string }> {
   for (let i = 0; i < 120; i++) {
-    if (signal.aborted) return false;
+    if (signal.aborted) return { success: false };
     await new Promise((r) => setTimeout(r, 1000));
-    if (signal.aborted) return false;
+    if (signal.aborted) return { success: false };
     try {
       const tasks = await aiApi.listTasks(projectId);
       const task = tasks.find((t) => t.id === taskId);
@@ -83,11 +83,12 @@ async function pollAITask(
             },
           });
         }
-        return task.status === "成功";
+        if (task.status === "成功") return { success: true };
+        return { success: false, error: task.errorMessage || undefined };
       }
     } catch {}
   }
-  return false;
+  return { success: false, error: "任务超时未响应" };
 }
 
 // ── 任务类型 → 目标页面映射 ──
@@ -153,17 +154,18 @@ async function runTask(
       });
     }
 
-    const success = await pollAITask(projectId, task.id, controller.signal);
+    const pollResult = await pollAITask(projectId, task.id, controller.signal);
 
-    if (success) {
+    if (pollResult.success) {
       if (onSuccess) await onSuccess();
       addNotification("任务完成", taskType, projectId, `${taskType}已完成`, getTargetTab(projectId, taskType));
       return { success: true };
     } else {
+      const errorMsg = pollResult.error || `${taskType}失败`;
       if (!controller.signal.aborted) {
-        addNotification("任务失败", taskType, projectId, `${taskType}失败，请检查模型配置`, getTargetTab(projectId, taskType));
+        addNotification("任务失败", taskType, projectId, `${errorMsg}`, getTargetTab(projectId, taskType));
       }
-      return { success: false, error: `${taskType}失败` };
+      return { success: false, error: errorMsg };
     }
   } catch (err) {
     if (!controller.signal.aborted) {
