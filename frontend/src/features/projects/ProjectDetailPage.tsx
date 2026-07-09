@@ -1023,8 +1023,11 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
   const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(scripts.map((s) => s.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
+  const unreviewedScriptCount = scripts.filter((s) => (s as any).reviewStatus !== "已通过").length;
+
   const runAll = async () => {
     if (scripts.length === 0) { toast.warning("请先在「自动化脚本」页面生成脚本"); return; }
+    if (unreviewedScriptCount > 0) { toast.warning(`还有 ${unreviewedScriptCount} 个脚本未评审通过，请先完成脚本评审`); return; }
     setRunningAll(true);
     for (const script of scripts) {
       if (script.status === "成功") continue;
@@ -1039,6 +1042,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
   };
 
   const handleRun = async (script: AutomationScript) => {
+    if ((script as any).reviewStatus !== "已通过") { toast.warning("该脚本未评审通过，请先完成评审"); return; }
     setRunningId(script.id);
     dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, status: "执行中" } });
     setTimeout(() => {
@@ -1080,7 +1084,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
         actions={<>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="primary-button" type="button" onClick={runAll} disabled={runningAll}>
+              <button className="primary-button" type="button" onClick={runAll} disabled={runningAll || scripts.length === 0 || unreviewedScriptCount > 0}>
                 {runningAll ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
                 {runningAll ? "执行中..." : "全部执行"}
               </button>
@@ -1107,10 +1111,14 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
                 {r.status}
               </StatusPill>
             )},
+            { key: "review", label: "评审", align: "center", render: (r) => {
+              const rev = (r as any).reviewStatus || "待评审";
+              return <StatusPill tone={rev === "已通过" ? "green" : "slate"}>{rev}</StatusPill>;
+            }},
             { key: "executedAt", label: "执行时间", render: (r) => r.executedAt ? formatTime(r.executedAt) : <span style={{ color: "var(--muted)" }}>-</span> },
             { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
               <div className="inline-actions">
-                <button className="text-button" type="button" onClick={() => handleRun(r)} disabled={runningId === r.id}>
+                <button className="text-button" type="button" onClick={() => handleRun(r)} disabled={runningId === r.id || (r as any).reviewStatus !== "已通过"}>
                   {runningId === r.id ? "执行中" : "执行"}
                 </button>
                 <button className="text-button" type="button" onClick={() => setViewScript(r)}>查看</button>
