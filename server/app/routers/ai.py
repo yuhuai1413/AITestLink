@@ -188,6 +188,11 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
                 f.parse_status = "解析中"
             await db.commit()
 
+            # 删除旧需求，避免重复追加
+            from sqlalchemy import delete
+            await db.execute(delete(Requirement).where(Requirement.project_id == project_id))
+            await db.flush()
+
             requirements = await ai_service.parse_requirements(file_content, user_id)
             logger.info(f"parse_requirements: type={type(requirements).__name__}, len={len(requirements) if isinstance(requirements, (list, dict)) else 'N/A'}")
 
@@ -263,6 +268,11 @@ async def run_generate_test_points(task_id: str, project_id: str, user_id: str):
             req_text = "\n".join(
                 f"- 模块:{r.module} 功能:{r.feature} 规则:{r.rule}" for r in requirements
             )
+            # 删除旧测试点，避免重复追加
+            from sqlalchemy import delete
+            await db.execute(delete(TestPoint).where(TestPoint.project_id == project_id))
+            await db.flush()
+
             points = await ai_service.generate_test_points(req_text, user_id)
             logger.info(f"generate_test_points: type={type(points).__name__}, len={len(points) if isinstance(points, (list, dict)) else 'N/A'}")
 
@@ -315,6 +325,11 @@ async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
                 f"- 模块:{tp.module} 类型:{tp.type} 标题:{tp.title} 优先级:{tp.priority}"
                 for tp in points
             )
+            # 删除旧测试用例，避免重复追加
+            from sqlalchemy import delete
+            await db.execute(delete(TestCase).where(TestCase.project_id == project_id))
+            await db.flush()
+
             cases = await ai_service.generate_test_cases(pt_text, user_id)
             logger.info(f"generate_test_cases: type={type(cases).__name__}, len={len(cases) if isinstance(cases, (list, dict)) else 'N/A'}")
 
