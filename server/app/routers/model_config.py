@@ -144,6 +144,58 @@ async def check_model_config(
     }
 
 
+@router.post("/model-configs/{config_id}/test")
+async def test_model_config(
+    config_id: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """测试模型连通性：用配置的 provider/model/apiKey/endpoint 发一个简单请求"""
+    user_id = user["sub"]
+    result = await db.execute(
+        select(ModelConfig).where(ModelConfig.id == config_id, ModelConfig.user_id == user_id)
+    )
+    config = result.scalar_one_or_none()
+    if not config:
+        raise HTTPException(status_code=404, detail="配置不存在")
+
+    if not config.provider or not config.api_key or not config.endpoint:
+        return {"ok": False, "message": "请先配置供应商、API Key 和 Endpoint"}
+
+    api_key = decrypt_value(config.api_key) if config.api_key else ""
+    endpoint = config.endpoint.rstrip("/")
+
+    try:
+        import httpx
+        # endpoint 已经是完整 URL（如 https://api.deepseek.com/v1/chat/completions），直接用
+        test_url = endpoint
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": config.model_name,
+            "messages": [{"role": "user", "content": "hi"}],
+        }
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(test_url, json=payload, headers=headers)
+        if resp.status_code < 400:
+            return {"ok": True, "message": f"连通正常（{config.provider}）"}
+        else:
+            detail = ""
+            try:
+                detail = resp.json().get("error", {}).get("message", "")
+            except Exception:
+                detail = resp.text[:200]
+            return {"ok": False, "message": f"请求失败（HTTP {resp.status_code}）{detail}"}
+    except httpx.ConnectError:
+        return {"ok": False, "message": "无法连接到 Endpoint 地址，请检查是否正确"}
+    except httpx.TimeoutException:
+        return {"ok": False, "message": "请求超时，请检查网络或 Endpoint 地址"}
+    except Exception as e:
+        return {"ok": False, "message": f"测试失败：{str(e)[:200]}"}
+
+
 @router.put("/model-configs")
 async def update_model_configs(
     data: ModelConfigUpdate,

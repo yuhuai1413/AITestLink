@@ -308,12 +308,12 @@ export function ModelConfigPage() {
 
     try {
       const result = await modelConfigApi.test(config.id);
-      if (result.ok) {
+      if (result && result.ok) {
         setTestResults(prev => ({ ...prev, [config.id]: "success" }));
         toast.success(result.message || "连通正常");
       } else {
         setTestResults(prev => ({ ...prev, [config.id]: "error" }));
-        toast.error(result.message || "测试失败");
+        toast.error(result?.message || "测试失败");
       }
     } catch (error: any) {
       console.error("Test connection error:", error);

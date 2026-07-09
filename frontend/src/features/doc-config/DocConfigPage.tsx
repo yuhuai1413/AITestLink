@@ -261,7 +261,7 @@ export function DocConfigPage() {
               key: "description",
               label: "说明",
               width: "20%",
-              align: "left",
+              align: "center",
               render: (row) => <span style={{ fontSize: 13 }}>{row.description || "-"}</span>,
             },
             {
@@ -272,7 +272,7 @@ export function DocConfigPage() {
               render: (row) => {
                 if (!row.updatedAt) return <span>-</span>;
                 const d = new Date(row.updatedAt);
-                return <span style={{ fontSize: 13 }}>{`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`}</span>;
+                return <span style={{ fontSize: 13 }}>{`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`}</span>;
               },
             },
             {
@@ -331,6 +331,7 @@ export function DocConfigPage() {
         title={`预览模板 - ${previewConfig?.name}`}
         width={1100}
         height="90vh"
+        flushTop
         footer={<>
           <button
             className="ghost-button"
@@ -364,7 +365,7 @@ export function DocConfigPage() {
               overflow: "auto",
               background: "#fff",
               borderRadius: 8,
-              padding: 16,
+              padding: "0 16px 0 16px",
             }}
           />
         </div>

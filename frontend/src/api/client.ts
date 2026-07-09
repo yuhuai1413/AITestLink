@@ -205,7 +205,7 @@ export interface ApiAITask {
 export const aiApi = {
   listTasks: (projectId: string) => request<ApiAITask[]>(`/projects/${projectId}/ai/tasks`),
   checkConfig: (projectId: string, taskType: string) =>
-    request<{ configured: boolean; message: string; name: string }>(`/projects/${projectId}/ai/check-config/${taskType}`),
+    request<{ configured: boolean; configId?: string; message: string; name: string }>(`/projects/${projectId}/ai/check-config/${taskType}`),
   parseRequirements: (projectId: string) =>
     request<ApiAITask>(`/projects/${projectId}/ai/parse-requirements`, { method: "POST" }),
   generateTestPoints: (projectId: string) =>

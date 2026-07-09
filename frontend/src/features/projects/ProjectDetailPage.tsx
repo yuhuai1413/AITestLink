@@ -6,7 +6,8 @@ import { useStore, useProjectTestCases } from "../../app/store";
 import { useProjectData } from "./useProjectData";
 import { useAPISync } from "../../api/useAPISync";
 import { useAIAction } from "../../shared/hooks/useAIAction";
-import { aiApi, filesApi, requirementsApi, scriptsApi, testCasesApi, testPointsApi, docGenApi, type ApiFile, type ApiRequirement, type ApiTestPoint, type ApiTestCase, type ApiScript } from "../../api/client";
+import { useConfigError } from "../../shared/hooks/useConfigError";
+import { aiApi, modelConfigApi, filesApi, requirementsApi, scriptsApi, testCasesApi, testPointsApi, docGenApi, type ApiFile, type ApiRequirement, type ApiTestPoint, type ApiTestCase, type ApiScript } from "../../api/client";
 import { DataTable } from "../../shared/components/DataTable";
 import { SectionHeader } from "../../shared/components/SectionHeader";
 import { StatusPill } from "../../shared/components/StatusPill";
@@ -14,7 +15,7 @@ import { ConfirmDialog } from "../../shared/components/ConfirmDialog";
 import { Modal } from "../../shared/components/Modal";
 import { TestCaseDetailModal } from "../test-design/TestCaseDetailModal";
 import { toast } from "sonner";
-import { startParseRequirements } from "../../shared/hooks/aiTaskManager";
+import { startParseRequirements, startGenerateDocs } from "../../shared/hooks/aiTaskManager";
 import type { Priority, TestCase, AutomationScript } from "../../shared/types/platform";
 import { exportManualTestCasesToExcel } from "../../shared/utils/exportExcel";
 
@@ -227,6 +228,7 @@ function RequirementsTab({ projectId }: { projectId: string }) {
   const { files, requirements, refresh, loading, initialLoading } = useProjectData(projectId);
   const { state, dispatch } = useStore();
   const parsing = useMemo(() => state.activeAITasks.includes("需求解析"), [state.activeAITasks]);
+  const { showConfigError, dialog: configErrorDialog } = useConfigError();
   const [showReparseConfirm, setShowReparseConfirm] = useState(false);
   const [viewReq, setViewReq] = useState<typeof requirements[0] | null>(null);
   const [editReq, setEditReq] = useState<typeof requirements[0] | null>(null);
@@ -269,10 +271,9 @@ function RequirementsTab({ projectId }: { projectId: string }) {
       if (result.success) {
         toast.success("需求解析完成！");
         await refresh();
-        // 通知 FilesTab 刷新文件列表（解析状态已变更）
         window.dispatchEvent(new CustomEvent("aitestlink:files-refresh", { detail: { projectId } }));
-      } else if (result.error && result.error !== "模型未配置") {
-        toast.error(result.error);
+      } else if (result.error) {
+        showConfigError(result.error);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "解析失败");
@@ -385,7 +386,7 @@ function RequirementsTab({ projectId }: { projectId: string }) {
 
       <ConfirmDialog open={showReparseConfirm} title="重新解析" message="部分文件已解析完成，再次解析将覆盖之前的解析数据和需求，是否继续？" confirmLabel="继续解析" onConfirm={() => { setShowReparseConfirm(false); doParse(); }} onCancel={() => setShowReparseConfirm(false)} />
       <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 条需求标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
-
+      {configErrorDialog}
 
     </div>
   );
@@ -398,7 +399,8 @@ function RequirementsTab({ projectId }: { projectId: string }) {
 function TestPointsTab({ projectId }: { projectId: string }) {
   const { testPoints, files, requirements, refresh, refreshTestPoints, loading, initialLoading } = useProjectData(projectId);
   const { dispatch } = useStore();
-  const { loadingTestPoints, error, generateTestPoints } = useAIAction(projectId);
+  const { showConfigError, dialog: configErrorDialog } = useConfigError();
+  const { loadingTestPoints, error, generateTestPoints } = useAIAction(projectId, showConfigError);
   const prevLoadingRef = useRef(loadingTestPoints);
   useEffect(() => { if (prevLoadingRef.current && !loadingTestPoints) { refreshTestPoints(); } prevLoadingRef.current = loadingTestPoints; }, [loadingTestPoints, refreshTestPoints]);
   const [moduleFilter, setModuleFilter] = useState("all");
@@ -537,6 +539,7 @@ function TestPointsTab({ projectId }: { projectId: string }) {
 
       <ConfirmDialog open={showGenerateConfirm} title="重新生成测试点" message={`当前已有 ${testPoints.length} 个测试点，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={() => { setShowGenerateConfirm(false); generateTestPoints(); }} onCancel={() => setShowGenerateConfirm(false)} />
       <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 个测试点标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
+      {configErrorDialog}
 
     </div>
   );
@@ -549,7 +552,8 @@ function TestPointsTab({ projectId }: { projectId: string }) {
 function TestCasesTab({ projectId }: { projectId: string }) {
   const { project, testCases, testPoints, refresh, refreshTestCases, refreshTestPoints, loading, initialLoading } = useProjectData(projectId);
   const { dispatch } = useStore();
-  const { loadingTestCases, loadingReview, error, generateTestCases, reviewTestCases } = useAIAction(projectId);
+  const { showConfigError, dialog: configErrorDialog } = useConfigError();
+  const { loadingTestCases, loadingReview, error, generateTestCases, reviewTestCases } = useAIAction(projectId, showConfigError);
   const prevLoadingRef = useRef(loadingTestCases);
   useEffect(() => { if (prevLoadingRef.current && !loadingTestCases) { refreshTestCases(); setReviewResult(null); setShowReviewResult(false); } prevLoadingRef.current = loadingTestCases; }, [loadingTestCases, refreshTestCases]);
   const [detailCase, setDetailCase] = useState<TestCase | null>(null);
@@ -766,6 +770,7 @@ function TestCasesTab({ projectId }: { projectId: string }) {
       <ConfirmDialog open={showGenerateConfirm} title="重新生成用例" message={`当前已有 ${testCases.length} 条用例，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={() => { setShowGenerateConfirm(false); generateTestCases(); }} onCancel={() => setShowGenerateConfirm(false)} />
 
       <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 条用例标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
+      {configErrorDialog}
     </div>
   );
 }
@@ -777,6 +782,7 @@ function TestCasesTab({ projectId }: { projectId: string }) {
 function ScriptsTab({ projectId }: { projectId: string }) {
   const { testCases, scripts, refresh, refreshScripts, loading, initialLoading } = useProjectData(projectId);
   const { dispatch } = useStore();
+  const { showConfigError, dialog: configErrorDialog } = useConfigError();
   const [generating, setGenerating] = useState(false);
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -827,15 +833,19 @@ function ScriptsTab({ projectId }: { projectId: string }) {
   const handleGenerate = async () => {
     if (!hasPrerequisite) { toast.warning("请先生成测试用例并标记适合自动化的用例"); return; }
     if (unreviewedTCCount > 0) { toast.warning(`还有 ${unreviewedTCCount} 条用例未评审通过，请先完成用例评审`); return; }
-    // 检查模型配置
+    // 检查模型配置 + 连通性
     try {
       const config = await aiApi.checkConfig(projectId, "脚本生成");
       if (!config.configured) {
-        toast.error(config.message || "模型未配置，请先在模型配置中设置", {
-          action: { label: "去配置", onClick: () => navigate("/model-config") },
-          duration: 5000,
-        });
+        showConfigError(config.message || "模型未配置，请先在模型配置中设置");
         return;
+      }
+      if (config.configId) {
+        const test = await modelConfigApi.test(config.configId);
+        if (!test.ok) {
+          showConfigError(test.message || "模型连通测试失败");
+          return;
+        }
       }
     } catch { /* 配置检查失败，继续尝试（后端会再次校验） */ }
     setGenerating(true);
@@ -1025,6 +1035,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
 
       <ConfirmDialog open={showGenerateConfirm} title="重新生成脚本" message={`当前已有 ${existingScriptCount} 个脚本，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" confirmLoading={generating} onConfirm={() => { setShowGenerateConfirm(false); handleGenerate(); }} onCancel={() => setShowGenerateConfirm(false)} />
       <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 个脚本标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
+      {configErrorDialog}
 
     </div>
   );
@@ -1657,38 +1668,18 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
     await docGenApi.updateStatus(projectId, id, "生成中");
     setStatusMap((prev) => ({ ...prev, [id]: { status: "生成中", generatedAt: null } }));
 
-    toast.info(`「${tpl?.name || ""}」文档生成已启动，完成后会在通知列表中提醒`);
     try {
-      // 1. 调用后端 AI 接口，传入模板 ID
-      const task = await aiApi.generateDocs(projectId, id);
+      const result = await startGenerateDocs(projectId, id);
 
-      // 2. 轮询任务完成
-      let success = false;
-      for (let i = 0; i < 360; i++) {
-        await new Promise((r) => setTimeout(r, 1000));
-        try {
-          const tasks = await aiApi.listTasks(projectId);
-          const t = tasks.find((tt) => tt.id === task.id);
-          if (t && (t.status === "成功" || t.status === "失败")) {
-            success = t.status === "成功";
-            break;
-          }
-        } catch { /* retry */ }
-      }
-
-      // 3. 更新数据库状态
-      if (success) {
+      if (result.success) {
         await docGenApi.updateStatus(projectId, id, "已生成");
         setStatusMap((prev) => ({ ...prev, [id]: { status: "已生成", generatedAt: new Date().toISOString() } }));
-        toast.success(`「${tpl?.name || ""}」文档生成完成，可点击查看或下载`);
       } else {
-        // 失败时恢复为待生成
         await docGenApi.updateStatus(projectId, id, "待生成");
         setStatusMap((prev) => ({ ...prev, [id]: { status: "待生成", generatedAt: null } }));
-        toast.error(`「${tpl?.name || ""}」文档生成失败，请检查模型配置后重试`);
+        if (result.error) toast.error(result.error);
       }
     } catch (err) {
-      // 异常时也恢复为待生成
       await docGenApi.updateStatus(projectId, id, "待生成").catch(() => {});
       setStatusMap((prev) => ({ ...prev, [id]: { status: "待生成", generatedAt: null } }));
       const msg = err instanceof Error ? err.message : "文档生成失败";
@@ -1704,7 +1695,6 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
     setPreviewId(id);
     setPreviewLoading(true);
     try {
-      // 尝试从后端获取已生成的文档
       const response = await fetch(`/api/projects/${projectId}/ai/tasks`, {
         headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
       });
@@ -1713,24 +1703,42 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
         const docTask = tasks.find((t: any) => t.type === "文档生成" && t.status === "成功" && t.result);
         if (docTask && docTask.result) {
           const docData = JSON.parse(docTask.result);
-          if (docData.content && previewRef.current) {
-            // 创建简单的 HTML 文档用于预览
-            const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:"宋体",serif;padding:20px;line-height:1.8;}h1{font-size:20px;border-bottom:2px solid #333;padding-bottom:8px;}h2{font-size:16px;margin-top:20px;}table{border-collapse:collapse;width:100%;margin:10px 0;}th,td{border:1px solid #ccc;padding:6px 10px;text-align:left;}th{background:#f5f5f5;}</style></head><body>${docData.content.replace(/\n/g, "<br>")}</body></html>`;
-            const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+          // 优先使用 docxBase64 渲染真正的 Word 预览
+          if (docData.docxBase64 && previewRef.current) {
+            const binaryStr = atob(docData.docxBase64);
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+            const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
             previewRef.current.innerHTML = "";
-            // 使用 iframe 预览 HTML 内容
+            await renderAsync(blob, previewRef.current, undefined, {
+              className: "docx-preview",
+              inWrapper: true,
+              ignoreWidth: false,
+              ignoreHeight: false,
+              ignoreFonts: false,
+              breakPages: true,
+              ignoreLastRenderedPageBreak: true,
+              experimental: true,
+            });
+            setPreviewLoading(false);
+            return;
+          }
+          // 降级：使用 content 渲染
+          if (docData.content && previewRef.current) {
+            const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:"宋体",serif;padding:20px;line-height:1.8;}h1{font-size:20px;border-bottom:2px solid #333;padding-bottom:8px;}h2{font-size:16px;margin-top:20px;}table{border-collapse:collapse;width:100%;margin:10px 0;}th,td{border:1px solid #ccc;padding:6px 10px;text-align:left;}th{background:#f5f5f5;}</style></head><body>${docData.content.replace(/\n/g, "<br>")}</body></html>`;
+            const htmlBlob = new Blob([html], { type: "text/html;charset=utf-8" });
+            previewRef.current.innerHTML = "";
             const iframe = document.createElement("iframe");
             iframe.style.width = "100%";
             iframe.style.height = "100%";
             iframe.style.border = "none";
-            iframe.src = URL.createObjectURL(blob);
+            iframe.src = URL.createObjectURL(htmlBlob);
             previewRef.current.appendChild(iframe);
             setPreviewLoading(false);
             return;
           }
         }
       }
-      // 后端无数据时显示提示
       if (previewRef.current) {
         previewRef.current.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#94a3b8;"><p style="font-size:16px;margin-bottom:8px;">「${tpl?.name || ""}」文档预览</p><p style="font-size:13px;">文档已生成，可点击下方「下载」按钮获取 Word 文件</p></div>`;
       }
@@ -1743,20 +1751,45 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
     }
   }, [statusMap, projectId]);
 
-  const handleDownload = (id: string) => {
+  const handleDownload = async (id: string) => {
     if (statusMap[id]?.status !== "已生成") { toast.warning("该文档尚未生成，请先点击「生成」"); return; }
     const tpl = templates.find((t) => t.id === id);
-    toast.success(`正在下载「${tpl?.name || id}」`);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/ai/tasks`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+      });
+      if (!response.ok) throw new Error("获取任务失败");
+      const tasks = await response.json();
+      const docTask = tasks.find((t: any) => t.type === "文档生成" && t.status === "成功" && t.result);
+      if (docTask && docTask.result) {
+        const docData = JSON.parse(docTask.result);
+        if (docData.docxBase64) {
+          const binaryStr = atob(docData.docxBase64);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+          const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = docData.docxFileName || `${tpl?.name || id}.docx`;
+          a.click();
+          URL.revokeObjectURL(url);
+          toast.success(`正在下载「${docData.docxFileName || tpl?.name || id}」`);
+          return;
+        }
+      }
+      toast.error("未找到可下载的文档文件");
+    } catch {
+      toast.error("下载失败");
+    }
   };
 
-  const handleBatchDownload = () => {
+  const handleBatchDownload = async () => {
     const doneIds = [...selectedIds].filter((id) => statusMap[id]?.status === "已生成");
     if (doneIds.length === 0) { toast.warning("所选模板暂无可下载的文档，请先生成"); return; }
-    doneIds.forEach((id) => {
-      const tpl = templates.find((t) => t.id === id);
-      toast.success(`正在下载「${tpl?.name || id}」`);
-    });
-    toast.success(`批量下载完成，共 ${doneIds.length} 个文档`);
+    for (const id of doneIds) {
+      await handleDownload(id);
+    }
   };
 
   const [showBatchReGenConfirm, setShowBatchReGenConfirm] = useState(false);
@@ -1778,27 +1811,19 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
     });
     if (readyIds.length === 0) { toast.warning("所选模板无可用数据"); return; }
 
-    toast.info(`批量生成已启动（${readyIds.length} 个），完成后会在通知列表中提醒`);
     try {
-      // 逐个模板调用 AI 生成
       for (const id of readyIds) {
-        const task = await aiApi.generateDocs(projectId, id);
-        // 等待任务完成
-        let success = false;
-        for (let i = 0; i < 360; i++) {
-          await new Promise((r) => setTimeout(r, 1000));
-          try {
-            const tasks = await aiApi.listTasks(projectId);
-            const t = tasks.find((tt) => tt.id === task.id);
-            if (t && (t.status === "成功" || t.status === "失败")) {
-              success = t.status === "成功";
-              break;
-            }
-          } catch {}
-        }
-        if (success) {
+        await docGenApi.updateStatus(projectId, id, "生成中");
+        setStatusMap((prev) => ({ ...prev, [id]: { status: "生成中", generatedAt: null } }));
+
+        const result = await startGenerateDocs(projectId, id);
+
+        if (result.success) {
           await docGenApi.updateStatus(projectId, id, "已生成");
           setStatusMap((prev) => ({ ...prev, [id]: { status: "已生成", generatedAt: new Date().toISOString() } }));
+        } else {
+          await docGenApi.updateStatus(projectId, id, "待生成");
+          setStatusMap((prev) => ({ ...prev, [id]: { status: "待生成", generatedAt: null } }));
         }
       }
       toast.success(`批量生成完成，共 ${readyIds.length} 个文档`);
@@ -1858,6 +1883,7 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
         title={previewId ? `预览 - ${templates.find((t) => t.id === previewId)?.name || ""}` : "文档预览"}
         width={1100}
         height="90vh"
+        flushTop
         footer={<>
           <button className="ghost-button" type="button" onClick={() => { setPreviewId(null); if (previewRef.current) previewRef.current.innerHTML = ""; }}>关闭</button>
           <button className="primary-button" type="button" onClick={() => { if (previewId) handleDownload(previewId); }}><Download size={13} /> 下载</button>
@@ -1870,7 +1896,7 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
               <span>加载文档中...</span>
             </div>
           )}
-          <div ref={previewRef} style={{ flex: 1, overflow: "auto", background: "#fff", borderRadius: 8, padding: 16 }} />
+          <div ref={previewRef} style={{ flex: 1, overflow: "auto", background: "#fff", borderRadius: 8, padding: "0 16px 0 16px" }} />
         </div>
       </Modal>
 

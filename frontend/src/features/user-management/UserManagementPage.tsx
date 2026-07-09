@@ -328,10 +328,11 @@ export function UserManagementPage() {
           </div>
           <div className="form-label">
             <span>状态</span>
-            <label className="toggle-switch">
+            <label className="toggle-switch" style={{ opacity: editForm.is_admin ? 0.5 : 1, cursor: editForm.is_admin ? "not-allowed" : "pointer" }}>
               <input
                 type="checkbox"
                 checked={editForm.is_active}
+                disabled={editForm.is_admin}
                 onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })}
               />
               <span className="toggle-switch__slider" />

@@ -37,15 +37,19 @@ async def _get_config_for_task(task_type: str, user_id: str) -> dict:
                 )
             )
             config = result.scalar_one_or_none()
-            # 必须同时具备 api_key、endpoint、model_name 才算有效配置
-            if config and config.enabled and config.api_key and config.endpoint and config.model_name:
-                return {
-                    "api_key": decrypt_value(config.api_key),
-                    "endpoint": config.endpoint,
-                    "model": config.model_name,
-                }
+            if config:
+                if not config.enabled:
+                    raise ValueError(f"「{config.name}」已禁用，请在模型配置页面启用后重试")
+                if config.api_key and config.endpoint and config.model_name:
+                    return {
+                        "api_key": decrypt_value(config.api_key),
+                        "endpoint": config.endpoint,
+                        "model": config.model_name,
+                    }
+                # 配置存在但字段不完整
+                raise ValueError(f"「{config.name}」配置不完整，请在模型配置页面补全供应商、模型、API Key 和 Endpoint")
 
-        # 尝试获取该用户任意一个启用且字段完整的配置
+        # 尝试获取该用户任意一个启用且字段完整的配置（仅当该任务类型未配置时）
         result = await db.execute(
             select(ModelConfig).where(
                 ModelConfig.user_id == user_id,
@@ -64,12 +68,7 @@ async def _get_config_for_task(task_type: str, user_id: str) -> dict:
                 "model": config.model_name,
             }
 
-    # 使用默认配置
-    return {
-        "api_key": settings.LLM_API_KEY,
-        "endpoint": settings.LLM_BASE_URL,
-        "model": settings.LLM_MODEL,
-    }
+    raise ValueError(f"未找到可用的模型配置，请在模型配置页面配置并启用至少一个模型")
 
 
 async def check_config_for_task(task_type: str, user_id: str) -> dict:
@@ -86,9 +85,17 @@ async def check_config_for_task(task_type: str, user_id: str) -> dict:
             )
             config = result.scalar_one_or_none()
             if config:
+                if not config.enabled:
+                    return {
+                        "configured": False,
+                        "configId": config.id,
+                        "name": config.name,
+                        "message": f"「{config.name}」已禁用，请在模型配置页面启用后重试",
+                    }
                 is_configured = bool(config.provider and config.model_name and config.api_key and config.endpoint)
                 return {
                     "configured": is_configured,
+                    "configId": config.id,
                     "name": config.name,
                     "message": "已配置" if is_configured else f"请先在模型配置页面设置「{config.name}」的模型数据",
                 }

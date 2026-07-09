@@ -144,7 +144,8 @@ export type AITaskType =
   | "测试点生成"
   | "用例生成"
   | "用例评审"
-  | "脚本生成";
+  | "脚本生成"
+  | "文档生成";
 export type AITaskStatus = "等待" | "执行中" | "成功" | "失败";
 
 export interface AITask {
