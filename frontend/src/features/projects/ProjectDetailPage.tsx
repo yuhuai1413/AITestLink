@@ -1617,22 +1617,30 @@ const tabComponents: Record<TabKey, React.FC<{ projectId: string }>> = {
   docGenerate: DocGenerateTab,
 };
 
-const TAB_STORAGE_KEY = "aitestlink-project-tab";
+const TAB_STORAGE_PREFIX = "aitestlink-project-tab-";
 
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { project } = useProjectData(id);
+  const prevIdRef = useRef<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
-    return (localStorage.getItem(TAB_STORAGE_KEY) as TabKey) || "overview";
+    if (id) {
+      const stored = localStorage.getItem(TAB_STORAGE_PREFIX + id);
+      if (stored) return stored as TabKey;
+    }
+    return "overview";
   });
   const tabContentRef = useRef<HTMLDivElement>(null);
-  const handleTabChange = (tab: TabKey) => { setActiveTab(tab); localStorage.setItem(TAB_STORAGE_KEY, tab); };
+  const handleTabChange = (tab: TabKey) => { setActiveTab(tab); if (id) localStorage.setItem(TAB_STORAGE_PREFIX + id, tab); };
 
-  // 项目切换时重置到概览页
+  // 仅在项目 ID 真正切换时重置到概览页，页面刷新时恢复已保存的 tab
   useEffect(() => {
-    setActiveTab("overview");
-    localStorage.setItem(TAB_STORAGE_KEY, "overview");
+    if (prevIdRef.current !== null && prevIdRef.current !== id) {
+      setActiveTab("overview");
+      if (id) localStorage.setItem(TAB_STORAGE_PREFIX + id, "overview");
+    }
+    prevIdRef.current = id;
   }, [id]);
 
   // 监听通知点击的 CustomEvent，实时切换 tab 并持久化
@@ -1641,7 +1649,7 @@ export function ProjectDetailPage() {
       const { tab, projectId } = (e as CustomEvent).detail;
       if (projectId === id && tab) {
         setActiveTab(tab as TabKey);
-        localStorage.setItem(TAB_STORAGE_KEY, tab);
+        if (id) localStorage.setItem(TAB_STORAGE_PREFIX + id, tab);
       }
     };
     window.addEventListener("aitestlink:navigate-tab", handler);

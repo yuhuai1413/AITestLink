@@ -325,7 +325,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
                       <div className="notif-panel__empty">暂无通知</div>
                     ) : (
                       state.notifications.slice(0, 20).map((n: AppNotification) => (
-                        <div key={n.id} className={`notif-item ${n.type === "任务失败" ? "notif-item--error" : "notif-item--success"}`} onClick={() => { const tab = n.taskType === "需求解析" ? "requirements" : n.taskType === "测试点生成" ? "testPoints" : n.taskType === "用例生成" ? "testCases" : "overview"; localStorage.setItem("aitestlink-project-tab", tab); window.dispatchEvent(new CustomEvent("aitestlink:navigate-tab", { detail: { tab, projectId: n.projectId } })); navigate(n.targetPath || `/projects/${n.projectId}`); dispatch({ type: "MARK_NOTIFICATION_READ", payload: n.id }); setShowNotifications(false); }}>
+                        <div key={n.id} className={`notif-item ${n.type === "任务失败" ? "notif-item--error" : "notif-item--success"}`} onClick={() => { const tab = n.taskType === "需求解析" ? "requirements" : n.taskType === "测试点生成" ? "testPoints" : n.taskType === "用例生成" ? "testCases" : "overview"; localStorage.setItem("aitestlink-project-tab-" + n.projectId, tab); window.dispatchEvent(new CustomEvent("aitestlink:navigate-tab", { detail: { tab, projectId: n.projectId } })); navigate(n.targetPath || `/projects/${n.projectId}`); dispatch({ type: "MARK_NOTIFICATION_READ", payload: n.id }); setShowNotifications(false); }}>
                           <div className="notif-item__icon">{n.type === "任务完成" ? "✓" : "✕"}</div>
                           <div className="notif-item__body">
                             <div className="notif-item__title">{n.taskType} · {n.projectName}</div>
