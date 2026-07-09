@@ -1,3 +1,4 @@
+import { showAlert } from "../shared/utils/dialogEvents";
 // 后端API地址 - 通过环境变量配置
 const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
@@ -21,9 +22,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     if (res.status === 401) {
-      localStorage.removeItem("token");
-      window.location.href = "/login";
-      throw new Error("登录已过期");
+      const errBody = await res.clone().json().catch(() => ({}));
+      const msg = (errBody as any).detail || "登录已过期";
+      if (!window.__alertShown) {
+        window.__alertShown = true;
+        localStorage.removeItem("token");
+        showAlert("账号异常", msg);
+      }
+      throw new Error(msg);
     }
     if (res.status === 404) return null as T;
     const errText = await res.text();
@@ -252,6 +258,8 @@ export interface ApiDocConfig {
   promptTemplate: string;
   outputFields: string;
   displayOrder: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export const docConfigApi = {
@@ -263,6 +271,15 @@ export const docConfigApi = {
       body: JSON.stringify({ configs }),
     }),
   downloadUrl: (id: string) => "/api/doc-configs/" + id + "/download",
+  upload: (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return fetch("/api/doc-configs/" + id + "/upload", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+      body: formData,
+    }).then((r) => r.json()) as Promise<{ ok: boolean; templateFile: string }>;
+  },
 };
 // ─── Automation Scripts ───
 

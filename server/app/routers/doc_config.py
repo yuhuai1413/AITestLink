@@ -1,7 +1,7 @@
 import json
 import os
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.doc_template import DocTemplate
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, require_admin
 
 router = APIRouter()
 
@@ -87,6 +87,8 @@ def _to_dict(m: DocTemplate) -> dict:
         "promptTemplate": m.prompt_template or "",
         "outputFields": m.output_fields or "",
         "displayOrder": m.display_order,
+        "createdAt": m.created_at.isoformat() if m.created_at else "",
+        "updatedAt": m.updated_at.isoformat() if m.updated_at else "",
     }
 
 
@@ -175,7 +177,7 @@ async def download_doc_template(
 @router.put("/doc-configs")
 async def update_doc_configs(
     data: DocTemplateUpdate,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
     user_id = user["sub"]
@@ -194,3 +196,34 @@ async def update_doc_configs(
 
     await db.commit()
     return {"ok": True, "count": len(data.configs)}
+
+
+@router.post("/doc-configs/{config_id}/upload")
+async def upload_template_file(
+    config_id: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = user["sub"]
+    result = await db.execute(
+        select(DocTemplate).where(DocTemplate.id == config_id, DocTemplate.user_id == user_id)
+    )
+    tpl = result.scalar_one_or_none()
+    if not tpl:
+        raise HTTPException(status_code=404, detail="模板不存在")
+
+    # Ensure upload directory exists
+    os.makedirs(TEMPLATE_DIR, exist_ok=True)
+
+    # Save file
+    file_path = os.path.join(TEMPLATE_DIR, file.filename)
+    content_bytes = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content_bytes)
+
+    # Update database
+    tpl.template_file = file.filename
+    await db.commit()
+
+    return {"ok": True, "templateFile": file.filename}

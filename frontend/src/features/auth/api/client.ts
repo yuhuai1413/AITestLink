@@ -1,3 +1,4 @@
+import { showAlert } from "../../../shared/utils/dialogEvents";
 const BASE_URL = "/api";
 
 let authToken: string | null = localStorage.getItem("token");
@@ -56,10 +57,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       throw new Error("未登录");
     }
     if (authToken) {
-      setToken(null);
-      sessionStorage.clear();
-      window.location.href = "/login";
-      throw new Error("登录已过期");
+      const errBody = await res.clone().json().catch(() => ({}));
+      const msg = (errBody as any).detail || "登录已过期";
+      if (!window.__alertShown) {
+        window.__alertShown = true;
+        setToken(null);
+        sessionStorage.clear();
+        showAlert("账号异常", msg);
+      }
+      throw new Error(msg);
     }
   }
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Toaster } from "sonner";
+import { GlobalAlert } from "../shared/components/GlobalAlert";
 import { Routes, Route, useNavigate, useLocation, Navigate } from "react-router-dom";
 import { AppShell } from "../shared/components/AppShell";
 import type { ViewKey } from "../shared/types/platform";
@@ -95,17 +96,9 @@ export function App() {
     initManager(dispatch, () => state.projects.map((p) => ({ id: p.id, name: p.name })));
   }, [dispatch, state.projects]);
 
-  if (!authed) {
-    return (
-      <Routes>
-        <Route path="/login" element={<LoginPage onLogin={() => setAuthed(true)} />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
-    );
-  }
-
   return (
     <>
+    <GlobalAlert />
     <Toaster
       position="top-center"
       richColors
@@ -119,7 +112,7 @@ export function App() {
     />
     <RestorePath />
     <Routes>
-      <Route path="/login" element={<Navigate to="/" replace />} />
+      <Route path="/login" element={authed ? <Navigate to="/" replace /> : <LoginPage onLogin={() => setAuthed(true)} />} />
       <Route
         path="/*"
         element={

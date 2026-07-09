@@ -57,7 +57,7 @@ export function useAPISync(enabled = true) {
     }
 
     loadAll();
-  }, [dispatch]);
+  }, [dispatch, enabled]);
 
   return {
     createProject: useCallback(async (data: Record<string, unknown>) => {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Eye, EyeOff, Pencil, TestTube, Loader2, Check, X, Save, Trash2, ChevronDown } from "lucide-react";
+import { Eye, EyeOff, Pencil, TestTube, Loader2, Check, X, Save, Trash2, ChevronDown, RotateCcw } from "lucide-react";
 import { Modal } from "../../shared/components/Modal";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { DataTable } from "../../shared/components/DataTable";
@@ -231,6 +231,11 @@ export function ModelConfigPage() {
   const [loading, setLoading] = useState(true);
   const [nodeFilter, setNodeFilter] = useState("all");
   const [providerFilter, setProviderFilter] = useState("all");
+
+  const resetFilters = () => {
+    setNodeFilter("all");
+    setProviderFilter("all");
+  };
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchEditing, setBatchEditing] = useState(false);
   const [lockedAiNodes, setLockedAiNodes] = useState<string[]>([]);
@@ -371,7 +376,7 @@ export function ModelConfigPage() {
     <div className="page-stack">
       <DataPanel
         toolbar={
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", width: "100%" }}>
             <div className="search-form" style={{ flex: 1, margin: 0 }}>
               <div className="search-form__field">
                 <label className="search-form__label">AI 节点</label>
@@ -399,9 +404,13 @@ export function ModelConfigPage() {
                   ))}
                 </select>
               </div>
+              <button className="ghost-button" type="button" onClick={resetFilters}>
+                <RotateCcw size={14} />
+                重置
+              </button>
             </div>
             {selectedIds.size > 0 && (
-              <button className="primary-button" type="button" onClick={() => setBatchEditing(true)}>
+              <button className="primary-button" type="button" onClick={() => setBatchEditing(true)} style={{ marginLeft: "auto", flexShrink: 0 }}>
                 批量编辑（{selectedIds.size}）
               </button>
             )}

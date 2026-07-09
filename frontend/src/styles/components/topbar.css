@@ -20,6 +20,7 @@
   padding: 14px;
   position: relative;
   z-index: 200;
+  isolation: isolate;
 }
 
 .topbar__eyebrow {

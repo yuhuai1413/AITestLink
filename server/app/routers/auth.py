@@ -71,13 +71,25 @@ def decode_token(token: str) -> Optional[dict]:
 
 # ─── 依赖注入 ───
 
-async def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
+async def get_current_user(
+    authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="未登录")
     token = authorization.removeprefix("Bearer ")
     payload = decode_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="登录已过期，请重新登录")
+
+    # Check if user is still active
+    user_id = payload.get("sub")
+    if user_id:
+        result = await db.execute(select(User).where(User.id == user_id))
+        db_user = result.scalar_one_or_none()
+        if not db_user or not db_user.is_active:
+            raise HTTPException(status_code=401, detail="账号已被禁用，请联系管理员")
+
     return payload
 
 
@@ -192,7 +204,7 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
         await db.commit()
 
     if not user.is_active:
-        return {"ok": False, "message": "账号已被禁用"}
+        return {"ok": False, "message": "该账号已禁用，请联系管理员"}
 
     token = create_token(user.id, user.phone, user.nickname, user.is_admin or False)
     avatar_url = user.avatar or ""
@@ -345,7 +357,7 @@ async def list_users(user: dict = Depends(require_admin), db: AsyncSession = Dep
                 "id": u.id,
                 "phone": u.phone,
                 "nickname": u.nickname,
-                "avatar": u.avatar or "",
+                "avatar": f"{settings.BASE_URL}{u.avatar}" if u.avatar and not u.avatar.startswith("http") else (u.avatar or ""),
                 "is_active": u.is_active,
                 "is_admin": u.is_admin or False,
                 "created_at": u.created_at.isoformat() if u.created_at else "",
