@@ -910,6 +910,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
           <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <DataTable rows={scripts} getRowKey={(r) => r.id} columns={[
               { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
+              { key: "scriptCode", label: "脚本编号", render: (r) => r.scriptCode || <span style={{ color: "var(--muted)" }}>-</span> },
               { key: "testCase", label: "关联用例", align: "left", render: (r) => {
                 const tc = testCases.find((t) => t.id === r.testCaseId);
                 return tc ? <span title={tc.title} style={{ maxWidth: 200, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tc.title}</span> : <span style={{ color: "var(--muted)" }}>-</span>;
@@ -1036,7 +1037,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
       const success = Math.random() > 0.3;
       const now = new Date().toISOString();
       dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, status: success ? "成功" : "失败", executedAt: now } });
-      toast[success ? "success" : "error"](`${script.id.slice(0, 8)} ${success ? "执行成功" : "执行失败"}`);
+      toast[success ? "success" : "error"](`${script.scriptCode || script.id.slice(0, 8)} ${success ? "执行成功" : "执行失败"}`);
     }
     setRunningAll(false);
   };
@@ -1050,7 +1051,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
       const now = new Date().toISOString();
       dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, status: success ? "成功" : "失败", executedAt: now } });
       setRunningId(null);
-      toast[success ? "success" : "error"](`脚本 ${script.id.slice(0, 8)} ${success ? "执行成功" : "执行失败"}`);
+      toast[success ? "success" : "error"](`脚本 ${script.scriptCode || script.id.slice(0, 8)} ${success ? "执行成功" : "执行失败"}`);
     }, 2000);
   };
 
@@ -1102,7 +1103,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
         ) : (
           <DataTable rows={scripts} getRowKey={(r) => r.id} columns={[
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
-            { key: "id", label: "脚本 ID", render: (r) => r.id.slice(0, 8) },
+            { key: "scriptCode", label: "脚本编号", render: (r) => r.scriptCode || <span style={{ color: "var(--muted)" }}>-</span> },
             { key: "testCase", label: "关联用例", align: "left", render: (r) => getTestCaseTitle(r.testCaseId) },
             { key: "framework", label: "框架", render: (r) => r.framework },
             { key: "scriptType", label: "类型", render: (r) => r.scriptType },

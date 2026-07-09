@@ -166,6 +166,7 @@ export type ScriptStatus = "待执行" | "执行中" | "成功" | "失败";
 
 export interface AutomationScript {
   id: string;
+  scriptCode: string;
   projectId: string;
   testCaseId: string | null;
   scriptType: ScriptType;

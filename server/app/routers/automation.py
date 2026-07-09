@@ -18,6 +18,39 @@ router = APIRouter()
 ai_service = AIService()
 
 
+# 脚本编号前缀映射（与用例编号共用模块缩写表）
+_SCRIPT_MODULE_ABBR = {
+    "用户管理": "USER", "登录": "LOGIN", "权限": "PERM",
+    "角色": "ROLE", "菜单": "MENU", "部门": "DEPT",
+    "客户管理": "CUST", "客户": "CUST", "订单": "ORDER",
+    "商品": "GOODS", "产品": "PROD", "库存": "STOCK",
+    "审批": "APPROVE", "通知": "NOTIF", "消息": "MSG",
+    "报表": "REPORT", "统计": "STAT", "日志": "LOG",
+    "设置": "SETTING", "配置": "CONFIG", "系统": "SYS",
+    "文件": "FILE", "文档": "DOC", "模板": "TPL",
+    "搜索": "SEARCH", "筛选": "FILT", "导入": "IMPORT",
+    "导出": "EXPORT", "上传": "UPLOAD", "下载": "DL",
+    "编辑": "EDIT", "删除": "DEL", "新增": "ADD",
+    "详情": "DETAIL", "列表": "LIST", "弹窗": "DLG",
+    "表单": "FORM", "表格": "TABLE", "分页": "PAGE",
+    "导航": "NAV", "首页": "HOME", "仪表盘": "DASH",
+    "数据汇总": "SUMMARY", "测试": "TEST", "缺陷": "BUG",
+    "需求": "REQ", "脚本": "SCRIPT", "用例": "CASE",
+    "执行": "EXEC", "评审": "REVIEW", "生成": "GEN",
+    "接口": "API", "性能": "PERF", "安全": "SEC",
+    "兼容": "COMPAT", "回归": "REG", "冒烟": "SMOKE",
+    "核心": "CORE", "基础": "BASE", "公共": "COMMON",
+    "个人": "PERSONAL", "账号": "ACCOUNT", "密码": "PWD",
+}
+
+
+def _script_code_for_tc(tc, counter: int) -> str:
+    """根据测试用例生成脚本编号，格式 SC_XXX_NNN"""
+    module = getattr(tc, "module", "") or ""
+    abbr = _SCRIPT_MODULE_ABBR.get(module, "MOD")
+    return f"SC_{abbr}_{counter:03d}"
+
+
 @router.get("/projects/{project_id}/scripts")
 async def list_scripts(
     project_id: str,
@@ -140,6 +173,7 @@ async def generate_scripts(
                     id=str(uuid.uuid4()),
                     project_id=project_id,
                     test_case_id=matched_tc.id if matched_tc else test_cases[0].id,
+                    script_code=_script_code_for_tc(matched_tc or test_cases[0], len(scripts) + 1),
                     script_type=ai_script.get("scriptType", "UI"),
                     framework=ai_script.get("framework", "Playwright"),
                     language=ai_script.get("language", "Python"),
@@ -172,6 +206,7 @@ def _generate_template_scripts(project_id: str, test_cases: list, db: AsyncSessi
             id=str(uuid.uuid4()),
             project_id=project_id,
             test_case_id=tc.id,
+            script_code=_script_code_for_tc(tc, len(scripts) + 1),
             script_type="UI",
             framework="Playwright",
             language="Python",

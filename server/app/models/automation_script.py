@@ -17,6 +17,7 @@ class AutomationScript(Base):
     language = Column(String(20), default="Python")
     code = Column(Text, default="")
     status = Column(String(20), default="待执行")  # 待执行 / 执行中 / 成功 / 失败
+    script_code = Column(String(50), default="")
     review_status = Column(String(50), default="待评审")
     executed_at = Column(DateTime, nullable=True)
     generated_by_ai = Column(Boolean, default=True)
