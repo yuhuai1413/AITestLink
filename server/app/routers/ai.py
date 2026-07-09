@@ -73,13 +73,15 @@ async def _update_task_status(db: AsyncSession, task_id: str, status: str, error
 
 
 def _module_counter(items: list[dict], prefix: str) -> list[tuple[str, str]]:
-    """为按模块分组的项目生成编号。返回 [(id, module), ...]"""
-    counters: dict[str, int] = {}
+    """为按模块分组的项目生成编号。返回 [(id, module), ...]
+    编号格式: PREFIX_NNN（纯英文+数字，不含中文）
+    """
+    counter = 0
     result = []
     for item in items:
         module = item["module"]
-        counters[module] = counters.get(module, 0) + 1
-        result.append((f"{prefix}_{module}_{counters[module]:03d}", module))
+        counter += 1
+        result.append((f"{prefix}_{counter:03d}", module))
     return result
 
 
