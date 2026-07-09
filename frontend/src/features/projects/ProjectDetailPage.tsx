@@ -1027,7 +1027,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
 
   const runAll = async () => {
     if (scripts.length === 0) { toast.warning("请先在「自动化脚本」页面生成脚本"); return; }
-    if (unreviewedScriptCount > 0) { toast.warning(`还有 ${unreviewedScriptCount} 个脚本未评审通过，请先完成脚本评审`); return; }
+    if (unreviewedScriptCount > 0) { toast.warning(`还有 ${unreviewedScriptCount} 个脚本未评审通过，请先完成脚本评审后再执行`); return; }
     setRunningAll(true);
     for (const script of scripts) {
       if (script.status === "成功") continue;
@@ -1042,7 +1042,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
   };
 
   const handleRun = async (script: AutomationScript) => {
-    if ((script as any).reviewStatus !== "已通过") { toast.warning("该脚本未评审通过，请先完成评审"); return; }
+    if ((script as any).reviewStatus !== "已通过") { toast.warning("该脚本未评审通过，请先在「自动化脚本」页面完成评审"); return; }
     setRunningId(script.id);
     dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, status: "执行中" } });
     setTimeout(() => {
@@ -1084,7 +1084,7 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
         actions={<>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="primary-button" type="button" onClick={runAll} disabled={runningAll || scripts.length === 0 || unreviewedScriptCount > 0}>
+              <button className="primary-button" type="button" onClick={runAll} disabled={runningAll}>
                 {runningAll ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
                 {runningAll ? "执行中..." : "全部执行"}
               </button>
