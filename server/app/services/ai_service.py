@@ -37,19 +37,22 @@ async def _get_config_for_task(task_type: str, user_id: str) -> dict:
                 )
             )
             config = result.scalar_one_or_none()
-            if config and config.enabled and config.api_key:
+            # 必须同时具备 api_key、endpoint、model_name 才算有效配置
+            if config and config.enabled and config.api_key and config.endpoint and config.model_name:
                 return {
                     "api_key": decrypt_value(config.api_key),
                     "endpoint": config.endpoint,
                     "model": config.model_name,
                 }
 
-        # 尝试获取该用户任意一个启用的配置
+        # 尝试获取该用户任意一个启用且字段完整的配置
         result = await db.execute(
             select(ModelConfig).where(
                 ModelConfig.user_id == user_id,
                 ModelConfig.enabled.is_(True),
-                ModelConfig.api_key != ""
+                ModelConfig.api_key != "",
+                ModelConfig.endpoint != "",
+                ModelConfig.model_name != "",
             )
         )
         configs = result.scalars().all()
@@ -112,12 +115,13 @@ class AIService:
             "max_tokens": max_tokens,
         }
 
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=300) as client:
             response = await client.post(
                 config['endpoint'],
                 headers=headers,
                 json=payload,
             )
+            logger.info(f"_call_llm: task={task_type}, status={response.status_code}")
             response.raise_for_status()
             data = response.json()
             content = data["choices"][0]["message"]["content"]
@@ -126,46 +130,61 @@ class AIService:
             return content
 
     def _parse_json_response(self, text: str) -> list | dict:
-        """Extract JSON from LLM response."""
+        """Extract JSON from LLM response, handling various output formats."""
+        import re
         text = text.strip()
         if not text:
             logger.error("LLM returned empty response")
             return []
 
-        # Try to find JSON in the response
-        if text.startswith("```"):
-            lines = text.split("\n")
-            json_lines = []
-            in_block = False
-            for line in lines:
-                if line.startswith("```") and not in_block:
-                    in_block = True
-                    continue
-                elif line.startswith("```") and in_block:
-                    break
-                elif in_block:
-                    json_lines.append(line)
-            text = "\n".join(json_lines)
-
+        # 1. Try direct parse first
         try:
             return json.loads(text)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse LLM response as JSON: {e}")
-            logger.error(f"Response preview: {text[:500]}")
-            # 尝试修复截断的 JSON：逐个去掉末尾不完整的元素
-            if text.startswith("["):
-                try:
-                    # 找到最后一个完整的 JSON 对象
-                    last_brace = text.rfind("}")
-                    if last_brace > 0:
-                        repaired = text[:last_brace + 1] + "]"
-                        result = json.loads(repaired)
-                        if isinstance(result, list):
-                            logger.warning(f"Recovered {len(result)} items from truncated JSON")
-                            return result
-                except json.JSONDecodeError:
-                    pass
-            return []
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # 2. Extract from markdown code blocks (```json ... ``` or ``` ... ```)
+        code_block_pattern = re.compile(r'```(?:json)?\s*\n?(.*?)```', re.DOTALL)
+        matches = code_block_pattern.findall(text)
+        for match in matches:
+            try:
+                return json.loads(match.strip())
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+        # 3. Find the outermost JSON array or object using bracket matching
+        for start_char, end_char in [('[', ']'), ('{', '}')]:
+            start_idx = text.find(start_char)
+            if start_idx == -1:
+                continue
+            depth = 0
+            for i in range(start_idx, len(text)):
+                if text[i] == start_char:
+                    depth += 1
+                elif text[i] == end_char:
+                    depth -= 1
+                    if depth == 0:
+                        candidate = text[start_idx:i + 1]
+                        try:
+                            return json.loads(candidate)
+                        except (json.JSONDecodeError, ValueError):
+                            break
+
+        # 4. Try repairing truncated JSON (last resort)
+        if text.startswith("["):
+            try:
+                last_brace = text.rfind("}")
+                if last_brace > 0:
+                    repaired = text[:last_brace + 1] + "]"
+                    result = json.loads(repaired)
+                    if isinstance(result, list):
+                        logger.warning(f"Recovered {len(result)} items from truncated JSON")
+                        return result
+            except json.JSONDecodeError:
+                pass
+
+        logger.error(f"Failed to parse LLM response as JSON. Preview: {text[:500]}")
+        return []
 
     async def parse_requirements(self, file_content: str, user_id: str = "") -> list[dict]:
         """Parse requirement document and extract structured requirements."""
@@ -320,7 +339,7 @@ class AIService:
 以 JSON 数组格式输出，每个元素包含以下字段：
 - module: 所属模块（与测试点模块保持一致）
 - feature: 功能点（与测试点功能点保持一致）
-- title: 用例标题（格式：[场景] + [操作] + [预期结果]）
+- title: 用例标题（简洁描述验证目标。严格禁止在标题中包含测试点类型，如不要写"[正常流程]xxx"、"[异常流程]xxx"、"[边界值]xxx"、"[权限控制]xxx"等。测试点类型由 testType 字段单独存储）
 - priority: 优先级（P0/P1/P2/P3）
 - precondition: 前置条件（包含环境、账号、权限、测试数据等）
 - steps: 测试步骤（用"步骤N:"格式，换行符分隔，每步一行，包含验证点）
@@ -336,7 +355,8 @@ class AIService:
             "1. 步骤使用 步骤N: 格式，每步包含验证点（用 查看...是否... 句式） "
             "2. 预期结果包含步骤编号和 应 字 "
             "3. 数据具体化，不使用模糊描述 "
-            "4. 编号格式 TC_XXX_NNN"
+            "4. 编号格式 TC_XXX_NNN "
+            "5. 用例标题只写验证目标本身，严禁在标题开头加 [xxx] 前缀（如 [正常流程]、[异常流程]、[边界值] 等），这些类型信息由 testType 字段单独存储"
             f"\n\n测试点列表：\n\n{test_points_text[:3000]}"
         )
 
@@ -472,7 +492,7 @@ async def test_<功能描述>():
 
 以 JSON 数组格式输出，每个元素包含以下字段：
 - testCaseId: 对应的测试用例ID
-- scriptType: 脚本类型（UI/API/混合）
+- scriptType: 脚本类型，根据用例内容智能判断：如果用例主要测试页面交互（点击、填写、导航）则为 UI；如果用例主要测试接口调用、数据传输则为 API；如果同时涉及页面和接口则为 混合
 - framework: 框架（Playwright）
 - language: 编程语言（Python 或 TypeScript）
 - code: 完整的可执行脚本代码
@@ -635,4 +655,18 @@ async def test_<功能描述>():
         user_prompt = f"请根据以下项目信息生成测试文档。\n\n项目信息：\n{project_info[:1000]}\n\n需求列表：\n{requirements_text[:1500]}\n\n测试点列表：\n{test_points_text[:1500]}\n\n测试用例列表：\n{test_cases_text[:1500]}"
 
         response = await self._call_llm(system_prompt, user_prompt, "文档生成", user_id)
+        return self._parse_json_response(response)
+
+    async def generate_doc_by_template(self, template_prompt: str, project_info: str, requirements_text: str, test_points_text: str, test_cases_text: str, user_id: str = "") -> dict:
+        """使用模板专属 prompt 生成文档"""
+        user_prompt = (
+            f"请根据以下项目信息生成文档。\n\n"
+            f"项目信息：\n{project_info[:1000]}\n\n"
+            f"需求列表：\n{requirements_text[:1500]}\n\n"
+            f"测试点列表：\n{test_points_text[:1500]}\n\n"
+            f"测试用例列表：\n{test_cases_text[:1500]}\n\n"
+            f"输出格式要求：以 JSON 格式输出，包含 documentType、title、content（Markdown 格式）、metadata 字段。"
+        )
+
+        response = await self._call_llm(template_prompt, user_prompt, "文档生成", user_id)
         return self._parse_json_response(response)

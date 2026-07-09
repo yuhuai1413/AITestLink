@@ -25,6 +25,8 @@
 
 .modal-dialog {
   position: relative;
+  display: flex;
+  flex-direction: column;
   animation: dialogContentIn 0.2s ease;
   border: 1px solid var(--line);
   border-radius: var(--radius-l1);
@@ -32,8 +34,11 @@
   box-shadow: 0 20px 60px rgba(15, 23, 42, 0.18);
   padding: 0;
   max-height: 85vh;
-  overflow: hidden;
   margin: 0;
+}
+
+.modal-dialog--tall {
+  max-height: 90vh;
 }
 
 .modal-dialog__header {
@@ -43,6 +48,7 @@
   min-height: 56px;
   border-bottom: 1px solid var(--line);
   padding: 0 20px;
+  flex-shrink: 0;
 }
 
 .modal-dialog__header h2 {
@@ -54,17 +60,23 @@
 .modal-dialog__body {
   padding: 20px;
   overflow-y: auto;
-  max-height: calc(85vh - 56px);
+  flex: 1;
+  min-height: 0;
+}
+
+.modal-dialog__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  flex-shrink: 0;
 }
 
 @media (max-width: 560px) {
   .modal-dialog {
     width: 95vw !important;
     max-height: 90vh;
-  }
-
-  .modal-dialog__body {
-    max-height: calc(90vh - 120px);
-    overflow-y: auto;
   }
 }

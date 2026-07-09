@@ -46,10 +46,12 @@ export function exportManualTestCasesToExcel(
     };
   };
 
+  const SHORT_KEYS = new Set(["module", "caseCode", "priority", "testType", "passed", "reviewStatus", "automation"]);
+
   const headerCells = columns
     .map(
       (col) =>
-        `<th style="background:#4472C4;color:#fff;font-weight:600;text-align:center;vertical-align:middle;padding:6px 4px;border:1px solid #000;white-space:nowrap;font-family:inherit;">${col.label}</th>`
+        `<th style="background:#e8edf5;font-weight:600;text-align:center;vertical-align:middle;padding:10px 6px;white-space:nowrap;font-family:inherit;width:${col.width}px;">${col.label}</th>`
     )
     .join("");
 
@@ -59,11 +61,11 @@ export function exportManualTestCasesToExcel(
       const cells = columns
         .map((col) => {
           let val = (row as any)[col.key];
-          let cellStyle = "padding:4px;border:1px solid #000;vertical-align:top;";
-          if (col.key === "steps" || col.key === "expectedResult" || col.key === "actualResult") {
-            cellStyle += "word-wrap:break-word;word-break:break-all;white-space:pre-wrap;";
+          if (SHORT_KEYS.has(col.key)) {
+            return `<td style="text-align:center;vertical-align:middle;padding:5px 6px;width:${col.width}px;font-family:inherit;">${val || "-"}</td>`;
           }
-          return `<td style="${cellStyle}">${val || "-"}</td>`;
+          // 长文本列：用 div 包裹并设置宽度，强制 Excel 换行
+          return `<td style="vertical-align:middle;padding:5px 6px;width:${col.width}px;font-family:inherit;"><div style="word-wrap:break-word;overflow-wrap:normal;white-space:normal;width:${col.width - 12}px;font-family:inherit;">${val || "-"}</div></td>`;
         })
         .join("");
       return `<tr>${cells}</tr>`;
@@ -79,7 +81,9 @@ export function exportManualTestCasesToExcel(
 <title>${projectName} - 手动测试用例</title>
 <style>
   @page { size: landscape; margin: 10mm; }
-  table { border-collapse: collapse; font-family: "宋体", "Times New Roman", serif; }
+  table { font-family: "宋体", "Times New Roman", serif; border-collapse: collapse; mso-table-lspace: 0; mso-table-rspace: 0; }
+  th, td { border: 1px solid #d0d0d0; mso-border-alt: solid #d0d0d0 0.5pt; }
+  td div { mso-style-name: "Normal"; }
 </style>
 </head>
 <body>

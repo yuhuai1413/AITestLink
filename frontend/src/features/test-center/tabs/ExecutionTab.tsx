@@ -20,6 +20,7 @@ export function ExecutionTab({ projectId }: Props) {
       getRowKey={(tc) => tc.id}
       columns={[
         { key: "caseCode", label: "用例编号", render: (tc) => tc.caseCode },
+        { key: "testType", label: "测试类型", render: (tc) => tc.testType || "功能测试" },
         { key: "title", label: "用例标题", render: (tc) => tc.title },
         { key: "priority", label: "优先级", render: (tc) => <StatusPill tone={tc.priority === "P0" ? "red" : tc.priority === "P1" ? "amber" : "blue"}>{tc.priority}</StatusPill> },
         { key: "automation", label: "自动化", render: (tc) => <StatusPill tone={tc.automation === "适合" ? "green" : tc.automation === "不适合" ? "red" : "amber"}>{tc.automation}</StatusPill> },

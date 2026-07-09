@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, WandSparkles, Loader2, FileUp, Upload, Trash2, Download, CheckCircle2, Play, Code, Eye } from "lucide-react";
+import { renderAsync } from "docx-preview";
 import { useStore, useProjectTestCases } from "../../app/store";
 import { useProjectData } from "./useProjectData";
 import { useAPISync } from "../../api/useAPISync";
 import { useAIAction } from "../../shared/hooks/useAIAction";
-import { aiApi, filesApi, requirementsApi, scriptsApi, testCasesApi, testPointsApi, type ApiFile, type ApiRequirement, type ApiTestPoint, type ApiTestCase, type ApiScript } from "../../api/client";
+import { aiApi, filesApi, requirementsApi, scriptsApi, testCasesApi, testPointsApi, docGenApi, type ApiFile, type ApiRequirement, type ApiTestPoint, type ApiTestCase, type ApiScript } from "../../api/client";
 import { DataTable } from "../../shared/components/DataTable";
 import { SectionHeader } from "../../shared/components/SectionHeader";
 import { StatusPill } from "../../shared/components/StatusPill";
@@ -550,7 +551,7 @@ function TestCasesTab({ projectId }: { projectId: string }) {
   const { dispatch } = useStore();
   const { loadingTestCases, loadingReview, error, generateTestCases, reviewTestCases } = useAIAction(projectId);
   const prevLoadingRef = useRef(loadingTestCases);
-  useEffect(() => { if (prevLoadingRef.current && !loadingTestCases) { refreshTestCases(); } prevLoadingRef.current = loadingTestCases; }, [loadingTestCases, refreshTestCases]);
+  useEffect(() => { if (prevLoadingRef.current && !loadingTestCases) { refreshTestCases(); setReviewResult(null); setShowReviewResult(false); } prevLoadingRef.current = loadingTestCases; }, [loadingTestCases, refreshTestCases]);
   const [detailCase, setDetailCase] = useState<TestCase | null>(null);
   const [editCase, setEditCase] = useState<TestCase | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -560,6 +561,7 @@ function TestCasesTab({ projectId }: { projectId: string }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
+  const busy = loadingTestCases || loadingReview;
   const [reviewResult, setReviewResult] = useState<any>(null);
   const [showReviewResult, setShowReviewResult] = useState(false);
 
@@ -646,8 +648,9 @@ function TestCasesTab({ projectId }: { projectId: string }) {
   };
 
   const handleExportManual = () => {
+    if (testCases.length === 0) { toast.warning("暂无测试用例，请先生成用例"); return; }
     const manualCases = testCases.filter((tc) => tc.automation !== "适合");
-    if (manualCases.length === 0) { toast.warning("暂无手动测试用例"); return; }
+    if (manualCases.length === 0) { toast.warning("所有用例均标记为自动化，暂无可导出的手动用例"); return; }
     exportManualTestCasesToExcel(manualCases, project?.name || "未命名项目");
     toast.success(`已导出 ${manualCases.length} 条手动测试用例`);
   };
@@ -658,11 +661,11 @@ function TestCasesTab({ projectId }: { projectId: string }) {
         actions={<>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
-              {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
-              {reviewResult && <button className="ghost-button" type="button" onClick={() => setShowReviewResult(true)}><Eye size={13} /> 查看评审报告</button>}
-              <button className="primary-button" type="button" onClick={handleAIReview} disabled={loadingReview || testCases.length === 0}>{loadingReview ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}{loadingReview ? "评审中..." : "AI 评审"}</button>
-              <button className="primary-button" type="button" onClick={handleExportManual} disabled={testCases.length === 0}><Download size={13} /> 导出手动测试用例</button>
-              <button className="primary-button" type="button" onClick={handleGenerate} disabled={loadingTestCases}>{loadingTestCases ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loadingTestCases ? "生成中..." : "生成用例"}</button>
+              {selectedIds.size > 0 && <button className="ghost-button" type="button" disabled={busy} onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
+              <button className="ghost-button" type="button" disabled={busy} onClick={() => { if (!reviewResult) { toast.warning("暂无评审报告，请先执行 AI 评审"); return; } setShowReviewResult(true); }}><Eye size={13} /> 查看评审报告</button>
+              <button className="primary-button" type="button" onClick={handleAIReview} disabled={busy}>{loadingReview ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}{loadingReview ? "评审中..." : "AI 评审"}</button>
+              <button className="primary-button" type="button" onClick={handleExportManual} disabled={busy}><Download size={13} /> 导出手动测试用例</button>
+              <button className="primary-button" type="button" onClick={handleGenerate} disabled={busy}>{loadingTestCases ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loadingTestCases ? "生成中..." : "生成用例"}</button>
             </div>
             <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{testCases.length}</strong> 条用例</span>
           </div>
@@ -675,6 +678,7 @@ function TestCasesTab({ projectId }: { projectId: string }) {
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "caseCode", label: "用例编号", render: (r) => r.caseCode },
             { key: "module", label: "模块", render: (r) => r.module },
+            { key: "testType", label: "测试类型", render: (r) => r.testType || "功能测试" },
             { key: "feature", label: "测试点", align: "left", render: (r) => <span title={r.feature}>{truncateText(r.feature, 25)}</span> },
             { key: "title", label: "用例标题", align: "left", render: (r) => <span title={r.title}>{truncateText(r.title, 30)}</span> },
             { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
@@ -823,11 +827,23 @@ function ScriptsTab({ projectId }: { projectId: string }) {
   const handleGenerate = async () => {
     if (!hasPrerequisite) { toast.warning("请先生成测试用例并标记适合自动化的用例"); return; }
     if (unreviewedTCCount > 0) { toast.warning(`还有 ${unreviewedTCCount} 条用例未评审通过，请先完成用例评审`); return; }
+    // 检查模型配置
+    try {
+      const config = await aiApi.checkConfig(projectId, "脚本生成");
+      if (!config.configured) {
+        toast.error(config.message || "模型未配置，请先在模型配置中设置", {
+          action: { label: "去配置", onClick: () => navigate("/model-config") },
+          duration: 5000,
+        });
+        return;
+      }
+    } catch { /* 配置检查失败，继续尝试（后端会再次校验） */ }
     setGenerating(true);
     setError(null);
     try {
       const result = await scriptsApi.generate(projectId);
       if (result.ok && result.scripts) {
+        dispatch({ type: "CLEAR_SCRIPTS", payload: projectId });
         result.scripts.forEach((s) => dispatch({ type: "ADD_SCRIPT", payload: {
           id: s.id, projectId: s.projectId, testCaseId: s.testCaseId ?? undefined,
           scriptType: s.scriptType as AutomationScript["scriptType"],
@@ -915,6 +931,10 @@ function ScriptsTab({ projectId }: { projectId: string }) {
                 const tc = testCases.find((t) => t.id === r.testCaseId);
                 return tc ? <span title={tc.title} style={{ maxWidth: 200, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tc.title}</span> : <span style={{ color: "var(--muted)" }}>-</span>;
               }},
+              { key: "testType", label: "测试类型", align: "center", render: (r) => {
+                const tc = testCases.find((t) => t.id === r.testCaseId);
+                return tc ? (tc.testType || "功能测试") : <span style={{ color: "var(--muted)" }}>-</span>;
+              }},
               { key: "module", label: "模块", align: "center", render: (r) => {
                 const tc = testCases.find((t) => t.id === r.testCaseId);
                 return tc ? tc.module : <span style={{ color: "var(--muted)" }}>-</span>;
@@ -945,6 +965,8 @@ function ScriptsTab({ projectId }: { projectId: string }) {
             <div className="confirm-dialog__body" style={{ flexDirection: "column", gap: 12 }}>
               <h3 style={{ margin: 0, fontSize: 16 }}>脚本代码 - {viewScript.framework}</h3>
               <div style={{ display: "flex", gap: 24, fontSize: 13, color: "var(--muted)" }}>
+                <span>脚本类型：{viewScript.scriptType}</span>
+                {(() => { const tc = testCases.find((t) => t.id === viewScript.testCaseId); return tc ? <span>测试类型：{tc.testType || "功能测试"}</span> : null; })()}
                 <span>生成时间：{formatTime(viewScript.createdAt)}</span>
                 <span>更新时间：{formatTime(viewScript.updatedAt)}</span>
               </div>
@@ -1105,8 +1127,12 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "scriptCode", label: "脚本编号", render: (r) => r.scriptCode || <span style={{ color: "var(--muted)" }}>-</span> },
             { key: "testCase", label: "关联用例", align: "left", render: (r) => getTestCaseTitle(r.testCaseId) },
+            { key: "testType", label: "测试类型", align: "center", render: (r) => {
+              const tc = testCases.find((t) => t.id === r.testCaseId);
+              return tc ? (tc.testType || "功能测试") : <span style={{ color: "var(--muted)" }}>-</span>;
+            }},
             { key: "framework", label: "框架", render: (r) => r.framework },
-            { key: "scriptType", label: "类型", render: (r) => r.scriptType },
+            { key: "scriptType", label: "脚本类型", render: (r) => r.scriptType },
             { key: "status", label: "状态", align: "center", render: (r) => (
               <StatusPill tone={r.status === "成功" ? "green" : r.status === "失败" ? "red" : r.status === "执行中" ? "blue" : "slate"}>
                 {r.status}
@@ -1140,7 +1166,10 @@ function ExecuteScriptsTab({ projectId }: { projectId: string }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
                     <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>执行结果 - {viewScript.framework}</h3>
-                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--muted)" }}>脚本 ID: {viewScript.id.slice(0, 8)} | 类型: {viewScript.scriptType}</p>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--muted)" }}>
+                      脚本 ID: {viewScript.id.slice(0, 8)} | 脚本类型: {viewScript.scriptType}
+                      {(() => { const tc = testCases.find((t) => t.id === viewScript.testCaseId); return tc ? <> | 测试类型: {tc.testType || "功能测试"}</> : null; })()}
+                    </p>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <div style={{ textAlign: "right" }}>
@@ -1316,7 +1345,7 @@ function SummaryTab({ projectId }: { projectId: string }) {
         <section className="work-panel" style={{ display: "flex", flexDirection: "column" }}>
           <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>模块通过率</h3>
           {initialLoading && modules.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : modules.length === 0 ? <div className="empty-state"><p>暂无数据</p></div> : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1, overflow: "auto" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>
               {modules.map((m) => (
                 <div key={m.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ width: 80, fontSize: 13, flexShrink: 0, textAlign: "right", fontWeight: 500 }}>{m.name}</span>
@@ -1340,10 +1369,10 @@ function SummaryTab({ projectId }: { projectId: string }) {
         <section className="work-panel" style={{ display: "flex", flexDirection: "column" }}>
           <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>优先级通过率</h3>
           {initialLoading && priorities.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : priorities.length === 0 ? <div className="empty-state"><p>暂无数据</p></div> : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1, justifyContent: "center", overflow: "auto" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>
               {priorities.map((p) => (
                 <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ width: "fit-content", fontSize: 13, flexShrink: 0, textAlign: "right" }}><StatusPill tone={priorityTone(p.name)}>{p.name}</StatusPill></span>
+                  <span style={{ width: 80, fontSize: 13, flexShrink: 0, textAlign: "right", fontWeight: 500 }}>{p.name}</span>
                   <div style={{ flex: 1, height: 12, background: "var(--line)", borderRadius: 999, overflow: "hidden", display: "flex" }}>
                     {p.total > 0 && (
                       <>
@@ -1579,43 +1608,293 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
     { id: "tpl-app", name: "APP端操作手册", desc: "移动端操作流程、功能说明", needs: ["files"] },
   ];
   const [generating, setGenerating] = useState<string | null>(null);
-  const [generated, setGenerated] = useState<Set<string>>(new Set());
-  const handleGenerate = (id: string) => { setGenerating(id); setTimeout(() => { setGenerating(null); setGenerated((p) => new Set(p).add(id)); toast.success("文档生成完成，可点击下载"); }, 2000); };
-  const isReady = (needs: string[]) => { if (needs.includes("files") && files.length === 0) return false; if (needs.includes("testCases") && testCases.length === 0) return false; return true; };
+  const [statusMap, setStatusMap] = useState<Record<string, { status: string; generatedAt: string | null }>>({});
+  const [statusLoaded, setStatusLoaded] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [reGenerateId, setReGenerateId] = useState<string | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  // 从数据库加载状态
+  useEffect(() => {
+    docGenApi.getStatus(projectId).then((data) => {
+      if (data) setStatusMap(data);
+    }).catch(() => {}).finally(() => setStatusLoaded(true));
+  }, [projectId]);
+
+  const getTemplateStatus = (tpl: typeof templates[0]): string => {
+    // 数据库状态未加载完，显示加载中
+    if (!statusLoaded || initialLoading) return "加载中";
+    const stored = statusMap[tpl.id];
+    if (stored) return stored.status;
+    // 数据库没有记录时，根据数据计算初始状态
+    if (tpl.needs.includes("files") && files.length === 0) return "数据不足";
+    if (tpl.needs.includes("testCases") && testCases.length === 0) return "数据不足";
+    return "待生成";
+  };
+
+  const isReady = (needs: string[]) => {
+    if (initialLoading) return false;
+    if (needs.includes("files") && files.length === 0) return false;
+    if (needs.includes("testCases") && testCases.length === 0) return false;
+    return true;
+  };
+
+  const handleGenerateClick = (id: string) => {
+    if (statusMap[id]?.status === "已生成") {
+      setReGenerateId(id);
+      return;
+    }
+    handleGenerate(id);
+  };
+
+  const handleGenerate = async (id: string) => {
+    setGenerating(id);
+    const tpl = templates.find((t) => t.id === id);
+
+    // 立即设置状态为「生成中」
+    await docGenApi.updateStatus(projectId, id, "生成中");
+    setStatusMap((prev) => ({ ...prev, [id]: { status: "生成中", generatedAt: null } }));
+
+    toast.info(`「${tpl?.name || ""}」文档生成已启动，完成后会在通知列表中提醒`);
+    try {
+      // 1. 调用后端 AI 接口，传入模板 ID
+      const task = await aiApi.generateDocs(projectId, id);
+
+      // 2. 轮询任务完成
+      let success = false;
+      for (let i = 0; i < 360; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        try {
+          const tasks = await aiApi.listTasks(projectId);
+          const t = tasks.find((tt) => tt.id === task.id);
+          if (t && (t.status === "成功" || t.status === "失败")) {
+            success = t.status === "成功";
+            break;
+          }
+        } catch { /* retry */ }
+      }
+
+      // 3. 更新数据库状态
+      if (success) {
+        await docGenApi.updateStatus(projectId, id, "已生成");
+        setStatusMap((prev) => ({ ...prev, [id]: { status: "已生成", generatedAt: new Date().toISOString() } }));
+        toast.success(`「${tpl?.name || ""}」文档生成完成，可点击查看或下载`);
+      } else {
+        // 失败时恢复为待生成
+        await docGenApi.updateStatus(projectId, id, "待生成");
+        setStatusMap((prev) => ({ ...prev, [id]: { status: "待生成", generatedAt: null } }));
+        toast.error(`「${tpl?.name || ""}」文档生成失败，请检查模型配置后重试`);
+      }
+    } catch (err) {
+      // 异常时也恢复为待生成
+      await docGenApi.updateStatus(projectId, id, "待生成").catch(() => {});
+      setStatusMap((prev) => ({ ...prev, [id]: { status: "待生成", generatedAt: null } }));
+      const msg = err instanceof Error ? err.message : "文档生成失败";
+      toast.error(msg);
+    } finally {
+      setGenerating(null);
+    }
+  };
+
+  const handlePreview = useCallback(async (id: string) => {
+    if (statusMap[id]?.status !== "已生成") { toast.warning("该文档尚未生成，请先点击「生成」"); return; }
+    const tpl = templates.find((t) => t.id === id);
+    setPreviewId(id);
+    setPreviewLoading(true);
+    try {
+      // 尝试从后端获取已生成的文档
+      const response = await fetch(`/api/projects/${projectId}/ai/tasks`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+      });
+      if (response.ok) {
+        const tasks = await response.json();
+        const docTask = tasks.find((t: any) => t.type === "文档生成" && t.status === "成功" && t.result);
+        if (docTask && docTask.result) {
+          const docData = JSON.parse(docTask.result);
+          if (docData.content && previewRef.current) {
+            // 创建简单的 HTML 文档用于预览
+            const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:"宋体",serif;padding:20px;line-height:1.8;}h1{font-size:20px;border-bottom:2px solid #333;padding-bottom:8px;}h2{font-size:16px;margin-top:20px;}table{border-collapse:collapse;width:100%;margin:10px 0;}th,td{border:1px solid #ccc;padding:6px 10px;text-align:left;}th{background:#f5f5f5;}</style></head><body>${docData.content.replace(/\n/g, "<br>")}</body></html>`;
+            const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+            previewRef.current.innerHTML = "";
+            // 使用 iframe 预览 HTML 内容
+            const iframe = document.createElement("iframe");
+            iframe.style.width = "100%";
+            iframe.style.height = "100%";
+            iframe.style.border = "none";
+            iframe.src = URL.createObjectURL(blob);
+            previewRef.current.appendChild(iframe);
+            setPreviewLoading(false);
+            return;
+          }
+        }
+      }
+      // 后端无数据时显示提示
+      if (previewRef.current) {
+        previewRef.current.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#94a3b8;"><p style="font-size:16px;margin-bottom:8px;">「${tpl?.name || ""}」文档预览</p><p style="font-size:13px;">文档已生成，可点击下方「下载」按钮获取 Word 文件</p></div>`;
+      }
+    } catch {
+      if (previewRef.current) {
+        previewRef.current.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#94a3b8;"><p style="font-size:16px;margin-bottom:8px;">「${tpl?.name || ""}」文档预览</p><p style="font-size:13px;">文档已生成，可点击下方「下载」按钮获取 Word 文件</p></div>`;
+      }
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [statusMap, projectId]);
+
+  const handleDownload = (id: string) => {
+    if (statusMap[id]?.status !== "已生成") { toast.warning("该文档尚未生成，请先点击「生成」"); return; }
+    const tpl = templates.find((t) => t.id === id);
+    toast.success(`正在下载「${tpl?.name || id}」`);
+  };
+
+  const handleBatchDownload = () => {
+    const doneIds = [...selectedIds].filter((id) => statusMap[id]?.status === "已生成");
+    if (doneIds.length === 0) { toast.warning("所选模板暂无可下载的文档，请先生成"); return; }
+    doneIds.forEach((id) => {
+      const tpl = templates.find((t) => t.id === id);
+      toast.success(`正在下载「${tpl?.name || id}」`);
+    });
+    toast.success(`批量下载完成，共 ${doneIds.length} 个文档`);
+  };
+
+  const [showBatchReGenConfirm, setShowBatchReGenConfirm] = useState(false);
+
+  const handleBatchGenerate = async () => {
+    // 检查是否有已生成的模板需要重新生成
+    const alreadyDone = [...selectedIds].filter((id) => statusMap[id]?.status === "已生成");
+    if (alreadyDone.length > 0) {
+      setShowBatchReGenConfirm(true);
+      return;
+    }
+    await doBatchGenerate();
+  };
+
+  const doBatchGenerate = async () => {
+    const readyIds = [...selectedIds].filter((id) => {
+      const tpl = templates.find((t) => t.id === id);
+      return tpl && isReady(tpl.needs);
+    });
+    if (readyIds.length === 0) { toast.warning("所选模板无可用数据"); return; }
+
+    toast.info(`批量生成已启动（${readyIds.length} 个），完成后会在通知列表中提醒`);
+    try {
+      // 逐个模板调用 AI 生成
+      for (const id of readyIds) {
+        const task = await aiApi.generateDocs(projectId, id);
+        // 等待任务完成
+        let success = false;
+        for (let i = 0; i < 360; i++) {
+          await new Promise((r) => setTimeout(r, 1000));
+          try {
+            const tasks = await aiApi.listTasks(projectId);
+            const t = tasks.find((tt) => tt.id === task.id);
+            if (t && (t.status === "成功" || t.status === "失败")) {
+              success = t.status === "成功";
+              break;
+            }
+          } catch {}
+        }
+        if (success) {
+          await docGenApi.updateStatus(projectId, id, "已生成");
+          setStatusMap((prev) => ({ ...prev, [id]: { status: "已生成", generatedAt: new Date().toISOString() } }));
+        }
+      }
+      toast.success(`批量生成完成，共 ${readyIds.length} 个文档`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "文档生成失败");
+    }
+    setSelectedIds(new Set());
+  };
+
+  const allSelected = selectedIds.size === templates.length;
+  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(templates.map((t) => t.id)));
+  const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="文档生成" description="选择文档模板，系统将根据项目数据自动生成 Word 文档。" actions={<span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{templates.length}</strong> 个模板</span>} />
+      <SectionHeader title="文档生成" description="选择文档模板，系统将根据项目数据自动生成 Word 文档。" actions={<>
+        <div style={{ display: "flex", gap: 8 }}>
+          {selectedIds.size > 0 && <button className="primary-button" type="button" onClick={handleBatchGenerate} disabled={!!generating}><WandSparkles size={13} /> 批量生成（{selectedIds.size}）</button>}
+          {selectedIds.size > 0 && <button className="primary-button" type="button" onClick={handleBatchDownload}><Download size={13} /> 批量下载（{selectedIds.size}）</button>}
+        </div>
+      </>} />
       <section className="work-panel">
         <DataTable rows={templates} getRowKey={(r) => r.id} columns={[
+          { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
           { key: "name", label: "模板名称", render: (r) => r.name },
           { key: "desc", label: "说明", render: (r) => r.desc },
           { key: "needs", label: "前置数据", render: (r) => r.needs.map((n) => n === "files" ? "文档" : "用例").join("、") },
           { key: "status", label: "状态", align: "center", render: (r) => {
-            const ready = isReady(r.needs);
-            const done = generated.has(r.id);
-            if (done) return <StatusPill tone="green">已生成</StatusPill>;
-            if (!ready) return <StatusPill tone="amber">数据不足</StatusPill>;
+            const st = getTemplateStatus(r);
+            if (st === "已生成") return <StatusPill tone="green">已生成</StatusPill>;
+            if (st === "生成中") return <StatusPill tone="blue">生成中</StatusPill>;
+            if (st === "数据不足") return <StatusPill tone="amber">数据不足</StatusPill>;
+            if (st === "加载中") return <StatusPill tone="slate">加载中</StatusPill>;
             return <StatusPill tone="slate">待生成</StatusPill>;
           }},
-          { key: "time", label: "生成时间", width: "160px", align: "center", render: (r) => <span style={{ display: "inline-block", width: 160 }}>{generated.has(r.id) ? formatTime(new Date().toISOString()) : "-"}</span> },
-          { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => {
+          { key: "time", label: "生成时间", width: "160px", align: "center", render: (r) => <span style={{ display: "inline-block", width: 160 }}>{statusMap[r.id]?.generatedAt ? formatTime(statusMap[r.id].generatedAt!) : "-"}</span> },
+          { key: "actions", label: "操作", width: "160px", sticky: "right" as const, align: "center", render: (r) => {
             const ready = isReady(r.needs);
-            const done = generated.has(r.id);
+            const done = statusMap[r.id]?.status === "已生成";
             return (
               <div className="inline-actions">
-                <button className="text-button" type="button" onClick={() => handleGenerate(r.id)} disabled={generating === r.id || !ready}>
-                  {generating === r.id ? "生成中..." : "生成"}
+                <button className="text-button" type="button" onClick={() => handleGenerateClick(r.id)} disabled={!!generating || !ready}>
+                  生成
                 </button>
-                <button className="text-button" type="button" onClick={() => {
-                  if (!done) { toast.warning("请先生成文档"); return; }
-                  toast.success("下载最终文档");
-                }}>最终文档</button>
+                <button className="text-button" type="button" onClick={() => handlePreview(r.id)}>查看</button>
+                <button className="text-button" type="button" onClick={() => handleDownload(r.id)}>下载</button>
               </div>
             );
           }},
         ]} />
       </section>
+
+      {/* 文档预览弹窗 */}
+      <Modal
+        open={!!previewId}
+        onClose={() => { setPreviewId(null); if (previewRef.current) previewRef.current.innerHTML = ""; }}
+        title={previewId ? `预览 - ${templates.find((t) => t.id === previewId)?.name || ""}` : "文档预览"}
+        width={1100}
+        height="90vh"
+        footer={<>
+          <button className="ghost-button" type="button" onClick={() => { setPreviewId(null); if (previewRef.current) previewRef.current.innerHTML = ""; }}>关闭</button>
+          <button className="primary-button" type="button" onClick={() => { if (previewId) handleDownload(previewId); }}><Download size={13} /> 下载</button>
+        </>}
+      >
+        <div style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+          {previewLoading && (
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: "40px" }}>
+              <Loader2 size={24} className="animate-spin" style={{ marginRight: 8 }} />
+              <span>加载文档中...</span>
+            </div>
+          )}
+          <div ref={previewRef} style={{ flex: 1, overflow: "auto", background: "#fff", borderRadius: 8, padding: 16 }} />
+        </div>
+      </Modal>
+
+      {/* 重新生成确认弹窗 */}
+      <ConfirmDialog
+        open={!!reGenerateId}
+        title="重新生成文档"
+        message={`「${reGenerateId ? templates.find((t) => t.id === reGenerateId)?.name : ""}」已生成过，再次生成将覆盖之前的数据，是否继续？`}
+        confirmLabel="继续生成"
+        confirmLoading={!!generating}
+        onConfirm={() => { const id = reGenerateId!; setReGenerateId(null); handleGenerate(id); }}
+        onCancel={() => setReGenerateId(null)}
+      />
+
+      {/* 批量重新生成确认弹窗 */}
+      <ConfirmDialog
+        open={showBatchReGenConfirm}
+        title="批量重新生成"
+        message={`所选模板中包含已生成的文档，再次生成将覆盖之前的数据，是否继续？`}
+        confirmLabel="继续生成"
+        confirmLoading={!!generating}
+        onConfirm={() => { setShowBatchReGenConfirm(false); doBatchGenerate(); }}
+        onCancel={() => setShowBatchReGenConfirm(false)}
+      />
     </div>
   );
 }

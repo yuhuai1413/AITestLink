@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -7,6 +7,7 @@ import {
 import { useStore } from "../../app/store";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { ChartTooltip } from "../../shared/components/ChartTooltip";
+import { projectsApi, requirementsApi, testPointsApi, testCasesApi } from "../../api/client";
 import {
   FolderOpen, FileText, ShieldCheck, ArrowRight, Bot,
 } from "lucide-react";
@@ -97,8 +98,50 @@ function Legend({ data }: { data: ChartDataItem[] }) {
 }
 
 export function DashboardPage() {
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const navigate = useNavigate();
+  const loaded = useRef(false);
+
+  // 每次进入仪表盘时从 API 刷新数据
+  useEffect(() => {
+    loaded.current = false;
+    const refresh = async () => {
+      try {
+        const projects = await projectsApi.list();
+        if (!projects || !Array.isArray(projects)) return;
+
+        // 清空旧数据再写入，避免重复
+        dispatch({ type: "SET_PROJECTS", payload: projects as any });
+
+        const loadByProject = async <T,>(loader: (id: string) => Promise<T[]>): Promise<T[]> => {
+          const results = await Promise.allSettled(projects.map((p) => loader(p.id)));
+          const items: T[] = [];
+          for (const r of results) {
+            if (r.status === "fulfilled" && Array.isArray(r.value)) items.push(...r.value);
+          }
+          return items;
+        };
+
+        const [reqs, tps, tcs] = await Promise.all([
+          loadByProject((id) => requirementsApi.list(id)),
+          loadByProject((id) => testPointsApi.list(id)),
+          loadByProject((id) => testCasesApi.list(id)),
+        ]);
+
+        // 先清空再写入
+        dispatch({ type: "CLEAR_REQUIREMENTS", payload: "__ALL__" });
+        dispatch({ type: "CLEAR_TEST_POINTS", payload: "__ALL__" });
+        dispatch({ type: "CLEAR_TEST_CASES", payload: "__ALL__" });
+
+        reqs.forEach((r: any) => dispatch({ type: "ADD_REQUIREMENT", payload: r }));
+        tps.forEach((tp: any) => dispatch({ type: "ADD_TEST_POINT", payload: tp }));
+        tcs.forEach((tc: any) => dispatch({ type: "ADD_TEST_CASE", payload: tc }));
+
+        loaded.current = true;
+      } catch { /* 静默失败 */ }
+    };
+    refresh();
+  }, [dispatch]);
 
   const stats = useMemo<DashboardStats>(() => {
     const cases = state.testCases;

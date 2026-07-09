@@ -6,11 +6,12 @@ interface ModalProps {
   onClose: () => void;
   title: string;
   children: ReactNode;
+  footer?: ReactNode;
   width?: number;
   height?: string;
 }
 
-export function Modal({ open, onClose, title, children, width = 520, height }: ModalProps) {
+export function Modal({ open, onClose, title, children, footer, width = 520, height }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
   // ESC key support
@@ -57,6 +58,7 @@ export function Modal({ open, onClose, title, children, width = 520, height }: M
           </button>
         </div>
         <div className="modal-dialog__body">{children}</div>
+        {footer && <div className="modal-dialog__footer">{footer}</div>}
       </div>
     </div>
   );

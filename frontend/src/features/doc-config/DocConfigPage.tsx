@@ -331,26 +331,7 @@ export function DocConfigPage() {
         title={`预览模板 - ${previewConfig?.name}`}
         width={1100}
         height="90vh"
-      >
-        <div style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          {previewLoading && (
-            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: "40px" }}>
-              <Loader2 size={24} className="animate-spin" style={{ marginRight: 8 }} />
-              <span>加载文档中...</span>
-            </div>
-          )}
-          <div
-            ref={previewRef}
-            style={{
-              flex: 1,
-              overflow: "auto",
-              background: "#fff",
-              borderRadius: 8,
-              padding: 16,
-            }}
-          />
-        </div>
-        <div className="form-actions" style={{ marginTop: 12 }}>
+        footer={<>
           <button
             className="ghost-button"
             type="button"
@@ -367,6 +348,25 @@ export function DocConfigPage() {
               <Download size={16} /> 下载模板
             </button>
           )}
+        </>}
+      >
+        <div style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+          {previewLoading && (
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: "40px" }}>
+              <Loader2 size={24} className="animate-spin" style={{ marginRight: 8 }} />
+              <span>加载文档中...</span>
+            </div>
+          )}
+          <div
+            ref={previewRef}
+            style={{
+              flex: 1,
+              overflow: "auto",
+              background: "#fff",
+              borderRadius: 8,
+              padding: 16,
+            }}
+          />
         </div>
       </Modal>
 

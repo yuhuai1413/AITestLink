@@ -99,6 +99,7 @@ type Action =
   | { type: "ADD_SCRIPTS"; payload: AutomationScript[] }
   | { type: "UPDATE_SCRIPT"; payload: AutomationScript }
   | { type: "DELETE_SCRIPT"; payload: string }
+  | { type: "CLEAR_SCRIPTS"; payload: string }
   | { type: "ADD_NOTIFICATION"; payload: AppNotification }
   | { type: "MARK_NOTIFICATION_READ"; payload: string }
   | { type: "MARK_ALL_NOTIFICATIONS_READ" }
@@ -292,6 +293,12 @@ export function reducer(state: AppState, action: Action): AppState {
         scripts: state.scripts.filter((s) => s.id !== action.payload),
       };
 
+    case "CLEAR_SCRIPTS":
+      return {
+        ...state,
+        scripts: state.scripts.filter((s) => s.projectId !== action.payload),
+      };
+
     case "ADD_NOTIFICATION":
       return {
         ...state,
@@ -315,19 +322,19 @@ export function reducer(state: AppState, action: Action): AppState {
     case "CLEAR_REQUIREMENTS":
       return {
         ...state,
-        requirements: state.requirements.filter((r) => r.projectId !== action.payload),
+        requirements: action.payload === "__ALL__" ? [] : state.requirements.filter((r) => r.projectId !== action.payload),
       };
 
     case "CLEAR_TEST_POINTS":
       return {
         ...state,
-        testPoints: state.testPoints.filter((tp) => tp.projectId !== action.payload),
+        testPoints: action.payload === "__ALL__" ? [] : state.testPoints.filter((tp) => tp.projectId !== action.payload),
       };
 
     case "CLEAR_TEST_CASES":
       return {
         ...state,
-        testCases: state.testCases.filter((tc) => tc.projectId !== action.payload),
+        testCases: action.payload === "__ALL__" ? [] : state.testCases.filter((tc) => tc.projectId !== action.payload),
       };
 
     case "CLEAR_NOTIFICATIONS":

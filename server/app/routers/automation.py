@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.automation_script import AutomationScript
 from app.models.test_case import TestCase
+from app.routers.ai import _to_eng_abbr
 from app.routers.auth import get_current_user
 from app.services.ai_service import AIService
 from app.utils import model_to_dict
@@ -18,36 +19,11 @@ router = APIRouter()
 ai_service = AIService()
 
 
-# 脚本编号前缀映射（与用例编号共用模块缩写表）
-_SCRIPT_MODULE_ABBR = {
-    "用户管理": "USER", "登录": "LOGIN", "权限": "PERM",
-    "角色": "ROLE", "菜单": "MENU", "部门": "DEPT",
-    "客户管理": "CUST", "客户": "CUST", "订单": "ORDER",
-    "商品": "GOODS", "产品": "PROD", "库存": "STOCK",
-    "审批": "APPROVE", "通知": "NOTIF", "消息": "MSG",
-    "报表": "REPORT", "统计": "STAT", "日志": "LOG",
-    "设置": "SETTING", "配置": "CONFIG", "系统": "SYS",
-    "文件": "FILE", "文档": "DOC", "模板": "TPL",
-    "搜索": "SEARCH", "筛选": "FILT", "导入": "IMPORT",
-    "导出": "EXPORT", "上传": "UPLOAD", "下载": "DL",
-    "编辑": "EDIT", "删除": "DEL", "新增": "ADD",
-    "详情": "DETAIL", "列表": "LIST", "弹窗": "DLG",
-    "表单": "FORM", "表格": "TABLE", "分页": "PAGE",
-    "导航": "NAV", "首页": "HOME", "仪表盘": "DASH",
-    "数据汇总": "SUMMARY", "测试": "TEST", "缺陷": "BUG",
-    "需求": "REQ", "脚本": "SCRIPT", "用例": "CASE",
-    "执行": "EXEC", "评审": "REVIEW", "生成": "GEN",
-    "接口": "API", "性能": "PERF", "安全": "SEC",
-    "兼容": "COMPAT", "回归": "REG", "冒烟": "SMOKE",
-    "核心": "CORE", "基础": "BASE", "公共": "COMMON",
-    "个人": "PERSONAL", "账号": "ACCOUNT", "密码": "PWD",
-}
-
 
 def _script_code_for_tc(tc, counter: int) -> str:
     """根据测试用例生成脚本编号，格式 SC_XXX_NNN"""
     module = getattr(tc, "module", "") or ""
-    abbr = _SCRIPT_MODULE_ABBR.get(module, "MOD")
+    abbr = _to_eng_abbr(module)
     return f"SC_{abbr}_{counter:03d}"
 
 
@@ -137,10 +113,16 @@ async def generate_scripts(
     if not test_cases:
         raise HTTPException(status_code=400, detail="没有适合自动化的测试用例")
 
+    # 检查模型配置
+    from app.services.ai_service import check_config_for_task
+    config_check = await check_config_for_task("脚本生成", user["sub"])
+    if not config_check["configured"]:
+        raise HTTPException(status_code=400, detail=config_check["message"])
+
     # 删除该脚本项目已有的脚本，避免重复生成
     from sqlalchemy import delete
     await db.execute(delete(AutomationScript).where(AutomationScript.project_id == project_id))
-    await db.flush()
+    await db.commit()
 
     # 构建测试用例文本
     tc_text = "\n".join(

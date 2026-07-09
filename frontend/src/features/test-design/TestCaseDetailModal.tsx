@@ -56,6 +56,10 @@ export function TestCaseDetailModal({ open, testCase, onClose }: TestCaseDetailM
           <StatusPill tone={priorityTone(testCase.priority)}>{testCase.priority}</StatusPill>
         </div>
         <div className="detail-row">
+          <span className="detail-label">测试类型</span>
+          <span>{testCase.testType || "功能测试"}</span>
+        </div>
+        <div className="detail-row">
           <span className="detail-label">评审状态</span>
           <StatusPill tone={reviewTone(testCase.reviewStatus)}>{testCase.reviewStatus}</StatusPill>
         </div>

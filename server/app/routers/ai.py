@@ -25,8 +25,24 @@ logger = logging.getLogger(__name__)
 
 def _friendly_error(err: Exception, task_type: str = "") -> str:
     """将后端异常转换为中文用户友好提示"""
+    import httpx as _httpx
     msg = str(err)
-    # httpx HTTPStatusError: 检查 status_code 属性
+
+    # ── 按异常类型匹配（优先级最高，str() 可能为空） ──
+    if isinstance(err, _httpx.TimeoutException):
+        return "模型服务响应超时，请检查网络连接后重试"
+    if isinstance(err, _httpx.ConnectError):
+        return "无法连接到模型服务，请检查网络连接或模型配置中的 API 地址"
+    if isinstance(err, _httpx.ConnectTimeout):
+        return "模型服务连接超时，请检查网络连接或模型配置中的 API 地址"
+    if isinstance(err, _httpx.ReadTimeout):
+        return "模型服务响应超时，请稍后重试（模型生成内容较多时可能需要更长时间）"
+    if isinstance(err, _httpx.WriteTimeout):
+        return "模型服务发送数据超时，请稍后重试"
+    if isinstance(err, _httpx.PoolTimeout):
+        return "模型服务连接池超时，请稍后重试"
+
+    # ── httpx HTTPStatusError: 检查 status_code 属性 ──
     status_code = getattr(err, "response", None)
     if status_code is not None:
         code = getattr(status_code, "status_code", 0)
@@ -40,7 +56,8 @@ def _friendly_error(err: Exception, task_type: str = "") -> str:
             return "模型服务请求过于频繁（限流），请稍后重试"
         if code >= 500:
             return "模型服务暂时不可用，请稍后重试"
-    # HTTP 状态码错误（字符串匹配兜底）
+
+    # ── 字符串匹配兜底 ──
     if "404" in msg or "Not Found" in msg:
         return "模型服务地址不可用（404），请在模型配置中检查 API 地址是否正确"
     if "401" in msg or "Unauthorized" in msg or "403" in msg or "Forbidden" in msg:
@@ -59,14 +76,16 @@ def _friendly_error(err: Exception, task_type: str = "") -> str:
         return "模型返回的数据格式异常，无法解析，请稍后重试"
     if "KeyError" in msg:
         return "模型返回数据结构异常，请稍后重试"
-    # AI 配置相关
+
+    # ── AI 配置相关 ──
     if "配置不存在" in msg or "模型配置" in msg:
-        return msg  # 已经是中文了
+        return msg
     if "请先" in msg:
         return msg
-    # 默认兜底：根据任务类型显示对应提示
+
+    # ── 默认兜底 ──
     label = task_type or "任务"
-    return f"{label}失败：{msg[:200]}"
+    return f"{label}失败：{msg[:200]}" if msg else f"{label}失败：未知错误，请稍后重试"
 
 
 
@@ -89,30 +108,60 @@ async def _update_task_status(db: AsyncSession, task_id: str, status: str, error
 
 # 中文模块名 -> 英文缩写映射
 _MODULE_ABBR: dict[str, str] = {
-    "用户管理": "USER", "登录": "LOGIN", "权限": "PERM",
-    "角色": "ROLE", "菜单": "MENU", "部门": "DEPT",
-    "客户管理": "CUST", "客户": "CUST", "订单": "ORDER",
-    "商品": "GOODS", "产品": "PROD", "库存": "STOCK",
-    "审批": "APPROVE", "通知": "NOTIF", "消息": "MSG",
-    "报表": "REPORT", "统计": "STAT", "日志": "LOG",
-    "设置": "SETTING", "配置": "CONFIG", "系统": "SYS",
-    "文件": "FILE", "文档": "DOC", "模板": "TPL",
-    "搜索": "SEARCH", "筛选": "FILT", "导入": "IMPORT",
-    "导出": "EXPORT", "上传": "UPLOAD", "下载": "DL",
-    "编辑": "EDIT", "删除": "DEL", "新增": "ADD",
-    "详情": "DETAIL", "列表": "LIST", "弹窗": "DLG",
-    "表单": "FORM", "表格": "TABLE", "分页": "PAGE",
-    "导航": "NAV", "首页": "HOME", "仪表盘": "DASH",
-    "数据汇总": "SUMMARY", "测试": "TEST", "缺陷": "BUG",
-    "需求": "REQ", "脚本": "SCRIPT", "用例": "CASE",
-    "执行": "EXEC", "评审": "REVIEW", "生成": "GEN",
-    "接口": "API", "性能": "PERF", "安全": "SEC",
-    "兼容": "COMPAT", "回归": "REG", "冒烟": "SMOKE",
-    "核心": "CORE", "基础": "BASE", "公共": "COMMON",
-    "个人": "PERSONAL", "账号": "ACCOUNT", "密码": "PWD",
-    "头像": "AVATAR", "邮箱": "EMAIL", "手机": "PHONE",
-    "短信": "SMS", "验证码": "CODE", "注册": "REG",
-    "忘记密码": "FORGOT", "退出": "LOGOUT", "切换": "SWITCH",
+    # 用户与权限
+    "用户管理": "USER", "用户": "USER", "登录": "LOGIN", "注销": "LOGOUT",
+    "注册": "SIGNUP", "权限": "PERM", "角色": "ROLE", "账号": "ACCOUNT",
+    "密码": "PWD", "忘记密码": "FORGOT", "退出": "LOGOUT", "切换": "SWITCH",
+    "个人": "PERSONAL", "头像": "AVATAR", "邮箱": "EMAIL", "手机": "PHONE",
+    "短信": "SMS", "验证码": "CODE", "实名": "VERIFY", "认证": "AUTH",
+    # 组织架构
+    "部门": "DEPT", "组织": "ORG", "公司": "COMP", "团队": "TEAM",
+    "员工": "STAFF", "职位": "POSITION", "职级": "LEVEL",
+    # 客户与销售
+    "客户管理": "CUST", "客户": "CUST", "线索": "LEAD", "商机": "OPP",
+    "合同": "CONTRACT", "报价": "QUOTE", "销售": "SALES", "回款": "PAYMENT",
+    # 订单与交易
+    "订单": "ORDER", "交易": "TRADE", "支付": "PAY", "退款": "REFUND",
+    "购物车": "CART", "结算": "CHECKOUT",
+    # 商品与库存
+    "商品": "GOODS", "产品": "PROD", "库存": "STOCK", "SKU": "SKU",
+    "分类": "CATEGORY", "品牌": "BRAND", "供应商": "SUPPLIER",
+    "采购": "PURCHASE", "入库": "INBOUND", "出库": "OUTBOUND",
+    "盘点": "INVENTORY",
+    # 财务
+    "财务": "FINANCE", "发票": "INVOICE", "报销": "REIMBURSE",
+    "预算": "BUDGET", "账单": "BILL", "对账": "RECONCILE",
+    # 审批与流程
+    "审批": "APPROVE", "流程": "FLOW", "工作流": "WORKFLOW",
+    "请假": "LEAVE", "考勤": "ATTEND", "打卡": "CHECKIN",
+    # 通知与消息
+    "通知": "NOTIF", "消息": "MSG", "公告": "ANNOUNCE", "提醒": "REMIND",
+    # 报表与统计
+    "报表": "REPORT", "统计": "STAT", "分析": "ANALYSIS", "图表": "CHART",
+    "仪表盘": "DASH", "数据汇总": "SUMMARY", "导出": "EXPORT", "导入": "IMPORT",
+    # 文档与文件
+    "文件": "FILE", "文档": "DOC", "模板": "TPL", "附件": "ATTACH",
+    "上传": "UPLOAD", "下载": "DL", "预览": "PREVIEW",
+    # 系统与配置
+    "系统": "SYS", "设置": "SETTING", "配置": "CONFIG", "参数": "PARAM",
+    "字典": "DICT", "日志": "LOG", "操作日志": "OPLOG", "登录日志": "LOGINLOG",
+    # 搜索与筛选
+    "搜索": "SEARCH", "筛选": "FILT", "排序": "SORT",
+    # UI 组件
+    "表格": "TABLE", "表单": "FORM", "弹窗": "DLG", "分页": "PAGE",
+    "列表": "LIST", "详情": "DETAIL", "编辑": "EDIT", "新增": "ADD",
+    "删除": "DEL", "导航": "NAV", "首页": "HOME", "面包屑": "BREADCRUMB",
+    # 测试相关
+    "测试": "TEST", "缺陷": "BUG", "需求": "REQ", "脚本": "SCRIPT",
+    "用例": "CASE", "执行": "EXEC", "评审": "REVIEW", "生成": "GEN",
+    "回归": "REG", "冒烟": "SMOKE", "接口": "API", "性能": "PERF",
+    "安全": "SEC", "兼容": "COMPAT", "自动化": "AUTO",
+    # 通用
+    "核心": "CORE", "基础": "BASE", "公共": "COMMON", "通用": "COMMON",
+    "状态": "STATUS", "类型": "TYPE", "标签": "TAG", "分类管理": "CATMGR",
+    "版本": "VERSION", "发布": "RELEASE", "部署": "DEPLOY",
+    "缓存": "CACHE", "任务": "TASK", "调度": "SCHEDULE",
+    "字权限": "DATAPERM", "数据权限": "DATAPERM",
 }
 
 # 已使用的英文缩写，防止重复
@@ -120,12 +169,24 @@ _used_abbrs: dict[str, int] = {}
 
 
 def _to_eng_abbr(module: str) -> str:
-    """将中文模块名转为英文缩写，未知模块用 MOD_ + 编号。"""
+    """将中文模块名转为英文缩写，确保输出纯英文+数字，不含中文。"""
     if module in _MODULE_ABBR:
         return _MODULE_ABBR[module]
-    # 短模块名直接取每个字首字母（大写）
-    if len(module) <= 4:
-        return "".join(c.upper() for c in module if c.isalpha()) or "MOD"
+    # 尝试拆分组合词：如 "合同审批" → "合同"+"审批" → "CONTRACT"+"APPROVE"
+    for cn, en in _MODULE_ABBR.items():
+        if len(cn) >= 2 and cn in module:
+            # 找到子串匹配，用对应的英文缩写拼接
+            remaining = module.replace(cn, "", 1)
+            rest_abbr = _MODULE_ABBR.get(remaining, "") if remaining else ""
+            if rest_abbr:
+                return f"{en}_{rest_abbr}"
+            return en
+    # 无法匹配时，取每个汉字拼音首字母（用 Unicode 区间粗略判断）
+    # 退而求其次：取模块名中每个非中文字符的大写
+    ascii_chars = [c.upper() for c in module if c.isascii() and c.isalpha()]
+    if ascii_chars:
+        return "".join(ascii_chars[:4])
+    # 全是中文且无匹配，用 MOD + 序号避免重复
     return "MOD"
 
 
@@ -206,7 +267,7 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
             # 删除旧需求，避免重复追加
             from sqlalchemy import delete
             await db.execute(delete(Requirement).where(Requirement.project_id == project_id))
-            await db.flush()
+            await db.commit()
 
             requirements = await ai_service.parse_requirements(file_content, user_id)
             logger.info(f"parse_requirements: type={type(requirements).__name__}, len={len(requirements) if isinstance(requirements, (list, dict)) else 'N/A'}")
@@ -286,7 +347,7 @@ async def run_generate_test_points(task_id: str, project_id: str, user_id: str):
             # 删除旧测试点，避免重复追加
             from sqlalchemy import delete
             await db.execute(delete(TestPoint).where(TestPoint.project_id == project_id))
-            await db.flush()
+            await db.commit()
 
             points = await ai_service.generate_test_points(req_text, user_id)
             logger.info(f"generate_test_points: type={type(points).__name__}, len={len(points) if isinstance(points, (list, dict)) else 'N/A'}")
@@ -343,7 +404,7 @@ async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
             # 删除旧测试用例，避免重复追加
             from sqlalchemy import delete
             await db.execute(delete(TestCase).where(TestCase.project_id == project_id))
-            await db.flush()
+            await db.commit()
 
             cases = await ai_service.generate_test_cases(pt_text, user_id)
             logger.info(f"generate_test_cases: type={type(cases).__name__}, len={len(cases) if isinstance(cases, (list, dict)) else 'N/A'}")
@@ -390,7 +451,8 @@ async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
 
         except Exception as e:
             logger.exception("run_generate_test_cases failed")
-            await _update_task_status(db, task_id, "失败", _friendly_error(e, "用例生成"))
+            friendly = _friendly_error(e, "用例生成")
+            await _update_task_status(db, task_id, "失败", friendly)
 
 
 # ─── 路由 ───
@@ -503,6 +565,12 @@ async def generate_test_cases(
     db: AsyncSession = Depends(get_db),
 ):
     await verify_project_owner(db, project_id, user["sub"])
+    # 检查测试点是否存在
+    tp_result = await db.execute(
+        select(TestPoint).where(TestPoint.project_id == project_id)
+    )
+    if not tp_result.scalars().first():
+        raise HTTPException(status_code=400, detail="测试点列表为空，请先在「测试点」页面生成测试点")
     # 检查配置
     config_check = await check_config_for_task("用例生成", user["sub"])
     if not config_check["configured"]:
@@ -667,29 +735,22 @@ async def execute_scripts(
 
 # ─── 文档生成 ───
 
-async def run_generate_docs(task_id: str, project_id: str, user_id: str):
+from pydantic import BaseModel as _BaseModel
+
+class GenerateDocsRequest(_BaseModel):
+    template_id: str | None = None  # tpl-plan / tpl-spec / ... None=全部
+
+
+async def run_generate_docs(task_id: str, project_id: str, user_id: str, template_id: str | None = None):
     async with async_session() as db:
         try:
             from app.models.project import Project
+            from app.models.doc_template import DocTemplate
 
             # 获取项目信息
             proj_result = await db.execute(select(Project).where(Project.id == project_id))
             project = proj_result.scalar_one_or_none()
-            
-            # 更新项目文档状态为"生成中"
-            if project:
-                old_doc_status = project.doc_status
-                project.doc_status = "生成中"
-                db.add(StatusLog(
-                    project_id=project_id,
-                    user_id=user_id,
-                    field_name="doc_status",
-                    old_value=old_doc_status,
-                    new_value="生成中",
-                    change_type="auto",
-                    reason="开始生成测试文档"
-                ))
-            
+
             project_info = f"项目名称:{project.name if project else '未知'}"
 
             # 获取需求
@@ -721,57 +782,125 @@ async def run_generate_docs(task_id: str, project_id: str, user_id: str):
                 for c in cases
             ) if cases else "暂无测试用例"
 
-            doc_result = await ai_service.generate_test_documents(
-                project_info, req_text, tp_text, tc_text, user_id
-            )
+            # 从数据库读取模板配置
+            if template_id:
+                tpl_result = await db.execute(
+                    select(DocTemplate).where(
+                        DocTemplate.config_key == template_id,
+                        DocTemplate.user_id == user_id,
+                    )
+                )
+                tpl = tpl_result.scalar_one_or_none()
+                tpl_list = [tpl] if tpl else []
+            else:
+                tpl_result = await db.execute(
+                    select(DocTemplate).where(DocTemplate.user_id == user_id)
+                )
+                tpl_list = tpl_result.scalars().all()
 
+            # 逐个模板生成
+            results = []
+            for tpl in tpl_list:
+                # 使用模板专属 prompt
+                custom_prompt = tpl.prompt_template or ""
+                if custom_prompt and custom_prompt != "test":
+                    # 将模板 prompt 作为 system_prompt，项目数据作为 user_prompt
+                    doc_result = await ai_service.generate_doc_by_template(
+                        custom_prompt, project_info, req_text, tp_text, tc_text, user_id
+                    )
+                else:
+                    # 使用默认 prompt
+                    doc_result = await ai_service.generate_test_documents(
+                        project_info, req_text, tp_text, tc_text, user_id
+                    )
+
+                # 尝试读取 Word 模板文件并合并内容
+                if tpl.template_file:
+                    template_path = os.path.join("uploads", "doc-templates", tpl.template_file)
+                    if os.path.exists(template_path):
+                        try:
+                            doc_result = _merge_docx_template(template_path, doc_result, project.name or "")
+                        except Exception as merge_err:
+                            logger.warning(f"Failed to merge docx template: {merge_err}")
+
+                results.append({
+                    "templateId": tpl.config_key,
+                    "templateName": tpl.name,
+                    **(doc_result if isinstance(doc_result, dict) else {"content": str(doc_result)}),
+                })
+
+            # 保存结果到 AITask
+            import json
             task_result = await db.execute(select(AITask).where(AITask.id == task_id))
             task = task_result.scalar_one_or_none()
             if task:
-                import json
-                task.result = json.dumps(doc_result, ensure_ascii=False) if isinstance(doc_result, dict) else str(doc_result)
-
-            # 更新项目文档状态为"已完成"
-            if project:
-                project.doc_status = "已完成"
-                db.add(StatusLog(
-                    project_id=project_id,
-                    user_id=user_id,
-                    field_name="doc_status",
-                    old_value="生成中",
-                    new_value="已完成",
-                    change_type="auto",
-                    reason="测试文档生成完成"
-                ))
+                task.result = json.dumps(results if len(results) > 1 else (results[0] if results else {}), ensure_ascii=False)
 
             await _update_task_status(db, task_id, "成功")
         except Exception as e:
             logger.exception("run_generate_docs failed")
-            # 文档生成失败，回退doc_status到"待生成"
-            try:
-                proj_result = await db.execute(select(Project).where(Project.id == project_id))
-                project = proj_result.scalar_one_or_none()
-                if project:
-                    project.doc_status = "待生成"
-                    db.add(StatusLog(
-                        project_id=project_id,
-                        user_id=user_id,
-                        field_name="doc_status",
-                        old_value="生成中",
-                        new_value="待生成",
-                        change_type="auto",
-                        reason=f"文档生成失败: {_friendly_error(e, "文档生成")[:100]}"
-                    ))
-                    await db.commit()
-            except Exception:
-                logger.exception("Failed to update doc_status on error")
             await _update_task_status(db, task_id, "失败", _friendly_error(e, "文档生成"))
+
+
+def _merge_docx_template(template_path: str, doc_result: dict, project_name: str) -> dict:
+    """读取 Word 模板，替换占位符，返回更新后的 result"""
+    try:
+        from docx import Document
+        doc = Document(template_path)
+        content = doc_result.get("content", "")
+
+        # 替换段落中的占位符
+        for para in doc.paragraphs:
+            if "[软件名称]" in para.text:
+                for run in para.runs:
+                    if "[软件名称]" in run.text:
+                        run.text = run.text.replace("[软件名称]", project_name)
+
+        # 将 AI 生成的内容追加到文档末尾
+        if content:
+            doc.add_paragraph("")
+            for line in content.split("\n"):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    if stripped.startswith("## "):
+                        doc.add_heading(stripped[3:].strip(), level=2)
+                    elif stripped.startswith("# "):
+                        doc.add_heading(stripped[2:].strip(), level=1)
+                    elif stripped.startswith("- "):
+                        doc.add_paragraph(stripped[2:].strip(), style="List Bullet")
+                    else:
+                        doc.add_paragraph(stripped)
+                except Exception:
+                    # 样式不存在时用默认样式
+                    doc.add_paragraph(stripped)
+
+        # 保存到临时路径
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
+        doc.save(tmp.name)
+        tmp.close()
+
+        # 读取为 base64 返回
+        import base64
+        with open(tmp.name, "rb") as f:
+            docx_bytes = f.read()
+        os.unlink(tmp.name)
+
+        doc_result["docxBase64"] = base64.b64encode(docx_bytes).decode()
+        doc_result["docxFileName"] = f"{project_name}-{doc_result.get('title', '文档')}.docx"
+        return doc_result
+    except Exception as e:
+        logger.warning(f"_merge_docx_template failed: {e}")
+        return doc_result
 
 
 @router.post("/projects/{project_id}/ai/generate-docs")
 async def generate_docs(
     project_id: str,
-    background_tasks: BackgroundTasks,
+    body: GenerateDocsRequest | None = None,
+    background_tasks: BackgroundTasks = None,
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -780,6 +909,8 @@ async def generate_docs(
     config_check = await check_config_for_task("文档生成", user["sub"])
     if not config_check["configured"]:
         raise HTTPException(status_code=400, detail=config_check["message"])
+
+    template_id = body.template_id if body else None
 
     task = AITask(
         id=str(uuid.uuid4()),
@@ -791,5 +922,5 @@ async def generate_docs(
     db.add(task)
     await db.commit()
 
-    background_tasks.add_task(run_generate_docs, task.id, project_id, user["sub"])
+    background_tasks.add_task(run_generate_docs, task.id, project_id, user["sub"], template_id)
     return model_to_dict(task)

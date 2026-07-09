@@ -104,6 +104,7 @@ export function TestDesignPage() {
             columns={[
               { key: "caseCode", label: "用例编号", render: (row) => row.caseCode },
               { key: "module", label: "模块", render: (row) => row.module },
+              { key: "testType", label: "测试类型", render: (row) => row.testType || "功能测试" },
               { key: "feature", label: "测试点", render: (row) => row.feature },
               { key: "title", label: "用例标题", align: "left", render: (row) => row.title },
               {

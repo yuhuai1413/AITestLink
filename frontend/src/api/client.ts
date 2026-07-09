@@ -214,8 +214,11 @@ export const aiApi = {
     request<ApiAITask>(`/projects/${projectId}/ai/generate-test-cases`, { method: "POST" }),
   reviewTestCases: (projectId: string) =>
     request<ApiAITask>(`/projects/${projectId}/ai/review-test-cases`, { method: "POST" }),
-  generateDocs: (projectId: string) =>
-    request<ApiAITask>(`/projects/${projectId}/ai/generate-docs`, { method: "POST" }),
+  generateDocs: (projectId: string, templateId?: string) =>
+    request<ApiAITask>(`/projects/${projectId}/ai/generate-docs`, {
+      method: "POST",
+      body: templateId ? JSON.stringify({ template_id: templateId }) : undefined,
+    }),
 };
 
 // ─── Model Config ───
@@ -323,4 +326,22 @@ export interface ApiStatusLog {
 
 export const statusLogsApi = {
   list: (projectId: string) => request<ApiStatusLog[]>(`/projects/${projectId}/status-logs`),
+};
+
+// ─── Doc Gen Status ───
+
+export interface ApiDocGenStatus {
+  [templateId: string]: {
+    status: string;
+    generatedAt: string | null;
+  };
+}
+
+export const docGenApi = {
+  getStatus: (projectId: string) => request<ApiDocGenStatus>(`/projects/${projectId}/doc-gen-status`),
+  updateStatus: (projectId: string, templateId: string, status: string) =>
+    request<{ ok: boolean; status: string }>(`/projects/${projectId}/doc-gen-status`, {
+      method: "PUT",
+      body: JSON.stringify({ template_id: templateId, status }),
+    }),
 };

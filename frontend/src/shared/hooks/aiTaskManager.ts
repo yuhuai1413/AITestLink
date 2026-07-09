@@ -60,7 +60,7 @@ async function pollAITask(
   taskId: string,
   signal: AbortSignal,
 ): Promise<{ success: boolean; error?: string }> {
-  for (let i = 0; i < 120; i++) {
+  for (let i = 0; i < 360; i++) {
     if (signal.aborted) return { success: false };
     await new Promise((r) => setTimeout(r, 1000));
     if (signal.aborted) return { success: false };
@@ -115,7 +115,7 @@ async function checkConfig(projectId: string, taskType: string): Promise<boolean
     const result = await aiApi.checkConfig(projectId, taskType);
     return result.configured;
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -187,6 +187,7 @@ export async function startParseRequirements(projectId: string) {
   const configured = await checkConfig(projectId, "需求解析");
   if (!configured) {
     addNotification("任务失败", "需求解析", projectId, "需求解析失败：模型未配置", `/projects/${projectId}`);
+    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "需求解析" });
     return { success: false, error: "模型未配置" };
   }
 
@@ -215,6 +216,7 @@ export async function startGenerateTestPoints(projectId: string) {
   const configured = await checkConfig(projectId, "测试点生成");
   if (!configured) {
     addNotification("任务失败", "测试点生成", projectId, "测试点生成失败：模型未配置", `/projects/${projectId}`);
+    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "测试点生成" });
     return { success: false, error: "模型未配置" };
   }
 
@@ -242,6 +244,7 @@ export async function startGenerateTestCases(projectId: string) {
   const configured = await checkConfig(projectId, "用例生成");
   if (!configured) {
     addNotification("任务失败", "用例生成", projectId, "用例生成失败：模型未配置", `/projects/${projectId}`);
+    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "用例生成" });
     return { success: false, error: "模型未配置" };
   }
 
@@ -275,6 +278,7 @@ export async function startReviewTestCases(projectId: string) {
   const configured = await checkConfig(projectId, "用例评审");
   if (!configured) {
     addNotification("任务失败", "用例评审", projectId, "用例评审失败：模型未配置", `/projects/${projectId}`);
+    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "用例评审" });
     return { success: false, error: "模型未配置" };
   }
 
