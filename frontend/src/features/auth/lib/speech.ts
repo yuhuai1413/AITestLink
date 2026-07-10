@@ -1,3 +1,5 @@
+import { TOKEN_KEY } from "../../../shared/config/storage";
+import { API_BASE } from "../../../shared/config/deploy";
 /**
  * 语音识别模块 — 基于 MiMo ASR
  * 优化：2 秒切片 + 静音即发 + 重叠处理
@@ -263,8 +265,8 @@ export class SpeechRecorder {
   private async correctText(raw: string): Promise<string> {
     if (!raw.trim() || raw.trim().length < 2) return raw;
     try {
-      const token = localStorage.getItem("token");
-      const resp = await fetch("/api/correct", {
+      const token = localStorage.getItem(TOKEN_KEY);
+      const resp = await fetch(`${API_BASE}/correct`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -300,8 +302,8 @@ export class SpeechRecorder {
       const controller = new AbortController();
       this.abortController = controller;
 
-      const token = localStorage.getItem("token");
-      const resp = await fetch("/api/recognize", {
+      const token = localStorage.getItem(TOKEN_KEY);
+      const resp = await fetch(`${API_BASE}/recognize`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

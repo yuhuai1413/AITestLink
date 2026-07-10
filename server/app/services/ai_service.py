@@ -129,16 +129,26 @@ class AIService:
                 json=payload,
             )
             logger.info(f"_call_llm: task={task_type}, status={response.status_code}")
+            if response.status_code != 200:
+                logger.error(f"_call_llm failed: task={task_type}, status={response.status_code}, body={response.text[:500]}")
             response.raise_for_status()
             data = response.json()
-            content = data["choices"][0]["message"]["content"]
+            content = data["choices"][0]["message"].get("content")
             if not content:
-                logger.warning(f"LLM returned empty content for task: {task_type}")
+                # Some models put the response in reasoning_content or other fields
+                msg = data["choices"][0]["message"]
+                logger.warning(f"LLM returned empty content for task: {task_type}, message keys: {list(msg.keys())}, full message: {str(msg)[:500]}")
+                # Try to use reasoning_content as fallback
+                content = msg.get("reasoning_content") or ""
+            logger.info(f"_call_llm: task={task_type}, content_len={len(content) if content else 0}, preview={str(content)[:100] if content else 'None'}")
             return content
 
     def _parse_json_response(self, text: str) -> list | dict:
         """Extract JSON from LLM response, handling various output formats."""
         import re
+        if not text:
+            logger.error(f"LLM returned None/empty response, type={type(text).__name__}")
+            return []
         text = text.strip()
         if not text:
             logger.error("LLM returned empty response")
@@ -230,7 +240,7 @@ class AIService:
 
 只输出 JSON 数组，不要其他内容。"""
 
-        user_prompt = f"请以资深测试工程师的视角，对以下文档内容进行专业的需求分析。\n\n注意区分需求文档和辅助文档，辅助文档中的关键测试数据（如账号、密码、部门信息等）请在待确认字段中标注。\n\n文档内容：\n\n{file_content[:3000]}"
+        user_prompt = f"请以资深测试工程师的视角，对以下文档内容进行专业的需求分析。\n\n注意区分需求文档和辅助文档，辅助文档中的关键测试数据（如账号、密码、部门信息等）请在待确认字段中标注。\n\n文档内容：\n\n{file_content[:8000]}"
 
         response = await self._call_llm(system_prompt, user_prompt, "需求解析", user_id)
         return self._parse_json_response(response)

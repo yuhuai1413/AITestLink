@@ -34,3 +34,5 @@ AITestLink_测试工作区/
 
 # 上传文件
 server/uploads/*
+frontend/vite.config.js
+frontend/vite.config.d.ts

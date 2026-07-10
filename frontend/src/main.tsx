@@ -45,7 +45,7 @@ import "./styles/global.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename="/aitestlink">
       <StoreProvider>
         <App />
       </StoreProvider>

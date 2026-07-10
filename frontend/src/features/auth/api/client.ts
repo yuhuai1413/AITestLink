@@ -1,12 +1,14 @@
 import { showAlert } from "../../../shared/utils/dialogEvents";
-const BASE_URL = "/api";
+import { API_BASE } from "../../../shared/config/deploy";
+import { TOKEN_KEY } from "../../../shared/config/storage";
+const BASE_URL = API_BASE;
 
-let authToken: string | null = localStorage.getItem("token");
+let authToken: string | null = localStorage.getItem(TOKEN_KEY);
 
 export function setToken(token: string | null) {
   authToken = token;
-  if (token) localStorage.setItem("token", token);
-  else localStorage.removeItem("token");
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
 }
 
 export function getToken(): string | null {
@@ -62,7 +64,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       if (!window.__alertShown) {
         window.__alertShown = true;
         setToken(null);
-        sessionStorage.clear();
+        sessionStorage.removeItem("aitestlink-store");
         showAlert("账号异常", msg);
       }
       throw new Error(msg);

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { AlertTriangle } from "lucide-react";
 import { onShowAlert, dismissAlert, type ShowAlertEvent } from "../utils/dialogEvents";
+import { LOGIN_URL } from "../config/deploy";
 
 export function GlobalAlert() {
   const [event, setEvent] = useState<ShowAlertEvent | null>(null);
@@ -16,7 +17,7 @@ export function GlobalAlert() {
     setEvent(null);
     dismissAlert();
     (window as any).__alertShown = false;
-    window.location.href = "/login";
+    window.location.href = LOGIN_URL;
   };
 
   const handleCancel = () => {
@@ -24,7 +25,7 @@ export function GlobalAlert() {
     setEvent(null);
     dismissAlert();
     (window as any).__alertShown = false;
-    window.location.href = "/login";
+    window.location.href = LOGIN_URL;
   };
 
   return (

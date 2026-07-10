@@ -18,6 +18,8 @@ import { toast } from "sonner";
 import { startParseRequirements, startGenerateDocs } from "../../shared/hooks/aiTaskManager";
 import type { Priority, TestCase, AutomationScript } from "../../shared/types/platform";
 import { exportManualTestCasesToExcel } from "../../shared/utils/exportExcel";
+import { TOKEN_KEY } from "../../shared/config/storage";
+import { API_BASE } from "../../shared/config/deploy";
 
 function formatTime(iso: string | undefined): string {
   if (!iso) return "-";
@@ -1695,8 +1697,8 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
     setPreviewId(id);
     setPreviewLoading(true);
     try {
-      const response = await fetch(`/api/projects/${projectId}/ai/tasks`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+      const response = await fetch(`${API_BASE}/projects/${projectId}/ai/tasks`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ""}` },
       });
       if (response.ok) {
         const tasks = await response.json();
@@ -1755,8 +1757,8 @@ function DocGenerateTab({ projectId }: { projectId: string }) {
     if (statusMap[id]?.status !== "已生成") { toast.warning("该文档尚未生成，请先点击「生成」"); return; }
     const tpl = templates.find((t) => t.id === id);
     try {
-      const response = await fetch(`/api/projects/${projectId}/ai/tasks`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+      const response = await fetch(`${API_BASE}/projects/${projectId}/ai/tasks`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ""}` },
       });
       if (!response.ok) throw new Error("获取任务失败");
       const tasks = await response.json();

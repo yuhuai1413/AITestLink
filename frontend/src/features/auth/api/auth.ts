@@ -1,4 +1,6 @@
 import { api, setToken, getToken } from "./client";
+import { TOKEN_KEY } from "../../../shared/config/storage";
+import { API_BASE } from "../../../shared/config/deploy";
 
 export async function getCaptcha() {
   return api.get<{ captcha_id: string; code: string }>("/auth/captcha");
@@ -31,7 +33,7 @@ export function logout() {
 }
 
 export function isLoggedIn(): boolean {
-  return !!localStorage.getItem("token");
+  return !!localStorage.getItem(TOKEN_KEY);
 }
 
 export async function getMe() {
@@ -46,7 +48,7 @@ export async function uploadAvatar(file: File) {
   const token = getToken();
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch("/api/auth/avatar", {
+  const res = await fetch(API_BASE + "/auth/avatar", {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,

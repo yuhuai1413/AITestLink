@@ -18,11 +18,13 @@ import { LoginPage } from "../features/auth/LoginPage";
 import { isLoggedIn } from "../features/auth/api/auth";
 import { useAPISync } from "../api/useAPISync";
 import { useStore } from "./store";
+import { BASE_PATH } from "../shared/config/deploy";
 import { initManager } from "../shared/hooks/aiTaskManager";
+import { LAST_PATH_KEY } from "../shared/config/storage";
 
-const LAST_PATH_KEY = "aitestlink-last-path";
 
-function pathnameToView(pathname: string): ViewKey {
+function pathnameToView(rawPathname: string): ViewKey {
+  const pathname = BASE_PATH ? rawPathname.replace(BASE_PATH, "") || "/" : rawPathname;
   if (pathname.startsWith("/projects")) return "projects";
   if (pathname.match(/^\/test-center\/[a-f0-9-]+/)) return "testCenter";
   if (pathname.startsWith("/test-center")) return "testCenter";
@@ -39,10 +41,11 @@ function AppShellLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const activeView = pathnameToView(location.pathname);
 
-  // 保存当前路径到 localStorage
+  // 保存当前路径到 localStorage（去掉 BASE_PATH 前缀，存储相对路径）
   useEffect(() => {
     if (location.pathname !== "/login") {
-      localStorage.setItem(LAST_PATH_KEY, location.pathname);
+      const relativePath = BASE_PATH ? location.pathname.replace(BASE_PATH, "") || "/" : location.pathname;
+      localStorage.setItem(LAST_PATH_KEY, relativePath);
     }
   }, [location.pathname]);
 
@@ -72,10 +75,15 @@ function RestorePath() {
   const [redirected, setRedirected] = useState(false);
 
   useEffect(() => {
-    if (location.pathname === "/") {
-      const lastPath = localStorage.getItem(LAST_PATH_KEY);
+    const rp = BASE_PATH ? location.pathname.replace(BASE_PATH, "") || "/" : location.pathname;
+    if (rp === "/") {
+      let lastPath = localStorage.getItem(LAST_PATH_KEY);
+      // 兼容旧数据：如果存储了含 BASE_PATH 前缀的路径，去掉前缀
+      if (lastPath && BASE_PATH && lastPath.startsWith(BASE_PATH)) {
+        lastPath = lastPath.replace(BASE_PATH, "") || "/";
+      }
       if (lastPath && lastPath !== "/" && lastPath !== "/login") {
-        window.location.replace(lastPath);
+        window.location.replace(BASE_PATH + lastPath);
         return;
       }
     }

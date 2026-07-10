@@ -8,6 +8,7 @@ import { DataTable } from "../../shared/components/DataTable";
 import { DataPanel } from "../../shared/components/DataPanel";
 import { docConfigApi, type ApiDocConfig } from "../../api/client";
 import { getMeWithAdmin } from "../auth/api/auth";
+import { TOKEN_KEY } from "../../shared/config/storage";
 
 const DOC_CATEGORY_MAP: Record<string, string> = {
   "tpl-plan": "测试计划",
@@ -108,7 +109,7 @@ export function DocConfigPage() {
     setPreviewLoading(true);
     try {
       const response = await fetch(docConfigApi.downloadUrl(config.id), {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ""}` },
       });
       if (!response.ok) throw new Error("下载失败");
       const blob = await response.blob();
@@ -137,7 +138,7 @@ export function DocConfigPage() {
     if (!config.templateFile) return;
     try {
       const response = await fetch(docConfigApi.downloadUrl(config.id), {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+        headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ""}` },
       });
       if (!response.ok) throw new Error("下载失败");
       const blob = await response.blob();

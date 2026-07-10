@@ -15,12 +15,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useNavigate } from "react-router-dom";
 import { navigationItems } from "../data/platformData";
 import { useStore, useUnreadCount } from "../../app/store";
+import { LOGIN_URL } from "../config/deploy";
 import { PersonalSettingsModal } from "../../features/personal-settings/PersonalSettingsModal";
 import { getMeWithAdmin } from "../../features/auth/api/auth";
 import type { ViewKey } from "../types/platform";
 import type { AppNotification } from "../types/platform";
 import { useNavHighlight } from "../hooks/useNavHighlight";
 import { LogoMark } from "../../features/auth/components/LogoMark";
+import { TOKEN_KEY } from "../config/storage";
 
 interface UserInfo {
   nickname: string;
@@ -359,11 +361,11 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
                     <span style={{ width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Settings size={16} /></span> 个人设置
                   </button>
                   <button className="user-menu__item user-menu__item--danger" type="button" onClick={() => {
-                    localStorage.removeItem("token");
+                    localStorage.removeItem(TOKEN_KEY);
                     localStorage.removeItem("user");
                     localStorage.removeItem("aitestlink-store");
                     setShowUserMenu(false);
-                    window.location.href = "/login";
+                    window.location.href = LOGIN_URL;
                   }} style={{ paddingLeft: 16, gap: 10 }}>
                     <span style={{ width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><LogOut size={16} /></span> 退出登录
                   </button>

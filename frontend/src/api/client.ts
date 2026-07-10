@@ -1,9 +1,9 @@
 import { showAlert } from "../shared/utils/dialogEvents";
-// 后端API地址 - 通过环境变量配置
-const API_BASE = import.meta.env.VITE_API_BASE || "/api";
+import { API_BASE } from "../shared/config/deploy";
+import { TOKEN_KEY } from "../shared/config/storage";
 
 function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem("token");
+  const token = localStorage.getItem(TOKEN_KEY);
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -26,7 +26,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       const msg = (errBody as any).detail || "登录已过期";
       if (!window.__alertShown) {
         window.__alertShown = true;
-        localStorage.removeItem("token");
+        localStorage.removeItem(TOKEN_KEY);
         showAlert("账号异常", msg);
       }
       throw new Error(msg);
@@ -273,13 +273,13 @@ export const docConfigApi = {
       method: "PUT",
       body: JSON.stringify({ configs }),
     }),
-  downloadUrl: (id: string) => "/api/doc-configs/" + id + "/download",
+  downloadUrl: (id: string) => API_BASE + "/doc-configs/" + id + "/download",
   upload: (id: string, file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    return fetch("/api/doc-configs/" + id + "/upload", {
+    return fetch(API_BASE + "/doc-configs/" + id + "/upload", {
       method: "POST",
-      headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+      headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ""}` },
       body: formData,
     }).then((r) => r.json()) as Promise<{ ok: boolean; templateFile: string }>;
   },

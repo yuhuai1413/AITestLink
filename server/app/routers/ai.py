@@ -215,8 +215,22 @@ def _read_file_content(file_obj: FileAsset) -> str:
         if ext in ("docx", "doc"):
             from docx import Document
             doc = Document(file_obj.storage_path)
-            text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-            return text[:5000]
+            parts = []
+            # 读取段落
+            for p in doc.paragraphs:
+                if p.text.strip():
+                    parts.append(p.text)
+            # 读取表格内容
+            for i, table in enumerate(doc.tables):
+                table_text = [f"[表格{i+1}]"]
+                for row in table.rows:
+                    cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                    if cells:
+                        table_text.append(" | ".join(cells))
+                if len(table_text) > 1:
+                    parts.append("\n".join(table_text))
+            text = "\n".join(parts)
+            return text[:8000]
 
         if ext in ("xlsx", "xls"):
             import openpyxl
@@ -224,25 +238,26 @@ def _read_file_content(file_obj: FileAsset) -> str:
             parts = []
             for sheet in wb.sheetnames:
                 ws = wb[sheet]
-                rows = [
-                    " | ".join(str(c) if c is not None else "" for c in row)
-                    for row in ws.iter_rows(values_only=True)
-                ]
-                rows = [r for r in rows if r.strip()]
+                rows = []
+                for row in ws.iter_rows(values_only=True):
+                    # 过滤掉空单元格，只保留有内容的单元格
+                    cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
+                    if cells:
+                        rows.append(" | ".join(cells))
                 if rows:
                     parts.append(f"Sheet: {sheet}\n" + "\n".join(rows[:100]))
             wb.close()
-            return "\n".join(parts)[:5000]
+            return "\n".join(parts)[:8000]
 
         if ext == "pdf":
             import PyPDF2
             reader = PyPDF2.PdfReader(file_obj.storage_path)
             text = "\n".join(page.extract_text() or "" for page in reader.pages[:20])
-            return text[:5000]
+            return text[:8000]
 
         if ext in ("md", "txt", "json", "yaml", "yml", "csv"):
             with open(file_obj.storage_path, "r", errors="ignore") as fh:
-                return fh.read()[:5000]
+                return fh.read()[:8000]
 
         return f"(不支持的格式: {ext})"
 
@@ -269,8 +284,9 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
             await db.execute(delete(Requirement).where(Requirement.project_id == project_id))
             await db.commit()
 
+            logger.info(f"run_parse_requirements: file_content_len={len(file_content)}, user_id={user_id}")
             requirements = await ai_service.parse_requirements(file_content, user_id)
-            logger.info(f"parse_requirements: type={type(requirements).__name__}, len={len(requirements) if isinstance(requirements, (list, dict)) else 'N/A'}")
+            logger.info(f"parse_requirements result: type={type(requirements).__name__}, len={len(requirements) if isinstance(requirements, (list, dict)) else 'N/A'}, preview={str(requirements)[:200]}")
 
             # 确保返回的是列表；如果 LLM 返回了 dict，尝试从各种常见结构中提取列表
             if isinstance(requirements, dict):
@@ -502,7 +518,15 @@ async def parse_requirements(
         return {"error": "No files found. Please upload files first."}
 
     content_parts = []
-    for f in files:
+    # 按文件类型排序：需求文档(docx)优先，辅助文档(xlsx/txt等)其次
+    def _file_priority(f):
+        ext = f.name.rsplit(".", 1)[-1].lower() if "." in f.name else ""
+        if ext in ("docx", "doc"):
+            return 0  # 需求文档优先
+        return 1  # 辅助文档其次
+
+    sorted_files = sorted(files, key=_file_priority)
+    for f in sorted_files:
         text = _read_file_content(f)
         if text:
             content_parts.append(f"[{f.name}]\n{text}")
