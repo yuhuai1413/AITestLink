@@ -1,14 +1,10 @@
-from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 
-from app.database import get_db
-from app.models.requirement import Requirement
-from app.routers.auth import get_current_user
+from app.routers.deps import get_current_user, get_document_service, get_project_service
+from app.services.document_service import DocumentService
+from app.services.project_service import ProjectService
 from app.schemas.requirement import RequirementUpdate
-from app.utils import model_to_dict
-from app.utils import verify_project_owner
 
 router = APIRouter()
 
@@ -17,13 +13,23 @@ router = APIRouter()
 async def list_requirements(
     project_id: str,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    service: DocumentService = Depends(get_document_service),
+    project_service: ProjectService = Depends(get_project_service),
 ):
-    await verify_project_owner(db, project_id, user["sub"])
-    result = await db.execute(
-        select(Requirement).where(Requirement.project_id == project_id)
-    )
-    return [model_to_dict(r) for r in result.scalars().all()]
+    await project_service._verify_project_owner(project_id, user["sub"])
+    return await service.get_requirements(project_id)
+
+
+@router.get("/projects/{project_id}/requirements/search")
+async def search_requirements(
+    project_id: str,
+    q: str,
+    user: dict = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+    project_service: ProjectService = Depends(get_project_service),
+):
+    await project_service._verify_project_owner(project_id, user["sub"])
+    return await service.search_requirements(project_id, q)
 
 
 @router.put("/requirements/{req_id}")
@@ -31,40 +37,24 @@ async def update_requirement(
     req_id: str,
     data: RequirementUpdate,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    service: DocumentService = Depends(get_document_service),
 ):
-    result = await db.execute(select(Requirement).where(Requirement.id == req_id))
-    req = result.scalar_one_or_none()
+    req = await service.update_requirement(req_id, data)
     if not req:
         raise HTTPException(status_code=404, detail="Requirement not found")
-
-    await verify_project_owner(db, req.project_id, user["sub"])
-
-    update_data = data.model_dump(exclude_unset=True)
-    field_map = {"reviewStatus": "review_status"}
-    for key, value in update_data.items():
-        db_key = field_map.get(key, key)
-        setattr(req, db_key, value)
-
-    req.updated_at = datetime.now(timezone.utc)
-    await db.commit()
-    await db.refresh(req)
-    return model_to_dict(req)
+    return req
 
 
-@router.delete("/requirements/{req_id}")
-async def delete_requirement(
-    req_id: str,
+class BatchConfirmRequest(BaseModel):
+    ids: list[str]
+    confirmed: bool
+
+
+@router.post("/requirements/batch-confirm")
+async def batch_confirm_requirements(
+    data: BatchConfirmRequest,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    service: DocumentService = Depends(get_document_service),
 ):
-    result = await db.execute(select(Requirement).where(Requirement.id == req_id))
-    req = result.scalar_one_or_none()
-    if not req:
-        raise HTTPException(status_code=404, detail="Requirement not found")
-
-    await verify_project_owner(db, req.project_id, user["sub"])
-
-    await db.delete(req)
-    await db.commit()
-    return {"ok": True}
+    count = await service.batch_confirm(data.ids, data.confirmed)
+    return {"ok": True, "updated": count}

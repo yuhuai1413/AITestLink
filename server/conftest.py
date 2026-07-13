@@ -21,6 +21,8 @@ from app.models.test_point import TestPoint
 from app.models.test_case import TestCase
 from app.models.file_asset import FileAsset
 from app.models.ai_task import AITask
+from app.models.user import User
+from app.routers.auth import create_token
 
 TEST_DATABASE_URL_ASYNC = "sqlite+aiosqlite:///:memory:"
 TEST_DATABASE_URL_SYNC = "sqlite:///:memory:"
@@ -98,14 +100,40 @@ def client(async_engine, event_loop):
     app.dependency_overrides.clear()
 
 
+@pytest.fixture()
+def auth_token(api_user):
+    """Generate a JWT token for API tests."""
+    return create_token(api_user.id, api_user.phone, api_user.nickname, api_user.is_admin)
+
+
+@pytest.fixture()
+def auth_headers(auth_token):
+    """Provide authorization headers for API tests."""
+    return {"Authorization": f"Bearer {auth_token}"}
+
+
 # ─── Sample Data (sync-based for both model and API tests) ───────────────
 
 @pytest.fixture
-def sample_project(db):
+def sample_user(db):
+    user = User(
+        id="test-user-001",
+        phone="13800138000",
+        password_hash="hashed_password",
+        nickname="测试用户"
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@pytest.fixture
+def sample_project(db, sample_user):
     project = Project(
-        id="test-project-001", name="测试项目", version="V1.0",
-        owner="张三", test_type="功能测试", status="设计中",
-        description="这是一个测试项目",
+        id="test-project-001", name="测试项目",
+        test_type="功能测试", test_status="待测试", doc_status="待解析",
+        user_id=sample_user.id, description="这是一个测试项目",
     )
     db.add(project)
     db.commit()
@@ -179,11 +207,24 @@ def _create_async_obj(event_loop, engine, obj):
 
 
 @pytest.fixture
-def api_project(async_engine, event_loop):
+def api_user(async_engine, event_loop):
+    """User in async DB for API tests."""
+    user = User(
+        id="api-user-001",
+        phone="13900139000",
+        password_hash="hashed_password",
+        nickname="API测试用户"
+    )
+    return _create_async_obj(event_loop, async_engine, user)
+
+
+@pytest.fixture
+def api_project(async_engine, api_user, event_loop):
     """Project in async DB for API tests."""
     project = Project(
-        id="api-project-001", name="API测试项目", version="V1.0",
-        owner="张三", test_type="功能测试", status="设计中",
+        id="api-project-001", name="API测试项目",
+        test_type="功能测试", test_status="待测试", doc_status="待解析",
+        user_id=api_user.id,
     )
     return _create_async_obj(event_loop, async_engine, project)
 

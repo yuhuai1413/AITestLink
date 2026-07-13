@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { storeReducer, type AppState } from "../store";
+import { reducer as storeReducer, type AppState } from "../store";
 
 // Initial state for testing reducer
 const emptyState: AppState = {

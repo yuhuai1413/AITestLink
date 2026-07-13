@@ -216,14 +216,23 @@ async def upload_template_file(
     # Ensure upload directory exists
     os.makedirs(TEMPLATE_DIR, exist_ok=True)
 
+    # 清洗文件名，防止路径遍历攻击
+    safe_filename = os.path.basename(file.filename) if file.filename else "template.docx"
+    file_path = os.path.join(TEMPLATE_DIR, safe_filename)
+
+    # 验证最终路径在 TEMPLATE_DIR 内
+    real_template_dir = os.path.realpath(TEMPLATE_DIR)
+    real_file_path = os.path.realpath(file_path)
+    if not real_file_path.startswith(real_template_dir + os.sep) and real_file_path != real_template_dir:
+        raise HTTPException(status_code=400, detail="非法文件名")
+
     # Save file
-    file_path = os.path.join(TEMPLATE_DIR, file.filename)
     content_bytes = await file.read()
     with open(file_path, "wb") as f:
         f.write(content_bytes)
 
     # Update database
-    tpl.template_file = file.filename
+    tpl.template_file = safe_filename
     await db.commit()
 
-    return {"ok": True, "templateFile": file.filename}
+    return {"ok": True, "templateFile": safe_filename}

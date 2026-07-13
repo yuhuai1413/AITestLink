@@ -87,9 +87,66 @@
   background: rgba(91, 33, 182, 0.14);
 }
 
+/* 工具栏按钮（筛选区域使用，高度与筛选框一致） */
+.toolbar-button {
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  font-weight: 600;
+  font-size: 12px;
+  gap: 6px;
+}
+
+.toolbar-primary-button {
+  color: #ffffff;
+  background: var(--blue);
+  box-shadow: 0 1px 3px rgba(91, 33, 182, 0.3);
+}
+
+.toolbar-primary-button:hover {
+  background: #4c1d95;
+}
+
+.toolbar-ghost-button {
+  color: var(--text);
+  background: rgba(91, 33, 182, 0.06);
+  border-color: transparent;
+}
+
+.toolbar-ghost-button:hover {
+  background: rgba(91, 33, 182, 0.10);
+}
+
 @media (max-width: 560px) {
   .primary-button,
   .ghost-button {
     width: 100%;
   }
+}
+
+/* 测试按钮状态 */
+.test-button {
+  width: 5em;
+  justify-content: center;
+  position: relative;
+}
+
+.test-button.testing {
+  color: var(--blue);
+  cursor: not-allowed;
+}
+
+.test-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+.test-loading svg {
+  width: 12px;
+  height: 12px;
 }

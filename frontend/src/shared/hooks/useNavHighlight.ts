@@ -14,6 +14,8 @@ export function useNavHighlight<ID extends string | number>(
   const itemsRef = useRef<Map<ID, HTMLElement>>(new Map());
   const [style, setStyle] = useState<GlassStyle>({ top: 0, height: 0, opacity: 0 });
   const rafRef = useRef<number>(0);
+  const depsRef = useRef(deps);
+  depsRef.current = deps;
 
   const register = useCallback((id: ID) => (el: HTMLElement | null) => {
     if (el) itemsRef.current.set(id, el);
@@ -50,7 +52,7 @@ export function useNavHighlight<ID extends string | number>(
     });
     rafRef.current = t1;
     return () => cancelAnimationFrame(rafRef.current);
-  }, [recalc, ...(deps ?? [])]);
+  }, [recalc]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 监听容器尺寸变化，自动重算（延迟确保布局稳定）
   useEffect(() => {

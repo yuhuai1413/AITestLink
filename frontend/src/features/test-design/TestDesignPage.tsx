@@ -5,7 +5,7 @@ import { useStore } from "../../app/store";
 import { DataTable } from "../../shared/components/DataTable";
 import { SectionHeader } from "../../shared/components/SectionHeader";
 import { StatusPill } from "../../shared/components/StatusPill";
-import { exportTestCasesToExcel } from "../../shared/utils/exportExcel";
+import { exportManualTestCasesToExcel } from "../../shared/utils/exportExcel";
 import { TestCaseEditModal } from "./TestCaseEditModal";
 import type { Priority, ReviewStatus, TestCase, TestPoint } from "../../shared/types/platform";
 
@@ -86,7 +86,7 @@ export function TestDesignPage() {
             <button
               className="ghost-button"
               type="button"
-              onClick={() => exportTestCasesToExcel(state.testCases)}
+              onClick={() => exportManualTestCasesToExcel(state.testCases)}
             >
               <Download size={13} />
               导出 Excel

@@ -43,21 +43,23 @@ class TestParseJsonResponse:
         result = self.service._parse_json_response(text)
         assert isinstance(result, list)
 
-    def test_invalid_json_raises_error(self):
-        with pytest.raises(json.JSONDecodeError):
-            self.service._parse_json_response("not valid json {{{")
+    def test_invalid_json_returns_empty_list(self):
+        """Invalid JSON should return empty list, not raise exception."""
+        result = self.service._parse_json_response("not valid json {{{")
+        assert result == []
 
-    def test_empty_code_block(self):
-        with pytest.raises(json.JSONDecodeError):
-            self.service._parse_json_response("```\n```")
+    def test_empty_code_block_returns_empty_list(self):
+        """Empty code block should return empty list, not raise exception."""
+        result = self.service._parse_json_response("```\n```")
+        assert result == []
 
 
 class TestAIServiceInit:
     def test_init_with_settings(self):
         service = AIService()
-        assert hasattr(service, "api_key")
-        assert hasattr(service, "base_url")
-        assert hasattr(service, "model")
+        # AIService no longer stores api_key/base_url/model as instance attributes
+        # It fetches config from database per-request
+        assert service is not None
 
 
 def _run_async(coro):
@@ -77,7 +79,13 @@ def _run_async(coro):
 
 
 class TestAIServiceLLMCall:
-    def test_call_llm_sends_correct_payload(self):
+    @patch("app.services.ai_service._get_config_for_task")
+    def test_call_llm_sends_correct_payload(self, mock_get_config):
+        mock_get_config.return_value = {
+            "api_key": "test-key",
+            "endpoint": "https://api.test.com/v1",
+            "model": "test-model"
+        }
         service = AIService()
 
         mock_response = MagicMock()
@@ -93,18 +101,25 @@ class TestAIServiceLLMCall:
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
         with patch("app.services.ai_service.httpx.AsyncClient", return_value=mock_client):
-            result = _run_async(service._call_llm("system prompt", "user prompt"))
+            result = _run_async(service._call_llm("system prompt", "user prompt", "需求解析", "user-1"))
 
         assert result == "test response"
         mock_client.post.assert_called_once()
 
         call_args = mock_client.post.call_args
-        assert "chat/completions" in call_args[0][0]
+        # The endpoint is the full URL (including /chat/completions if needed)
+        assert call_args[0][0] == "https://api.test.com/v1"
         assert call_args[1]["json"]["temperature"] == 0.3
-        assert call_args[1]["json"]["max_tokens"] == 4000
+        assert call_args[1]["json"]["max_tokens"] == 16000  # default max_tokens
         assert len(call_args[1]["json"]["messages"]) == 2
 
-    def test_parse_requirements_calls_llm(self):
+    @patch("app.services.ai_service._get_config_for_task")
+    def test_parse_requirements_calls_llm(self, mock_get_config):
+        mock_get_config.return_value = {
+            "api_key": "test-key",
+            "endpoint": "https://api.test.com/v1",
+            "model": "test-model"
+        }
         service = AIService()
 
         mock_response = MagicMock()
@@ -120,12 +135,18 @@ class TestAIServiceLLMCall:
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
         with patch("app.services.ai_service.httpx.AsyncClient", return_value=mock_client):
-            result = _run_async(service.parse_requirements("需求文档内容"))
+            result = _run_async(service.parse_requirements("需求文档内容", "user-1"))
 
         assert isinstance(result, list)
         assert result[0]["module"] == "M"
 
-    def test_generate_test_points_calls_llm(self):
+    @patch("app.services.ai_service._get_config_for_task")
+    def test_generate_test_points_calls_llm(self, mock_get_config):
+        mock_get_config.return_value = {
+            "api_key": "test-key",
+            "endpoint": "https://api.test.com/v1",
+            "model": "test-model"
+        }
         service = AIService()
 
         mock_response = MagicMock()
@@ -141,12 +162,18 @@ class TestAIServiceLLMCall:
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
         with patch("app.services.ai_service.httpx.AsyncClient", return_value=mock_client):
-            result = _run_async(service.generate_test_points("需求文本"))
+            result = _run_async(service.generate_test_points("需求文本", "user-1"))
 
         assert isinstance(result, list)
         assert result[0]["type"] == "正常流程"
 
-    def test_generate_test_cases_calls_llm(self):
+    @patch("app.services.ai_service._get_config_for_task")
+    def test_generate_test_cases_calls_llm(self, mock_get_config):
+        mock_get_config.return_value = {
+            "api_key": "test-key",
+            "endpoint": "https://api.test.com/v1",
+            "model": "test-model"
+        }
         service = AIService()
 
         mock_response = MagicMock()
@@ -162,13 +189,19 @@ class TestAIServiceLLMCall:
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
         with patch("app.services.ai_service.httpx.AsyncClient", return_value=mock_client):
-            result = _run_async(service.generate_test_cases("测试点文本"))
+            result = _run_async(service.generate_test_cases("测试点文本", "user-1"))
 
         assert isinstance(result, list)
         assert result[0]["caseCode"] == "TC_001"
 
-    def test_llm_timeout_raises_error(self):
+    @patch("app.services.ai_service._get_config_for_task")
+    def test_llm_timeout_raises_error(self, mock_get_config):
         import httpx
+        mock_get_config.return_value = {
+            "api_key": "test-key",
+            "endpoint": "https://api.test.com/v1",
+            "model": "test-model"
+        }
         service = AIService()
 
         mock_client = AsyncMock()
@@ -178,9 +211,15 @@ class TestAIServiceLLMCall:
 
         with patch("app.services.ai_service.httpx.AsyncClient", return_value=mock_client):
             with pytest.raises(httpx.TimeoutException):
-                _run_async(service._call_llm("sys", "usr"))
+                _run_async(service._call_llm("sys", "usr", "需求解析", "user-1"))
 
-    def test_llm_returns_invalid_json(self):
+    @patch("app.services.ai_service._get_config_for_task")
+    def test_llm_returns_invalid_json(self, mock_get_config):
+        mock_get_config.return_value = {
+            "api_key": "test-key",
+            "endpoint": "https://api.test.com/v1",
+            "model": "test-model"
+        }
         service = AIService()
 
         mock_response = MagicMock()
@@ -196,5 +235,6 @@ class TestAIServiceLLMCall:
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
         with patch("app.services.ai_service.httpx.AsyncClient", return_value=mock_client):
-            with pytest.raises(json.JSONDecodeError):
-                _run_async(service.parse_requirements("content"))
+            result = _run_async(service.parse_requirements("content", "user-1"))
+            # parse_requirements returns empty list on invalid JSON
+            assert result == []

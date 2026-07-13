@@ -1,26 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  projectsApi,
-  filesApi,
-  requirementsApi,
-  testPointsApi,
-  testCasesApi,
-  scriptsApi,
-  type ApiProject,
-  type ApiFile,
-  type ApiRequirement,
-  type ApiTestPoint,
-  type ApiTestCase,
-  type ApiScript,
-} from "../../api/client";
+import { useCallback, useEffect, useState } from "react";
+import { projectsApi } from "../../api/project.api";
+import { filesApi } from "../../api/document.api";
+import { requirementsApi } from "../../api/document.api";
+import { testPointsApi, testCasesApi } from "../../api/test-design.api";
+import { scriptsApi } from "../../api/automation.api";
+import type { Project } from "../../contracts/project";
+import type { FileAsset } from "../../contracts/document";
+import type { Requirement } from "../../contracts/document";
+import type { TestPoint, TestCase } from "../../contracts/test-design";
+import type { Script } from "../../contracts/automation";
 
 export interface ProjectData {
-  project: ApiProject | null;
-  files: ApiFile[];
-  requirements: ApiRequirement[];
-  testPoints: ApiTestPoint[];
-  testCases: ApiTestCase[];
-  scripts: ApiScript[];
+  project: Project | null;
+  files: FileAsset[];
+  requirements: Requirement[];
+  testPoints: TestPoint[];
+  testCases: TestCase[];
+  scripts: Script[];
   loading: boolean;
   initialLoading: boolean;
   refresh: () => Promise<void>;
@@ -32,12 +28,12 @@ export interface ProjectData {
 }
 
 export function useProjectData(projectId: string | undefined): ProjectData {
-  const [project, setProject] = useState<ApiProject | null>(null);
-  const [files, setFiles] = useState<ApiFile[]>([]);
-  const [requirements, setRequirements] = useState<ApiRequirement[]>([]);
-  const [testPoints, setTestPoints] = useState<ApiTestPoint[]>([]);
-  const [testCases, setTestCases] = useState<ApiTestCase[]>([]);
-  const [scripts, setScripts] = useState<ApiScript[]>([]);
+  const [project, setProject] = useState<Project | null>(null);
+  const [files, setFiles] = useState<FileAsset[]>([]);
+  const [requirements, setRequirements] = useState<Requirement[]>([]);
+  const [testPoints, setTestPoints] = useState<TestPoint[]>([]);
+  const [testCases, setTestCases] = useState<TestCase[]>([]);
+  const [scripts, setScripts] = useState<Script[]>([]);
   const [loading, setLoading] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
 
@@ -120,7 +116,7 @@ export function useProjectData(projectId: string | undefined): ProjectData {
     refresh();
   }, [refresh]);
 
-  // 监听全局数据刷新事件（删除文件等操作后触发）
+  // 监听全局数据刷新事件
   useEffect(() => {
     const handler = (e: Event) => {
       const { projectId: pid } = (e as CustomEvent).detail || {};

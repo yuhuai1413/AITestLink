@@ -229,7 +229,7 @@ export function DocConfigPage() {
                 ))}
               </select>
             </div>
-            <button className="ghost-button" type="button" onClick={resetFilters}>
+            <button className="ghost-button toolbar-button toolbar-ghost-button" type="button" onClick={resetFilters}>
               <RotateCcw size={14} />
               重置
             </button>

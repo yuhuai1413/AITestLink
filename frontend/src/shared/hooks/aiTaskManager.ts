@@ -149,6 +149,7 @@ async function runTask(
   taskType: AITaskType,
   apiCall: () => Promise<{ id: string; projectId: string; type: string; status: string; modelName: string; createdAt: string }>,
   onSuccess?: () => Promise<void>,
+  opts?: { skipStartDispatch?: boolean },
 ): Promise<{ success: boolean; error?: string }> {
   const key = makeTaskKey(projectId, taskType);
 
@@ -164,7 +165,9 @@ async function runTask(
   try {
     const task = await apiCall();
     if (_dispatch) {
-      _dispatch({ type: "START_ACTIVE_AI_TASK", payload: taskType });
+      if (!opts?.skipStartDispatch) {
+        _dispatch({ type: "START_ACTIVE_AI_TASK", payload: taskType });
+      }
       _dispatch({
         type: "ADD_AI_TASK",
         payload: {
@@ -209,8 +212,14 @@ async function runTask(
 
 export async function startParseRequirements(projectId: string) {
   try {
+    // 立即更新 UI 状态，避免用户等待验证
+    if (_dispatch) {
+      _dispatch({ type: "START_ACTIVE_AI_TASK", payload: "需求解析" });
+    }
+
     const verify = await verifyAIConfig(projectId, "需求解析");
     if (!verify.ok) {
+      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "需求解析" });
       addNotification("任务失败", "需求解析", projectId, `需求解析失败：${verify.error}`, `/projects/${projectId}`);
       return { success: false, error: verify.error };
     }
@@ -231,7 +240,7 @@ export async function startParseRequirements(projectId: string) {
           });
         });
       }
-    });
+    }, { skipStartDispatch: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "需求解析失败";
     addNotification("任务失败", "需求解析", projectId, msg, `/projects/${projectId}`);
@@ -242,8 +251,11 @@ export async function startParseRequirements(projectId: string) {
 
 export async function startGenerateTestPoints(projectId: string) {
   try {
+    if (_dispatch) _dispatch({ type: "START_ACTIVE_AI_TASK", payload: "测试点生成" });
+
     const verify = await verifyAIConfig(projectId, "测试点生成");
     if (!verify.ok) {
+      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "测试点生成" });
       addNotification("任务失败", "测试点生成", projectId, `测试点生成失败：${verify.error}`, `/projects/${projectId}`);
       return { success: false, error: verify.error };
     }
@@ -265,7 +277,7 @@ export async function startGenerateTestPoints(projectId: string) {
           });
         });
       }
-    });
+    }, { skipStartDispatch: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "测试点生成失败";
     addNotification("任务失败", "测试点生成", projectId, msg, `/projects/${projectId}`);
@@ -276,8 +288,11 @@ export async function startGenerateTestPoints(projectId: string) {
 
 export async function startGenerateTestCases(projectId: string) {
   try {
+    if (_dispatch) _dispatch({ type: "START_ACTIVE_AI_TASK", payload: "用例生成" });
+
     const verify = await verifyAIConfig(projectId, "用例生成");
     if (!verify.ok) {
+      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "用例生成" });
       addNotification("任务失败", "用例生成", projectId, `用例生成失败：${verify.error}`, `/projects/${projectId}`);
       return { success: false, error: verify.error };
     }
@@ -304,7 +319,7 @@ export async function startGenerateTestCases(projectId: string) {
           });
         });
       }
-    });
+    }, { skipStartDispatch: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "用例生成失败";
     addNotification("任务失败", "用例生成", projectId, msg, `/projects/${projectId}`);
@@ -315,14 +330,17 @@ export async function startGenerateTestCases(projectId: string) {
 
 export async function startGenerateDocs(projectId: string, templateId: string) {
   try {
+    if (_dispatch) _dispatch({ type: "START_ACTIVE_AI_TASK", payload: "文档生成" });
+
     const verify = await verifyAIConfig(projectId, "文档生成");
     if (!verify.ok) {
+      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "文档生成" });
       addNotification("任务失败", "文档生成", projectId, `文档生成失败：${verify.error}`, `/projects/${projectId}`);
       return { success: false, error: verify.error };
     }
 
     toast.info("文档生成已启动，完成后会在通知列表中提醒");
-    return await runTask(projectId, "文档生成", () => aiApi.generateDocs(projectId, templateId));
+    return await runTask(projectId, "文档生成", () => aiApi.generateDocs(projectId, templateId), undefined, { skipStartDispatch: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "文档生成失败";
     addNotification("任务失败", "文档生成", projectId, msg, `/projects/${projectId}`);
@@ -334,14 +352,17 @@ export async function startGenerateDocs(projectId: string, templateId: string) {
 /** 查询某个项目是否有正在运行的任务 */
 export async function startReviewTestCases(projectId: string) {
   try {
+    if (_dispatch) _dispatch({ type: "START_ACTIVE_AI_TASK", payload: "用例评审" });
+
     const verify = await verifyAIConfig(projectId, "用例评审");
     if (!verify.ok) {
+      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "用例评审" });
       addNotification("任务失败", "用例评审", projectId, `用例评审失败：${verify.error}`, `/projects/${projectId}`);
       return { success: false, error: verify.error };
     }
 
     toast.info("AI 用例评审已启动，完成后会在通知列表中提醒");
-    return await runTask(projectId, "用例评审", () => aiApi.reviewTestCases(projectId));
+    return await runTask(projectId, "用例评审", () => aiApi.reviewTestCases(projectId), undefined, { skipStartDispatch: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "用例评审失败";
     addNotification("任务失败", "用例评审", projectId, msg, `/projects/${projectId}`);

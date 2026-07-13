@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import async_session
 from app.models.model_config import ModelConfig
-from app.utils import decrypt_value
+from app.utils import decrypt_value, ensure_chat_endpoint
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +124,7 @@ class AIService:
 
         async with httpx.AsyncClient(timeout=300) as client:
             response = await client.post(
-                config['endpoint'],
+                ensure_chat_endpoint(config['endpoint']),
                 headers=headers,
                 json=payload,
             )

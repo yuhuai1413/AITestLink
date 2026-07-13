@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.database import init_db
+from app.database import init_db, close_db
 from app.routers import projects, files, requirements, test_points, test_cases, ai, model_config, auth, automation, doc_config, status_logs, doc_gen
 
 # 导入所有模型，确保表被创建
@@ -16,6 +16,7 @@ from app.models import project, requirement, test_point, test_case, file_asset, 
 async def lifespan(app: FastAPI):
     await init_db()
     yield
+    await close_db()
 
 
 app = FastAPI(title="AITestLink API", version="0.1.0", lifespan=lifespan)

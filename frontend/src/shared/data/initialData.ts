@@ -4,7 +4,7 @@ import type {
   Requirement,
   TestCase,
   TestPoint,
-} from "../shared/types/platform";
+} from "../types/platform";
 
 export const initialProjects: Project[] = [];
 

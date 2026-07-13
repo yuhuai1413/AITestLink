@@ -176,13 +176,13 @@ export function ProjectListPage({ mode }: ProjectListPageProps) {
         </select>
       </div>
       <div className="search-form__actions">
-        <button className="ghost-button" type="button" onClick={resetFilters}>
+        <button className="ghost-button toolbar-button toolbar-ghost-button" type="button" onClick={resetFilters}>
           <RotateCcw size={16} />
           重置
         </button>
       </div>
       {mode === "projects" && (
-        <button className="primary-button" type="button" style={{ marginLeft: "auto" }} onClick={() => setShowCreate(true)}>
+        <button className="primary-button toolbar-button toolbar-primary-button" type="button" style={{ marginLeft: "auto" }} onClick={() => setShowCreate(true)}>
           <Plus size={13} />
           新建项目
         </button>

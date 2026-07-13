@@ -49,11 +49,12 @@ class TestModelToDict:
         assert result["status"] == "设计中"
 
     def test_datetime_converted_to_iso(self):
-        """Datetime values should be converted to ISO format strings."""
+        """Datetime values should be converted to ISO format strings with timezone."""
         dt = datetime(2025, 1, 15, 10, 30, 0)
         obj = self._make_mock_model({"created_at": dt})
         result = model_to_dict(obj)
-        assert result["createdAt"] == "2025-01-15T10:30:00"
+        # datetime without timezone gets UTC timezone added, so format includes +00:00
+        assert result["createdAt"] == "2025-01-15T10:30:00+00:00"
 
     def test_uuid_converted_to_string(self):
         """UUID-like values (with .hex attribute) should be stringified."""

@@ -3,7 +3,7 @@ import { TOKEN_KEY } from "../../../shared/config/storage";
 import { API_BASE } from "../../../shared/config/deploy";
 
 export async function getCaptcha() {
-  return api.get<{ captcha_id: string; code: string }>("/auth/captcha");
+  return api.get<{ captcha_id: string; code: string; image?: string }>("/auth/captcha");
 }
 
 export async function register(phone: string, password: string, captchaId: string, captchaCode: string) {

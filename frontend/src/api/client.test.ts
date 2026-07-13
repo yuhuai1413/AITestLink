@@ -4,6 +4,14 @@ import { projectsApi, testPointsApi, testCasesApi, filesApi, requirementsApi, ai
 describe("API Client", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    // Mock localStorage for jsdom environment
+    const localStorageMock = {
+      getItem: vi.fn().mockReturnValue(null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+      clear: vi.fn(),
+    };
+    vi.stubGlobal("localStorage", localStorageMock);
   });
 
   describe("projectsApi", () => {

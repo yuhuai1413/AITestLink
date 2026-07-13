@@ -1,0 +1,13 @@
+from __future__ import annotations
+
+from typing import Protocol, runtime_checkable
+
+
+# ── Service Protocol ─────────────────────────────────────────────────
+
+@runtime_checkable
+class IExportService(Protocol):
+    async def export_test_cases(self, project_id: str, format: str = "xlsx") -> bytes: ...
+    async def export_test_points(self, project_id: str, format: str = "xlsx") -> bytes: ...
+    async def export_requirements(self, project_id: str, format: str = "xlsx") -> bytes: ...
+    async def export_full_report(self, project_id: str) -> bytes: ...

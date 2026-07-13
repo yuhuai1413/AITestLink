@@ -2,26 +2,35 @@ import uuid
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.automation_script import AutomationScript
 from app.models.test_case import TestCase
-from app.routers.ai import _to_eng_abbr
-from app.routers.auth import get_current_user
-from app.services.ai_service import AIService
+from app.routers.deps import get_current_user, get_automation_service, get_project_service
+from app.services.automation_service import AutomationService
+from app.services.project_service import ProjectService
+from app.services.ai_service import AIService, check_config_for_task
 from app.utils import model_to_dict
-from app.utils import verify_project_owner
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 ai_service = AIService()
 
 
+def _to_eng_abbr(module: str) -> str:
+    """模块名转英文缩写"""
+    mapping = {
+        "用户管理": "USER", "订单处理": "ORDER", "菜单": "MENU",
+        "客户管理": "CUST", "登录": "LOGIN", "系统": "SYS",
+        "权限": "PERM", "配置": "CONF", "报表": "RPT",
+        "通知": "NOTI", "审批": "APPR", "数据": "DATA",
+    }
+    return mapping.get(module, "".join(c for c in module if c.isalpha())[:4].upper() or "MISC")
+
 
 def _script_code_for_tc(tc, counter: int) -> str:
-    """根据测试用例生成脚本编号，格式 SC_XXX_NNN"""
     module = getattr(tc, "module", "") or ""
     abbr = _to_eng_abbr(module)
     return f"SC_{abbr}_{counter:03d}"
@@ -31,28 +40,23 @@ def _script_code_for_tc(tc, counter: int) -> str:
 async def list_scripts(
     project_id: str,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    service: AutomationService = Depends(get_automation_service),
+    project_service: ProjectService = Depends(get_project_service),
 ):
-    await verify_project_owner(db, project_id, user["sub"])
-    result = await db.execute(
-        select(AutomationScript).where(AutomationScript.project_id == project_id)
-        .order_by(AutomationScript.created_at.desc())
-    )
-    return [model_to_dict(s) for s in result.scalars().all()]
+    await project_service._verify_project_owner(project_id, user["sub"])
+    return await service.list_scripts(project_id)
 
 
 @router.get("/scripts/{script_id}")
 async def get_script(
     script_id: str,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    service: AutomationService = Depends(get_automation_service),
 ):
-    result = await db.execute(select(AutomationScript).where(AutomationScript.id == script_id))
-    script = result.scalar_one_or_none()
+    script = await service.get_script(script_id)
     if not script:
         raise HTTPException(status_code=404, detail="Script not found")
-    await verify_project_owner(db, script.project_id, user["sub"])
-    return model_to_dict(script)
+    return script
 
 
 @router.put("/scripts/{script_id}")
@@ -60,36 +64,32 @@ async def update_script(
     script_id: str,
     data: dict,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    service: AutomationService = Depends(get_automation_service),
 ):
-    result = await db.execute(select(AutomationScript).where(AutomationScript.id == script_id))
-    script = result.scalar_one_or_none()
+    script = await service.get_script(script_id)
     if not script:
         raise HTTPException(status_code=404, detail="Script not found")
-    await verify_project_owner(db, script.project_id, user["sub"])
-    field_map = {"reviewStatus": "review_status"}
-    for key, value in data.items():
-        db_key = field_map.get(key, key)
-        if hasattr(script, db_key):
-            setattr(script, db_key, value)
-    await db.commit()
-    await db.refresh(script)
-    return model_to_dict(script)
+
+    # 更新 code
+    if "code" in data:
+        script = await service.update_script(script_id, data["code"])
+
+    # 更新 reviewStatus
+    if "reviewStatus" in data:
+        script = await service.review_script(script_id, data["reviewStatus"])
+
+    return script
 
 
 @router.delete("/scripts/{script_id}")
 async def delete_script(
     script_id: str,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    service: AutomationService = Depends(get_automation_service),
 ):
-    result = await db.execute(select(AutomationScript).where(AutomationScript.id == script_id))
-    script = result.scalar_one_or_none()
-    if not script:
+    success = await service.delete_script(script_id)
+    if not success:
         raise HTTPException(status_code=404, detail="Script not found")
-    await verify_project_owner(db, script.project_id, user["sub"])
-    await db.delete(script)
-    await db.commit()
     return {"ok": True}
 
 
@@ -98,9 +98,10 @@ async def generate_scripts(
     project_id: str,
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    project_service: ProjectService = Depends(get_project_service),
 ):
     """AI 生成自动化脚本"""
-    await verify_project_owner(db, project_id, user["sub"])
+    await project_service._verify_project_owner(project_id, user["sub"])
 
     result = await db.execute(
         select(TestCase).where(
@@ -114,13 +115,11 @@ async def generate_scripts(
         raise HTTPException(status_code=400, detail="没有适合自动化的测试用例")
 
     # 检查模型配置
-    from app.services.ai_service import check_config_for_task
     config_check = await check_config_for_task("脚本生成", user["sub"])
     if not config_check["configured"]:
         raise HTTPException(status_code=400, detail=config_check["message"])
 
-    # 删除该脚本项目已有的脚本，避免重复生成
-    from sqlalchemy import delete
+    # 删除已有的脚本
     await db.execute(delete(AutomationScript).where(AutomationScript.project_id == project_id))
     await db.commit()
 
@@ -133,10 +132,8 @@ async def generate_scripts(
     )
 
     try:
-        # 调用 AI 生成脚本
         ai_scripts = await ai_service.generate_automation_scripts(tc_text, user["sub"])
 
-        # 如果 AI 返回为空或解析失败，回退到模板生成
         if not ai_scripts:
             logger.warning("AI script generation returned empty, falling back to template")
             scripts = _generate_template_scripts(project_id, test_cases, db)
@@ -144,7 +141,6 @@ async def generate_scripts(
             scripts = []
             for ai_script in ai_scripts:
                 tc_id = ai_script.get("testCaseId", "")
-                # 找到匹配的测试用例
                 matched_tc = None
                 for tc in test_cases:
                     if tc.case_code == tc_id or tc.id == tc_id:
@@ -202,7 +198,6 @@ def _generate_template_scripts(project_id: str, test_cases: list, db: AsyncSessi
 
 
 def _generate_playwright_script(tc: TestCase) -> str:
-    """根据测试用例生成 Playwright Python 脚本（模板回退）"""
     steps = tc.steps.replace("\n", "\n        ") if tc.steps else "# 无步骤"
     return f'''import asyncio
 from playwright.async_api import async_playwright

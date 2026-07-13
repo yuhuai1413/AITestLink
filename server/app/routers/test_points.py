@@ -1,31 +1,27 @@
-from datetime import datetime, timezone
-import uuid
-
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 
-from app.database import get_db
-from app.models.test_point import TestPoint
-from app.routers.auth import get_current_user
+from app.routers.deps import get_current_user, get_test_design_service, get_project_service
+from app.services.test_design_service import TestDesignService
+from app.services.project_service import ProjectService
 from app.schemas.test_point import TestPointCreate, TestPointUpdate
-from app.utils import model_to_dict
-from app.utils import verify_project_owner
 
 router = APIRouter()
+
+
+class GenerateTestPointsRequest(BaseModel):
+    requirement_ids: list[str]
 
 
 @router.get("/projects/{project_id}/test-points")
 async def list_test_points(
     project_id: str,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    service: TestDesignService = Depends(get_test_design_service),
+    project_service: ProjectService = Depends(get_project_service),
 ):
-    await verify_project_owner(db, project_id, user["sub"])
-    result = await db.execute(
-        select(TestPoint).where(TestPoint.project_id == project_id)
-    )
-    return [model_to_dict(tp) for tp in result.scalars().all()]
+    await project_service._verify_project_owner(project_id, user["sub"])
+    return await service.list_test_points(project_id)
 
 
 @router.post("/projects/{project_id}/test-points", status_code=201)
@@ -33,9 +29,13 @@ async def create_test_point(
     project_id: str,
     data: TestPointCreate,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    service: TestDesignService = Depends(get_test_design_service),
+    project_service: ProjectService = Depends(get_project_service),
 ):
-    await verify_project_owner(db, project_id, user["sub"])
+    await project_service._verify_project_owner(project_id, user["sub"])
+    # 直接创建单个测试点
+    from app.models.test_point import TestPoint
+    import uuid
     tp = TestPoint(
         id=str(uuid.uuid4()),
         project_id=project_id,
@@ -46,10 +46,22 @@ async def create_test_point(
         priority=data.priority,
         automatable=data.automatable,
     )
-    db.add(tp)
-    await db.commit()
-    await db.refresh(tp)
-    return model_to_dict(tp)
+    service.db.add(tp)
+    await service.db.commit()
+    await service.db.refresh(tp)
+    return service._to_dict(tp)
+
+
+@router.post("/projects/{project_id}/test-points/generate")
+async def generate_test_points(
+    project_id: str,
+    data: GenerateTestPointsRequest,
+    user: dict = Depends(get_current_user),
+    service: TestDesignService = Depends(get_test_design_service),
+    project_service: ProjectService = Depends(get_project_service),
+):
+    await project_service._verify_project_owner(project_id, user["sub"])
+    return await service.generate_test_points(project_id, data.requirement_ids, user["sub"])
 
 
 @router.put("/test-points/{tp_id}")
@@ -57,45 +69,36 @@ async def update_test_point(
     tp_id: str,
     data: TestPointUpdate,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    service: TestDesignService = Depends(get_test_design_service),
 ):
-    result = await db.execute(select(TestPoint).where(TestPoint.id == tp_id))
-    tp = result.scalar_one_or_none()
+    tp = await service.update_test_point(tp_id, data)
     if not tp:
         raise HTTPException(status_code=404, detail="Test point not found")
-
-    await verify_project_owner(db, tp.project_id, user["sub"])
-
-    update_data = data.model_dump(exclude_unset=True)
-    field_map = {
-        "title": "title",
-        "description": "description",
-        "priority": "priority",
-        "review_status": "review_status",
-    }
-    for schema_key, db_key in field_map.items():
-        if schema_key in update_data:
-            setattr(tp, db_key, update_data[schema_key])
-
-    tp.updated_at = datetime.now(timezone.utc)
-    await db.commit()
-    await db.refresh(tp)
-    return model_to_dict(tp)
+    return tp
 
 
 @router.delete("/test-points/{tp_id}")
 async def delete_test_point(
     tp_id: str,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    service: TestDesignService = Depends(get_test_design_service),
 ):
-    result = await db.execute(select(TestPoint).where(TestPoint.id == tp_id))
-    tp = result.scalar_one_or_none()
-    if not tp:
+    success = await service.delete_test_point(tp_id)
+    if not success:
         raise HTTPException(status_code=404, detail="Test point not found")
-
-    await verify_project_owner(db, tp.project_id, user["sub"])
-
-    await db.delete(tp)
-    await db.commit()
     return {"ok": True}
+
+
+class BatchReviewRequest(BaseModel):
+    ids: list[str]
+    status: str
+
+
+@router.post("/test-points/batch-review")
+async def batch_review_test_points(
+    data: BatchReviewRequest,
+    user: dict = Depends(get_current_user),
+    service: TestDesignService = Depends(get_test_design_service),
+):
+    count = await service.batch_update_review(data.ids, data.status)
+    return {"ok": True, "updated": count}

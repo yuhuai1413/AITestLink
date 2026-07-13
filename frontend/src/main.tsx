@@ -43,9 +43,12 @@ import "./styles/components/utility.css";
 import "./styles/components/notification.css";
 import "./styles/global.css";
 
+// 本地开发时 basename 为空，生产环境使用 /aitestlink
+const basename = import.meta.env.DEV ? "" : (import.meta.env.VITE_BASE_PATH || "/aitestlink");
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter basename="/aitestlink">
+    <BrowserRouter basename={basename}>
       <StoreProvider>
         <App />
       </StoreProvider>

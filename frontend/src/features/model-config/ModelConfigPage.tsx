@@ -32,7 +32,7 @@ const providerModels: Record<string, { models: string[]; endpoint: string }> = {
   },
   "小米-MiMo大模型平台": {
     models: ["mimo-v2.5-pro", "mimo-v2.5", "mimo-v2.5-omni"],
-    endpoint: "https://api.xiaomimimo.com/v1",
+    endpoint: "https://token-plan-cn.xiaomimimo.com/v1",
   },
   "腾讯-云TI混元": {
     models: ["hunyuan-t1", "hunyuan-standard", "hunyuan-long-128k"],
@@ -404,13 +404,13 @@ export function ModelConfigPage() {
                   ))}
                 </select>
               </div>
-              <button className="ghost-button" type="button" onClick={resetFilters}>
+              <button className="ghost-button toolbar-button toolbar-ghost-button" type="button" onClick={resetFilters}>
                 <RotateCcw size={14} />
                 重置
               </button>
             </div>
             {selectedIds.size > 0 && (
-              <button className="primary-button" type="button" onClick={() => setBatchEditing(true)} style={{ marginLeft: "auto", flexShrink: 0 }}>
+              <button className="primary-button toolbar-button toolbar-primary-button" type="button" onClick={() => setBatchEditing(true)} style={{ marginLeft: "auto", flexShrink: 0 }}>
                 批量编辑（{selectedIds.size}）
               </button>
             )}
@@ -457,7 +457,7 @@ export function ModelConfigPage() {
             },
             {
               key: "endpoint",
-              label: "Endpoint",
+              label: "Base URL",
               width: "20%",
               render: (row) => {
                 const ep = row.endpoint;
@@ -497,12 +497,17 @@ export function ModelConfigPage() {
                     编辑
                   </button>
                   <button
-                    className="text-button"
+                    className="text-button test-button"
                     type="button"
                     onClick={() => testConnection(row)}
                     disabled={testingId === row.id}
                   >
-                    测试
+                    {testingId === row.id ? (
+                      <span className="test-loading">
+                        <Loader2 size={14} className="animate-spin" />
+                        测试中
+                      </span>
+                    ) : '测试'}
                   </button>
                 </div>
               ),
@@ -523,16 +528,7 @@ export function ModelConfigPage() {
             <div className="form-row">
               <label className="form-label">
                 供应商
-                <select className="form-select" value={editingConfig.provider} onChange={(e) => {
-                  const provider = e.target.value;
-                  const models = providerModels[provider];
-                  setEditingConfig({
-                    ...editingConfig,
-                    provider,
-                    modelName: models?.models[0] || "",
-                    endpoint: models?.endpoint || "",
-                  });
-                }}>
+                <select className="form-select" value={editingConfig.provider} onChange={(e) => setEditingConfig({ ...editingConfig, provider: e.target.value })}>
                   <option value="">请选择供应商</option>
                   {Object.keys(providerModels).map((p) => (
                     <option key={p} value={p}>{p}</option>
@@ -558,7 +554,19 @@ export function ModelConfigPage() {
               <label className="form-label">
                 API Key
                 <div className="input-with-icon">
-                  <input className="form-input" type={showApiKey ? "text" : "password"} value={editingConfig.apiKey} onChange={(e) => setEditingConfig({ ...editingConfig, apiKey: e.target.value })} placeholder="请输入 API Key" required style={{ paddingRight: 36 }} />
+                  <input className="form-input" type={showApiKey ? "text" : "password"} value={editingConfig.apiKey} onChange={(e) => {
+                    const value = e.target.value;
+                    const newConfig = { ...editingConfig, apiKey: value };
+                    // 自动判断 Base URL
+                    if (!editingConfig.endpoint || editingConfig.endpoint.includes("xiaomimimo")) {
+                      if (value.startsWith("tp-")) {
+                        newConfig.endpoint = "https://token-plan-cn.xiaomimimo.com/v1";
+                      } else if (value.startsWith("sk-")) {
+                        newConfig.endpoint = "https://api.xiaomimimo.com/v1";
+                      }
+                    }
+                    setEditingConfig(newConfig);
+                  }} placeholder="请输入 API Key（sk- 开头为 API Keys 模式，tp- 开头为 Token Plan 模式）" required style={{ paddingRight: 36 }} />
                   <button type="button" className="icon-button" style={{ position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)", width: 28, height: 28 }} onClick={() => setShowApiKey(!showApiKey)}>
                     {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -567,8 +575,8 @@ export function ModelConfigPage() {
             </div>
             <div className="form-row">
               <label className="form-label">
-                Endpoint
-                <input className="form-input" type="text" value={editingConfig.endpoint} onChange={(e) => setEditingConfig({ ...editingConfig, endpoint: e.target.value })} placeholder="请输入 API 地址" required />
+                Base URL
+                <input className="form-input" type="text" value={editingConfig.endpoint} onChange={(e) => setEditingConfig({ ...editingConfig, endpoint: e.target.value })} placeholder="请输入 API 地址，如 https://api.openai.com/v1" required />
               </label>
             </div>
             <div className="form-row">
@@ -620,6 +628,26 @@ function BatchEditModal({
   const [endpoint, setEndpoint] = useState("");
   const [showKey, setShowKey] = useState(false);
 
+  // 根据 API Key 自动判断 Base URL
+  const detectBaseUrl = (key: string): string => {
+    if (!key) return "";
+    key = key.trim();
+    // 小米 MiMo Token Plan 模式
+    if (key.startsWith("tp-")) return "https://token-plan-cn.xiaomimimo.com/v1";
+    // 小米 MiMo API Keys 模式
+    if (key.startsWith("sk-")) return "https://api.xiaomimimo.com/v1";
+    return "";
+  };
+
+  const handleApiKeyChange = (value: string) => {
+    setApiKey(value);
+    // 如果 Endpoint 为空或是小米的默认值，自动填充
+    if (!endpoint || endpoint.includes("xiaomimimo")) {
+      const detected = detectBaseUrl(value);
+      if (detected) setEndpoint(detected);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave(provider, modelName, apiKey, endpoint);
@@ -640,15 +668,7 @@ function BatchEditModal({
         <div className="form-row">
           <label className="form-label">
             供应商
-            <select className="form-select" value={provider} onChange={(e) => {
-              const p = e.target.value;
-              setProvider(p);
-              const models = providerModels[p];
-              if (models) {
-                setModelName(models.models[0] || "");
-                setEndpoint(models.endpoint || "");
-              }
-            }} required>
+            <select className="form-select" value={provider} onChange={(e) => setProvider(e.target.value)} required>
               <option value="">请选择供应商</option>
               {Object.keys(providerModels).map((p) => (
                 <option key={p} value={p}>{p}</option>
@@ -671,7 +691,7 @@ function BatchEditModal({
           <label className="form-label">
             API Key
             <div className="input-with-icon">
-              <input className="form-input" type={showKey ? "text" : "password"} value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="请输入 API Key" required style={{ paddingRight: 36 }} />
+              <input className="form-input" type={showKey ? "text" : "password"} value={apiKey} onChange={(e) => handleApiKeyChange(e.target.value)} placeholder="请输入 API Key（sk- 开头为 API Keys 模式，tp- 开头为 Token Plan 模式）" required style={{ paddingRight: 36 }} />
               <button type="button" className="icon-button" style={{ position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)", width: 28, height: 28 }} onClick={() => setShowKey(!showKey)}>
                 {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
@@ -680,8 +700,8 @@ function BatchEditModal({
         </div>
         <div className="form-row">
           <label className="form-label">
-            Endpoint
-            <input className="form-input" type="text" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="请输入 API 地址" required />
+            Base URL
+            <input className="form-input" type="text" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="请输入 API 地址，如 https://api.openai.com/v1" required />
           </label>
         </div>
         <div className="form-actions">

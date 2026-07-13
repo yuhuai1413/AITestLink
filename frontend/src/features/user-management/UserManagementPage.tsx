@@ -187,7 +187,7 @@ export function UserManagementPage() {
         </select>
       </div>
       <div className="search-form__actions">
-        <button className="ghost-button" type="button" onClick={resetFilters}>
+        <button className="ghost-button toolbar-button toolbar-ghost-button" type="button" onClick={resetFilters}>
           <RotateCcw size={16} />
           重置
         </button>

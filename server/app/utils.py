@@ -67,3 +67,38 @@ async def verify_project_owner(db: AsyncSession, project_id: str, user_id: str) 
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在或无权访问")
     return project
+
+
+def ensure_chat_endpoint(endpoint: str) -> str:
+    """确保 endpoint 以 /chat/completions 结尾"""
+    endpoint = endpoint.rstrip("/")
+    if not endpoint.endswith("/chat/completions"):
+        endpoint = f"{endpoint}/chat/completions"
+    return endpoint
+
+
+# 小米 MiMo 两种模式的 Base URL
+MIMO_API_KEYS_URL = "https://api.xiaomimimo.com/v1"
+MIMO_TOKEN_PLAN_URL = "https://token-plan-cn.xiaomimimo.com/v1"
+
+
+def detect_mimo_base_url(api_key: str) -> str:
+    """根据小米 MiMo API Key 格式自动判断 Base URL
+    
+    - API Keys 模式：以 sk- 开头
+    - Token Plan 模式：以 tp- 开头
+    """
+    if not api_key:
+        return ""
+    
+    api_key = api_key.strip()
+    
+    # Token Plan 模式
+    if api_key.startswith("tp-"):
+        return MIMO_TOKEN_PLAN_URL
+    
+    # API Keys 模式
+    if api_key.startswith("sk-"):
+        return MIMO_API_KEYS_URL
+    
+    return ""

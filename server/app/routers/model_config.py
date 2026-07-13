@@ -7,20 +7,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.model_config import ModelConfig
-from app.routers.auth import get_current_user
-from app.utils import encrypt_value, decrypt_value
+from app.routers.deps import get_current_user, get_model_config_service
+from app.services.model_config_service import ModelConfigService
+from app.utils import encrypt_value, decrypt_value, ensure_chat_endpoint
 
 router = APIRouter()
 
-# 默认模型配置模板（按测试流程排序）
 DEFAULT_CONFIGS = [
-    {"config_key": "parse-requirements", "name": "需求解析", "ai_node": ["需求解析"], "description": "从需求文档中提取模块、功能点和业务规则，生成结构化需求数据", "display_order": 1},
-    {"config_key": "generate-test-points", "name": "测试点生成", "ai_node": ["生成测试点"], "description": "根据需求生成覆盖正常流程、异常流程、边界值等场景的测试点", "display_order": 2},
-    {"config_key": "generate-test-cases", "name": "用例生成", "ai_node": ["生成测试用例"], "description": "根据测试点生成包含前置条件、测试步骤和预期结果的详细测试用例", "display_order": 3},
-    {"config_key": "review-test-cases", "name": "用例评审", "ai_node": ["用例评审"], "description": "自动评审测试用例的完整性、可执行性和覆盖度", "display_order": 4},
-    {"config_key": "generate-scripts", "name": "脚本生成", "ai_node": ["生成脚本"], "description": "根据测试用例自动生成可执行的 Playwright 自动化测试脚本", "display_order": 5},
-    {"config_key": "execute-scripts", "name": "执行脚本", "ai_node": ["执行脚本"], "description": "执行自动化测试脚本并收集测试结果", "display_order": 6},
-    {"config_key": "generate-docs", "name": "文档生成", "ai_node": ["文档生成"], "description": "根据项目数据自动生成测试计划、测试报告等文档", "display_order": 7},
+    {"config_key": "parse-requirements", "name": "需求解析", "ai_node": ["需求解析"], "description": "从需求文档中提取模块、功能点和业务规则", "display_order": 1},
+    {"config_key": "generate-test-points", "name": "测试点生成", "ai_node": ["生成测试点"], "description": "根据需求生成覆盖多种场景的测试点", "display_order": 2},
+    {"config_key": "generate-test-cases", "name": "用例生成", "ai_node": ["生成测试用例"], "description": "根据测试点生成详细测试用例", "display_order": 3},
+    {"config_key": "review-test-cases", "name": "用例评审", "ai_node": ["用例评审"], "description": "自动评审测试用例质量", "display_order": 4},
+    {"config_key": "generate-scripts", "name": "脚本生成", "ai_node": ["生成脚本"], "description": "自动生成自动化测试脚本", "display_order": 5},
+    {"config_key": "execute-scripts", "name": "执行脚本", "ai_node": ["执行脚本"], "description": "执行自动化测试脚本", "display_order": 6},
+    {"config_key": "generate-docs", "name": "文档生成", "ai_node": ["文档生成"], "description": "自动生成测试文档", "display_order": 7},
 ]
 
 
@@ -40,8 +40,17 @@ class ModelConfigUpdate(BaseModel):
     configs: list[ModelConfigSchema]
 
 
-def _to_dict(m: ModelConfig) -> dict:
-    # 解析 ai_node 为数组
+def _to_dict(m) -> dict:
+    # 支持 ModelConfig 对象或 dict
+    if isinstance(m, dict):
+        # 已经是 dict 格式，直接返回（service 已经转换过）
+        # 但需要确保 apiKey 已解密
+        result = m.copy()
+        if "apiKey" in result and result["apiKey"]:
+            result["apiKey"] = decrypt_value(result["apiKey"]) if not _is_decrypted(result["apiKey"]) else result["apiKey"]
+        return result
+
+    # ModelConfig 对象
     try:
         ai_node = json.loads(m.ai_node) if m.ai_node else []
     except (json.JSONDecodeError, TypeError):
@@ -61,8 +70,18 @@ def _to_dict(m: ModelConfig) -> dict:
     }
 
 
+def _is_decrypted(value: str) -> bool:
+    """简单检查值是否已解密（非 Base64 格式）"""
+    import base64
+    try:
+        # 尝试解密，如果失败说明已经解密
+        base64.b64decode(value)
+        return False
+    except Exception:
+        return True
+
+
 async def _ensure_user_configs(db: AsyncSession, user_id: str):
-    """确保用户有所有默认配置，新用户初始配置为空"""
     result = await db.execute(
         select(ModelConfig).where(ModelConfig.user_id == user_id)
     )
@@ -108,13 +127,9 @@ async def list_model_configs(
 async def get_model_config(
     config_id: str,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    service: ModelConfigService = Depends(get_model_config_service),
 ):
-    user_id = user["sub"]
-    result = await db.execute(
-        select(ModelConfig).where(ModelConfig.id == config_id, ModelConfig.user_id == user_id)
-    )
-    config = result.scalar_one_or_none()
+    config = await service.get_by_id(config_id)
     if not config:
         raise HTTPException(status_code=404, detail="配置不存在")
     return _to_dict(config)
@@ -124,24 +139,9 @@ async def get_model_config(
 async def check_model_config(
     config_key: str,
     user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    service: ModelConfigService = Depends(get_model_config_service),
 ):
-    """检查指定配置是否已配置（供应商、模型、API Key、Endpoint 都不为空）"""
-    user_id = user["sub"]
-    config_id = f"{user_id}_{config_key}"
-    result = await db.execute(
-        select(ModelConfig).where(ModelConfig.id == config_id, ModelConfig.user_id == user_id)
-    )
-    config = result.scalar_one_or_none()
-    if not config:
-        return {"configured": False, "message": "配置不存在"}
-
-    is_configured = bool(config.provider and config.model_name and config.api_key and config.endpoint)
-    return {
-        "configured": is_configured,
-        "message": "已配置" if is_configured else "请先在模型配置页面设置该功能的模型数据",
-        "name": config.name,
-    }
+    return await service.check_config_for_task(config_key, user["sub"])
 
 
 @router.post("/model-configs/{config_id}/test")
@@ -150,7 +150,6 @@ async def test_model_config(
     user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """测试模型连通性：用配置的 provider/model/apiKey/endpoint 发一个简单请求"""
     user_id = user["sub"]
     result = await db.execute(
         select(ModelConfig).where(ModelConfig.id == config_id, ModelConfig.user_id == user_id)
@@ -163,12 +162,11 @@ async def test_model_config(
         return {"ok": False, "message": "请先配置供应商、API Key 和 Endpoint"}
 
     api_key = decrypt_value(config.api_key) if config.api_key else ""
-    endpoint = config.endpoint.rstrip("/")
+    endpoint = config.endpoint
 
     try:
         import httpx
-        # endpoint 已经是完整 URL（如 https://api.deepseek.com/v1/chat/completions），直接用
-        test_url = endpoint
+        test_url = ensure_chat_endpoint(endpoint)
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -188,10 +186,6 @@ async def test_model_config(
             except Exception:
                 detail = resp.text[:200]
             return {"ok": False, "message": f"请求失败（HTTP {resp.status_code}）{detail}"}
-    except httpx.ConnectError:
-        return {"ok": False, "message": "无法连接到 Endpoint 地址，请检查是否正确"}
-    except httpx.TimeoutException:
-        return {"ok": False, "message": "请求超时，请检查网络或 Endpoint 地址"}
     except Exception as e:
         return {"ok": False, "message": f"测试失败：{str(e)[:200]}"}
 
@@ -212,7 +206,6 @@ async def update_model_configs(
         if cfg.id in existing:
             m = existing[cfg.id]
             m.name = cfg.name
-            # 将 aiNode 数组转换为 JSON 字符串存储
             if isinstance(cfg.aiNode, list):
                 m.ai_node = json.dumps(cfg.aiNode, ensure_ascii=False)
             else:

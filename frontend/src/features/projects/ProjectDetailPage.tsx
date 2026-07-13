@@ -821,7 +821,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
   };
   const batchApprove = async () => {
     for (const id of selectedIds) {
-      const script = scripts.find((s) => s.testCaseId === id);
+      const script = scripts.find((s) => s.id === id);
       if (script && (script as any).reviewStatus !== "已通过") {
         try { await scriptsApi.update(script.id, { reviewStatus: "已通过" } as any); } catch {}
         dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, reviewStatus: "已通过" } as any });
