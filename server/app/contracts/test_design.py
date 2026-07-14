@@ -177,6 +177,3 @@ class ITestDesignService(Protocol):
 
     # Coverage
     async def get_coverage(self, project_id: str) -> TestCoverage: ...
-
-    # Review
-    async def review_test_cases(self, project_id: str, case_ids: list[str], user_id: str) -> dict: ...

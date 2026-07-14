@@ -16,13 +16,6 @@ import type {
   TestPoint,
   AppNotification,
 } from "../shared/types/platform";
-import {
-  initialFiles,
-  initialProjects,
-  initialRequirements,
-  initialTestCases,
-  initialTestPoints,
-} from "../shared/data/initialData";
 
 // ─── State ───
 
@@ -38,33 +31,12 @@ export interface AppState {
   activeAITasks: string[];
 }
 
-const STORAGE_KEY = "aitestlink-store";
-
-function loadState(): AppState {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (parsed.projects && Array.isArray(parsed.projects)) {
-        return { ...initialState, ...parsed };
-      }
-    }
-  } catch {}
-  return initialState;
-}
-
-function saveState(state: AppState) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {}
-}
-
 const initialState: AppState = {
-  projects: initialProjects,
-  files: initialFiles,
-  requirements: initialRequirements,
-  testPoints: initialTestPoints,
-  testCases: initialTestCases,
+  projects: [],
+  files: [],
+  requirements: [],
+  testPoints: [],
+  testCases: [],
   aiTasks: [],
   scripts: [],
   notifications: [],
@@ -101,6 +73,7 @@ type Action =
   | { type: "DELETE_SCRIPT"; payload: string }
   | { type: "CLEAR_SCRIPTS"; payload: string }
   | { type: "ADD_NOTIFICATION"; payload: AppNotification }
+  | { type: "SET_NOTIFICATIONS"; payload: AppNotification[] }
   | { type: "MARK_NOTIFICATION_READ"; payload: string }
   | { type: "MARK_ALL_NOTIFICATIONS_READ" }
   | { type: "CLEAR_NOTIFICATIONS" }
@@ -305,6 +278,12 @@ export function reducer(state: AppState, action: Action): AppState {
         notifications: [action.payload, ...state.notifications].slice(0, 50),
       };
 
+    case "SET_NOTIFICATIONS":
+      return {
+        ...state,
+        notifications: action.payload,
+      };
+
     case "MARK_NOTIFICATION_READ":
       return {
         ...state,
@@ -362,11 +341,7 @@ interface StoreContextValue {
 const StoreContext = createContext<StoreContextValue | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, initialState, loadState);
-
-  useEffect(() => {
-    saveState(state);
-  }, [state]);
+  const [state, dispatch] = useReducer(reducer, initialState);
 
   const value = useMemo(() => ({ state, dispatch }), [state]);
   return (

@@ -42,6 +42,8 @@ export interface ModelConfig {
   endpoint: string;
   description: string;
   enabled: boolean;
+  prompt: string;
+  adminPrompt: string;
 }
 
 export interface DocConfig {
@@ -96,3 +98,26 @@ export interface ConfigCheckResult {
 }
 
 export type UserRole = "admin" | "manager" | "tester" | "viewer";
+
+// ─── 通知 ───
+
+export type NotificationType = "任务完成" | "任务失败";
+
+export type AITaskType =
+  | "需求解析"
+  | "测试点生成"
+  | "用例生成"
+  | "脚本生成"
+  | "文档生成";
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  taskType: AITaskType;
+  projectName: string;
+  projectId: string;
+  message: string;
+  targetPath: string;
+  read: boolean;
+  createdAt: string;
+}

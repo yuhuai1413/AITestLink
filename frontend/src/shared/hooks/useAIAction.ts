@@ -5,28 +5,24 @@ import {
   startParseRequirements,
   startGenerateTestPoints,
   startGenerateTestCases,
-  startReviewTestCases,
 } from "./aiTaskManager";
 
 interface UseAIActionReturn {
   loadingParsing: boolean;
   loadingTestPoints: boolean;
   loadingTestCases: boolean;
-  loadingReview: boolean;
   error: string | null;
   parseRequirements: () => Promise<void>;
   generateTestPoints: () => Promise<void>;
   generateTestCases: () => Promise<void>;
-  reviewTestCases: () => Promise<{ success: boolean; error?: string }>;
 }
 
 export function useAIAction(projectId: string, showConfigError?: (msg: string) => void): UseAIActionReturn {
   const { state } = useStore();
 
-  const loadingParsing = state.activeAITasks.includes("需求解析");
-  const loadingTestPoints = state.activeAITasks.includes("测试点生成");
-  const loadingTestCases = state.activeAITasks.includes("用例生成");
-  const loadingReview = state.activeAITasks.includes("用例评审");
+  const loadingParsing = state.activeAITasks.includes(`${projectId}:需求解析`);
+  const loadingTestPoints = state.activeAITasks.includes(`${projectId}:测试点生成`);
+  const loadingTestCases = state.activeAITasks.includes(`${projectId}:用例生成`);
 
   const handleError = useCallback((error: string) => {
     if (showConfigError) {
@@ -75,20 +71,5 @@ export function useAIAction(projectId: string, showConfigError?: (msg: string) =
     }
   }, [projectId, handleError]);
 
-  const reviewTestCases = useCallback(async () => {
-    try {
-      const result = await startReviewTestCases(projectId);
-      if (result.success) {
-        toast.success("AI 用例评审完成！");
-      } else if (result.error) {
-        handleError(result.error);
-      }
-      return result;
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "评审失败");
-      return { success: false, error: err instanceof Error ? err.message : "评审失败" };
-    }
-  }, [projectId, handleError]);
-
-  return { loadingParsing, loadingTestPoints, loadingTestCases, loadingReview, error: null, parseRequirements, generateTestPoints, generateTestCases, reviewTestCases };
+  return { loadingParsing, loadingTestPoints, loadingTestCases, error: null, parseRequirements, generateTestPoints, generateTestCases };
 }

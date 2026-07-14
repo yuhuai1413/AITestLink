@@ -33,7 +33,7 @@ export function TestCaseDetailModal({ open, testCase, onClose }: TestCaseDetailM
   if (!testCase) return null;
 
   return (
-    <Modal open={open} onClose={onClose} title="用例详情" width={520}>
+    <Modal open={open} onClose={onClose} title="用例详情" width={640}>
       <div className="detail-grid">
         <div className="detail-row">
           <span className="detail-label">用例编号</span>

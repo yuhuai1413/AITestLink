@@ -10,9 +10,10 @@ interface ModalProps {
   width?: number;
   height?: string;
   flushTop?: boolean;
+  bodyOverflow?: string;
 }
 
-export function Modal({ open, onClose, title, children, footer, width = 520, height, flushTop }: ModalProps) {
+export function Modal({ open, onClose, title, children, footer, width = 520, height, flushTop, bodyOverflow }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
   // ESC key support
@@ -58,7 +59,7 @@ export function Modal({ open, onClose, title, children, footer, width = 520, hei
             <X size={18} />
           </button>
         </div>
-        <div className={`modal-dialog__body${flushTop ? " modal-dialog__body--flush-top" : ""}`}>{children}</div>
+        <div className={`modal-dialog__body${flushTop ? " modal-dialog__body--flush-top" : ""}`} style={bodyOverflow !== undefined ? { overflow: bodyOverflow } : undefined}>{children}</div>
         {footer && <div className="modal-dialog__footer">{footer}</div>}
       </div>
     </div>

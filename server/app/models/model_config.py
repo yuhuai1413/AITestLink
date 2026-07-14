@@ -19,6 +19,7 @@ class ModelConfig(Base):
     api_key = Column(Text, default="")
     endpoint = Column(String(500), default="")
     description = Column(Text, default="")
+    prompt = Column(Text, default="")
     enabled = Column(Boolean, default=True)
     display_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

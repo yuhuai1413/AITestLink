@@ -59,7 +59,7 @@ export function PersonalSettingsModal({ open, onClose, userInfo, onSaved }: Pers
     setSaving(true);
     try {
       const res = await updateProfile(nickname.trim());
-      if (res.ok) { toast.success("保存成功"); onSaved(); onClose(); }
+      if (res.ok) { toast.success("保存成功"); onSaved(); window.dispatchEvent(new Event("profile-updated")); onClose(); }
       else { toast.error(res.message); }
     } catch { toast.error("保存失败"); }
     finally { setSaving(false); }

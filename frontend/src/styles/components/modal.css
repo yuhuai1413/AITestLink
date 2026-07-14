@@ -64,11 +64,6 @@
   min-height: 0;
 }
 
-.modal-dialog__body--flush-top {
-  padding-top: 0;
-  padding-bottom: 0;
-}
-
 .modal-dialog__footer {
   display: flex;
   align-items: center;

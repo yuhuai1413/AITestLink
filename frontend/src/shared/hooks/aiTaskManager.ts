@@ -3,7 +3,7 @@
  * 独立于 React 组件运行，切换 tab 或退出页面时轮询不中断。
  * 任务完成/失败时自动往 store 里写通知。
  */
-import { aiApi, modelConfigApi, requirementsApi, testPointsApi, testCasesApi } from "../../api/client";
+import { aiApi, modelConfigApi, requirementsApi, testPointsApi, testCasesApi, notificationsApi } from "../../api/client";
 import type { ApiRequirement, ApiTestPoint, ApiTestCase } from "../../api/client";
 import { toast } from "sonner";
 import type { AppNotification, AITaskType } from "../types/platform";
@@ -31,7 +31,7 @@ function getProjectName(projectId: string): string {
   return "未知项目";
 }
 
-function addNotification(
+export function addNotification(
   type: "任务完成" | "任务失败",
   taskType: AITaskType,
   projectId: string,
@@ -52,6 +52,16 @@ function addNotification(
     createdAt: new Date().toISOString(),
   };
   _dispatch({ type: "ADD_NOTIFICATION", payload: n });
+
+  // 同步写入后端数据库
+  notificationsApi.create({
+    type,
+    taskType,
+    projectId,
+    projectName,
+    message: n.message,
+    targetPath,
+  }).catch(() => {});
 }
 
 // ── 轮询 AI 任务状态 ──
@@ -60,7 +70,7 @@ async function pollAITask(
   taskId: string,
   signal: AbortSignal,
 ): Promise<{ success: boolean; error?: string }> {
-  for (let i = 0; i < 360; i++) {
+  for (let i = 0; i < 600; i++) {
     if (signal.aborted) return { success: false };
     await new Promise((r) => setTimeout(r, 1000));
     if (signal.aborted) return { success: false };
@@ -86,7 +96,7 @@ async function pollAITask(
         if (task.status === "成功") return { success: true };
         return { success: false, error: task.errorMessage || undefined };
       }
-    } catch {}
+    } catch (e) { console.warn('Polling error:', e); }
   }
   return { success: false, error: "任务超时未响应" };
 }
@@ -96,7 +106,6 @@ const TASK_TAB_MAP: Record<string, string> = {
   "需求解析": "requirements",
   "测试点生成": "testPoints",
   "用例生成": "testCases",
-  "用例评审": "testCases",
   "文档生成": "docGenerate",
 };
 
@@ -166,7 +175,7 @@ async function runTask(
     const task = await apiCall();
     if (_dispatch) {
       if (!opts?.skipStartDispatch) {
-        _dispatch({ type: "START_ACTIVE_AI_TASK", payload: taskType });
+        _dispatch({ type: "START_ACTIVE_AI_TASK", payload: `${projectId}:${taskType}` });
       }
       _dispatch({
         type: "ADD_AI_TASK",
@@ -203,7 +212,7 @@ async function runTask(
   } finally {
     activeTasks.delete(key);
     if (_dispatch) {
-      _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: taskType });
+      _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:${taskType}` });
     }
   }
 }
@@ -214,12 +223,12 @@ export async function startParseRequirements(projectId: string) {
   try {
     // 立即更新 UI 状态，避免用户等待验证
     if (_dispatch) {
-      _dispatch({ type: "START_ACTIVE_AI_TASK", payload: "需求解析" });
+      _dispatch({ type: "START_ACTIVE_AI_TASK", payload: `${projectId}:需求解析` });
     }
 
     const verify = await verifyAIConfig(projectId, "需求解析");
     if (!verify.ok) {
-      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "需求解析" });
+      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:需求解析` });
       addNotification("任务失败", "需求解析", projectId, `需求解析失败：${verify.error}`, `/projects/${projectId}`);
       return { success: false, error: verify.error };
     }
@@ -244,18 +253,18 @@ export async function startParseRequirements(projectId: string) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "需求解析失败";
     addNotification("任务失败", "需求解析", projectId, msg, `/projects/${projectId}`);
-    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "需求解析" });
+    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:需求解析` });
     return { success: false, error: msg };
   }
 }
 
 export async function startGenerateTestPoints(projectId: string) {
   try {
-    if (_dispatch) _dispatch({ type: "START_ACTIVE_AI_TASK", payload: "测试点生成" });
+    if (_dispatch) _dispatch({ type: "START_ACTIVE_AI_TASK", payload: `${projectId}:测试点生成` });
 
     const verify = await verifyAIConfig(projectId, "测试点生成");
     if (!verify.ok) {
-      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "测试点生成" });
+      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:测试点生成` });
       addNotification("任务失败", "测试点生成", projectId, `测试点生成失败：${verify.error}`, `/projects/${projectId}`);
       return { success: false, error: verify.error };
     }
@@ -281,18 +290,18 @@ export async function startGenerateTestPoints(projectId: string) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "测试点生成失败";
     addNotification("任务失败", "测试点生成", projectId, msg, `/projects/${projectId}`);
-    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "测试点生成" });
+    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:测试点生成` });
     return { success: false, error: msg };
   }
 }
 
 export async function startGenerateTestCases(projectId: string) {
   try {
-    if (_dispatch) _dispatch({ type: "START_ACTIVE_AI_TASK", payload: "用例生成" });
+    if (_dispatch) _dispatch({ type: "START_ACTIVE_AI_TASK", payload: `${projectId}:用例生成` });
 
     const verify = await verifyAIConfig(projectId, "用例生成");
     if (!verify.ok) {
-      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "用例生成" });
+      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:用例生成` });
       addNotification("任务失败", "用例生成", projectId, `用例生成失败：${verify.error}`, `/projects/${projectId}`);
       return { success: false, error: verify.error };
     }
@@ -323,18 +332,18 @@ export async function startGenerateTestCases(projectId: string) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "用例生成失败";
     addNotification("任务失败", "用例生成", projectId, msg, `/projects/${projectId}`);
-    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "用例生成" });
+    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:用例生成` });
     return { success: false, error: msg };
   }
 }
 
 export async function startGenerateDocs(projectId: string, templateId: string) {
   try {
-    if (_dispatch) _dispatch({ type: "START_ACTIVE_AI_TASK", payload: "文档生成" });
+    if (_dispatch) _dispatch({ type: "START_ACTIVE_AI_TASK", payload: `${projectId}:文档生成` });
 
     const verify = await verifyAIConfig(projectId, "文档生成");
     if (!verify.ok) {
-      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "文档生成" });
+      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:文档生成` });
       addNotification("任务失败", "文档生成", projectId, `文档生成失败：${verify.error}`, `/projects/${projectId}`);
       return { success: false, error: verify.error };
     }
@@ -344,33 +353,12 @@ export async function startGenerateDocs(projectId: string, templateId: string) {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "文档生成失败";
     addNotification("任务失败", "文档生成", projectId, msg, `/projects/${projectId}`);
-    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "文档生成" });
+    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:文档生成` });
     return { success: false, error: msg };
   }
 }
 
 /** 查询某个项目是否有正在运行的任务 */
-export async function startReviewTestCases(projectId: string) {
-  try {
-    if (_dispatch) _dispatch({ type: "START_ACTIVE_AI_TASK", payload: "用例评审" });
-
-    const verify = await verifyAIConfig(projectId, "用例评审");
-    if (!verify.ok) {
-      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "用例评审" });
-      addNotification("任务失败", "用例评审", projectId, `用例评审失败：${verify.error}`, `/projects/${projectId}`);
-      return { success: false, error: verify.error };
-    }
-
-    toast.info("AI 用例评审已启动，完成后会在通知列表中提醒");
-    return await runTask(projectId, "用例评审", () => aiApi.reviewTestCases(projectId), undefined, { skipStartDispatch: true });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "用例评审失败";
-    addNotification("任务失败", "用例评审", projectId, msg, `/projects/${projectId}`);
-    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: "用例评审" });
-    return { success: false, error: msg };
-  }
-}
-
 export function hasActiveTask(projectId: string, taskType?: string): boolean {
   for (const key of activeTasks.keys()) {
     if (taskType ? key === `${projectId}:${taskType}` : key.startsWith(`${projectId}:`)) {

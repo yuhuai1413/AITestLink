@@ -5,6 +5,7 @@ import { DataTable } from "../../shared/components/DataTable";
 import { DataPanel } from "../../shared/components/DataPanel";
 import { ConfirmDialog } from "../../shared/components/ConfirmDialog";
 import { Modal } from "../../shared/components/Modal";
+import { useUnsavedChanges } from "../../shared/hooks/useUnsavedChanges";
 
 export function UserManagementPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
@@ -21,6 +22,7 @@ export function UserManagementPage() {
   const [editingUser, setEditingUser] = useState<UserItem | null>(null);
   const [editForm, setEditForm] = useState({ nickname: "", is_admin: false, is_active: true });
   const [saving, setSaving] = useState(false);
+  const userDirty = useUnsavedChanges();
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -30,7 +32,7 @@ export function UserManagementPage() {
         setUsers(usersRes.users);
       }
       if (meRes.ok && meRes.user) {
-        setCurrentUserId(meRes.user.user_id);
+        setCurrentUserId(meRes.user.id);
       }
     } catch {
       // 静默失败
@@ -41,6 +43,12 @@ export function UserManagementPage() {
 
   useEffect(() => {
     loadUsers();
+  }, [loadUsers]);
+
+  useEffect(() => {
+    const handler = () => loadUsers();
+    window.addEventListener("profile-updated", handler);
+    return () => window.removeEventListener("profile-updated", handler);
   }, [loadUsers]);
 
   const filteredUsers = useMemo(() => {
@@ -115,7 +123,11 @@ export function UserManagementPage() {
       const res = await updateUser(editingUser.id, editForm);
       if (res.ok) {
         await loadUsers();
+        if (editingUser.id === currentUserId) {
+          window.dispatchEvent(new Event("profile-updated"));
+        }
         setEditingUser(null);
+        userDirty.markClean();
       } else {
         alert(res.message || "保存失败");
       }
@@ -305,14 +317,21 @@ export function UserManagementPage() {
         danger={true}
       />
 
-      <Modal open={!!editingUser} onClose={() => setEditingUser(null)} title="编辑用户" width={520}>
-        <div className="form-stack">
+      <Modal open={!!editingUser} onClose={() => userDirty.requestClose(() => setEditingUser(null))} title="编辑用户" width={640}
+        footer={<>
+          <button className="ghost-button" type="button" onClick={() => userDirty.requestClose(() => setEditingUser(null))}>取消</button>
+          <button className="primary-button" type="button" onClick={handleSaveEdit} disabled={saving}>
+            {saving ? "保存中..." : "保存"}
+          </button>
+        </>}
+      >
+        <form className="form-stack" onSubmit={(e) => { e.preventDefault(); handleSaveEdit(); }}>
           <div className="form-label">
             <span>昵称</span>
             <input
               className="form-input"
               value={editForm.nickname}
-              onChange={(e) => setEditForm({ ...editForm, nickname: e.target.value })}
+              onChange={(e) => { setEditForm({ ...editForm, nickname: e.target.value }); userDirty.markDirty(); }}
             />
           </div>
           <div className="form-label">
@@ -320,7 +339,7 @@ export function UserManagementPage() {
             <select
               className="form-select"
               value={editForm.is_admin ? "admin" : "user"}
-              onChange={(e) => setEditForm({ ...editForm, is_admin: e.target.value === "admin" })}
+              onChange={(e) => { setEditForm({ ...editForm, is_admin: e.target.value === "admin" }); userDirty.markDirty(); }}
             >
               <option value="user">普通用户</option>
               <option value="admin">管理员</option>
@@ -333,21 +352,15 @@ export function UserManagementPage() {
                 type="checkbox"
                 checked={editForm.is_active}
                 disabled={editForm.is_admin}
-                onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })}
+                onChange={(e) => { setEditForm({ ...editForm, is_active: e.target.checked }); userDirty.markDirty(); }}
               />
               <span className="toggle-switch__slider" />
             </label>
           </div>
-        </div>
-        <div className="form-actions" style={{ marginTop: 20 }}>
-          <button className="ghost-button" type="button" onClick={() => setEditingUser(null)}>
-            取消
-          </button>
-          <button className="primary-button" type="button" onClick={handleSaveEdit} disabled={saving}>
-            {saving ? "保存中..." : "保存"}
-          </button>
-        </div>
+
+        </form>
       </Modal>
+      {userDirty.confirmDialog}
     </div>
   );
 }

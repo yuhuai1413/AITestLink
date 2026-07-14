@@ -1,17 +1,19 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Eye, EyeOff, Pencil, TestTube, Loader2, Check, X, Save, Trash2, ChevronDown, RotateCcw } from "lucide-react";
+import { Eye, EyeOff, Pencil, TestTube, Loader2, Check, X, Save, Trash2, ChevronDown, RotateCcw, Settings } from "lucide-react";
 import { Modal } from "../../shared/components/Modal";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { DataTable } from "../../shared/components/DataTable";
 import { DataPanel } from "../../shared/components/DataPanel";
 import { modelConfigApi, type ApiModelConfig } from "../../api/client";
 import { toast } from "sonner";
+import { getMeWithAdmin } from "../auth/api/auth";
+import { TOKEN_KEY } from "../../shared/config/storage";
+import { useUnsavedChanges } from "../../shared/hooks/useUnsavedChanges";
 
 const nodeColors: Record<string, string> = {
   "需求解析": "green",
   "生成测试点": "blue",
   "生成测试用例": "blue",
-  "用例评审": "red",
   "生成脚本": "amber",
   "执行脚本": "amber",
   "文档生成": "purple",
@@ -239,10 +241,19 @@ export function ModelConfigPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchEditing, setBatchEditing] = useState(false);
   const [lockedAiNodes, setLockedAiNodes] = useState<string[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const configDirty = useUnsavedChanges();
+  const [showAdminPromptModal, setShowAdminPromptModal] = useState(false);
+  const [adminPrompts, setAdminPrompts] = useState<{ configKey: string; name: string; prompt: string }[]>([]);
+  const [adminPromptsLoading, setAdminPromptsLoading] = useState(false);
+  const [editingPromptConfig, setEditingPromptConfig] = useState<ApiModelConfig | null>(null);
 
   // 加载配置
   useEffect(() => {
     loadConfigs();
+    getMeWithAdmin().then((res) => {
+      if (res.ok) setIsAdmin(res.user.is_admin || false);
+    }).catch(() => {});
   }, []);
 
   const loadConfigs = async () => {
@@ -256,6 +267,52 @@ export function ModelConfigPage() {
       console.error("Failed to load configs:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAdminPrompts = async () => {
+    setAdminPromptsLoading(true);
+    try {
+      const res = await fetch("/api/model-configs/admin-prompts", {
+        headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAdminPrompts(data);
+      }
+    } catch (e) {
+      console.error("Failed to load admin prompts:", e);
+    } finally {
+      setAdminPromptsLoading(false);
+    }
+  };
+
+  const saveAdminPrompts = async () => {
+    // 校验当前编辑的节点提示词不能为空
+    const currentPrompt = adminPrompts.find((p) => p.configKey === editingPromptConfig?.configKey);
+    if (!currentPrompt?.prompt?.trim()) {
+      toast.error("提示词不能为空");
+      return;
+    }
+    try {
+      const res = await fetch("/api/model-configs/admin-prompts", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}`,
+        },
+        body: JSON.stringify({ prompts: adminPrompts }),
+      });
+      if (res.ok) {
+        toast.success("管理员提示词已保存");
+        setShowAdminPromptModal(false);
+        setEditingPromptConfig(null);
+        loadConfigs();
+      } else {
+        toast.error("保存失败");
+      }
+    } catch (e) {
+      toast.error("保存失败");
     }
   };
 
@@ -334,6 +391,10 @@ export function ModelConfigPage() {
 
   const handleSaveEdit = async () => {
     if (editingConfig) {
+      if (!editingConfig.prompt?.trim()) {
+        toast.error("提示词不能为空");
+        return;
+      }
       const newConfigs = configs.map((c) => {
         if (c.id === editingConfig.id) {
           return { ...editingConfig };
@@ -342,6 +403,7 @@ export function ModelConfigPage() {
       });
       await saveConfigs(newConfigs);
       await loadConfigs();
+      configDirty.markClean();
       setEditingConfig(null);
       setShowApiKey(false);
     }
@@ -509,6 +571,15 @@ export function ModelConfigPage() {
                       </span>
                     ) : '测试'}
                   </button>
+                  {isAdmin && (
+                    <button className="text-button" type="button" onClick={() => {
+                      setEditingPromptConfig(row);
+                      setShowAdminPromptModal(true);
+                      loadAdminPrompts();
+                    }}>
+                      配置提示词
+                    </button>
+                  )}
                 </div>
               ),
             },
@@ -519,16 +590,25 @@ export function ModelConfigPage() {
       {/* 单个编辑弹窗 */}
       <Modal
         open={!!editingConfig && !batchEditing}
-        onClose={() => { setEditingConfig(null); setShowApiKey(false); }}
+        onClose={() => configDirty.requestClose(() => { setEditingConfig(null); setShowApiKey(false); })}
         title={`编辑配置 - ${editingConfig?.name}`}
-        width={520}
+        width={640}
+        footer={<>
+          <button className="ghost-button" type="button" onClick={() => configDirty.requestClose(() => { setEditingConfig(null); setShowApiKey(false); })}>取消</button>
+          <button className="ghost-button" type="button" onClick={() => {
+            const adminPrompt = editingConfig?.adminPrompt || "";
+            setEditingConfig((prev) => prev ? { ...prev, prompt: adminPrompt } : prev);
+            toast.success("已重置为管理员默认提示词");
+          }}>重置提示词</button>
+          <button className="primary-button" type="button" onClick={handleSaveEdit}><Save size={16} /> 保存</button>
+        </>}
       >
         {editingConfig && (
           <form className="form-stack" onSubmit={(e) => { e.preventDefault(); handleSaveEdit(); }}>
             <div className="form-row">
               <label className="form-label">
                 供应商
-                <select className="form-select" value={editingConfig.provider} onChange={(e) => setEditingConfig({ ...editingConfig, provider: e.target.value })}>
+                <select className="form-select" value={editingConfig.provider} onChange={(e) => { setEditingConfig({ ...editingConfig, provider: e.target.value }); configDirty.markDirty(); }}>
                   <option value="">请选择供应商</option>
                   {Object.keys(providerModels).map((p) => (
                     <option key={p} value={p}>{p}</option>
@@ -539,7 +619,7 @@ export function ModelConfigPage() {
             <div className="form-row">
               <label className="form-label">
                 模型名称
-                <select className="form-select" value={editingConfig.modelName} onChange={(e) => setEditingConfig({ ...editingConfig, modelName: e.target.value })}>
+                <select className="form-select" value={editingConfig.modelName} onChange={(e) => { setEditingConfig({ ...editingConfig, modelName: e.target.value }); configDirty.markDirty(); }}>
                   <option value="">请选择模型</option>
                   {(providerModels[editingConfig.provider]?.models || []).map((m) => (
                     <option key={m} value={m}>{m}</option>
@@ -557,7 +637,6 @@ export function ModelConfigPage() {
                   <input className="form-input" type={showApiKey ? "text" : "password"} value={editingConfig.apiKey} onChange={(e) => {
                     const value = e.target.value;
                     const newConfig = { ...editingConfig, apiKey: value };
-                    // 自动判断 Base URL
                     if (!editingConfig.endpoint || editingConfig.endpoint.includes("xiaomimimo")) {
                       if (value.startsWith("tp-")) {
                         newConfig.endpoint = "https://token-plan-cn.xiaomimimo.com/v1";
@@ -576,25 +655,38 @@ export function ModelConfigPage() {
             <div className="form-row">
               <label className="form-label">
                 Base URL
-                <input className="form-input" type="text" value={editingConfig.endpoint} onChange={(e) => setEditingConfig({ ...editingConfig, endpoint: e.target.value })} placeholder="请输入 API 地址，如 https://api.openai.com/v1" required />
+                <input className="form-input" type="text" value={editingConfig.endpoint} onChange={(e) => { setEditingConfig({ ...editingConfig, endpoint: e.target.value }); configDirty.markDirty(); }} placeholder="请输入 API 地址，如 https://api.openai.com/v1" required />
               </label>
             </div>
             <div className="form-row">
               <label className="toggle-label">
                 启用
                 <label className="toggle-switch">
-                  <input type="checkbox" checked={editingConfig.enabled} onChange={(e) => setEditingConfig({ ...editingConfig, enabled: e.target.checked })} />
+                  <input type="checkbox" checked={editingConfig.enabled} onChange={(e) => { setEditingConfig({ ...editingConfig, enabled: e.target.checked }); configDirty.markDirty(); }} />
                   <span className="toggle-switch__slider" />
                 </label>
               </label>
             </div>
-            <div className="form-actions">
-              <button className="ghost-button" type="button" onClick={() => { setEditingConfig(null); setShowApiKey(false); }}>取消</button>
-              <button className="primary-button" type="submit">
-                <Save size={16} />
-                保存
-              </button>
+            <div className="form-row">
+              <label className="form-label">
+                系统提示词
+                {!isAdmin && editingConfig.adminPrompt && (
+                  <span style={{ fontSize: 12, fontWeight: 400, color: "var(--muted)", marginLeft: 8 }}>
+                    {editingConfig.prompt === editingConfig.adminPrompt ? "当前使用管理员默认提示词" : "已自定义提示词"}
+                  </span>
+                )}
+                <textarea
+                  className="form-textarea"
+                  value={editingConfig.prompt || ""}
+                  onChange={(e) => { setEditingConfig({ ...editingConfig, prompt: e.target.value }); configDirty.markDirty(); }}
+                  placeholder="请输入系统提示词..."
+                  rows={12}
+                  required
+                  style={{ fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.6 }}
+                />
+              </label>
             </div>
+
           </form>
         )}
       </Modal>
@@ -606,6 +698,22 @@ export function ModelConfigPage() {
         onSave={handleBatchSave}
         selectedCount={selectedIds.size}
       />
+
+      {/* 管理员提示词配置弹窗 */}
+      <AdminPromptModal
+        open={showAdminPromptModal}
+        onClose={() => { setShowAdminPromptModal(false); setEditingPromptConfig(null); }}
+        configName={editingPromptConfig?.name || ""}
+        prompt={adminPrompts.find((p) => p.configKey === editingPromptConfig?.configKey)?.prompt || ""}
+        loading={adminPromptsLoading}
+        onSave={saveAdminPrompts}
+        onPromptChange={(prompt) => {
+          setAdminPrompts((prev) => prev.map((p) =>
+            p.configKey === editingPromptConfig?.configKey ? { ...p, prompt } : p
+          ));
+        }}
+      />
+      {configDirty.confirmDialog}
     </div>
   );
 }
@@ -660,7 +768,12 @@ function BatchEditModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={`批量编辑（${selectedCount} 项）`} width={520}>
+    <Modal open={open} onClose={onClose} title={`批量编辑（${selectedCount} 项）`} width={640}
+      footer={<>
+        <button className="ghost-button" type="button" onClick={onClose}>取消</button>
+        <button className="primary-button" type="button" onClick={handleSubmit}><Save size={16} /> 确认保存</button>
+      </>}
+    >
       <form className="form-stack" onSubmit={handleSubmit}>
         <div style={{ padding: "12px 16px", background: "var(--blue-soft)", borderRadius: 8, fontSize: 13, color: "var(--text)", marginBottom: 8 }}>
           将为选中的 <strong>{selectedCount}</strong> 个配置统一设置以下信息
@@ -704,14 +817,70 @@ function BatchEditModal({
             <input className="form-input" type="text" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="请输入 API 地址，如 https://api.openai.com/v1" required />
           </label>
         </div>
-        <div className="form-actions">
-          <button className="ghost-button" type="button" onClick={onClose}>取消</button>
-          <button className="primary-button" type="submit">
-            <Save size={16} />
-            确认保存
-          </button>
-        </div>
+
       </form>
+    </Modal>
+  );
+}
+
+// 管理员提示词配置弹窗组件（单个节点）
+function AdminPromptModal({
+  open,
+  onClose,
+  configName,
+  prompt,
+  loading,
+  onSave,
+  onPromptChange,
+}: {
+  open: boolean;
+  onClose: () => void;
+  configName: string;
+  prompt: string;
+  loading: boolean;
+  onSave: () => void;
+  onPromptChange: (prompt: string) => void;
+}) {
+  const promptDirty = useUnsavedChanges();
+
+  return (
+    <Modal
+      open={open}
+      onClose={() => promptDirty.requestClose(onClose)}
+      title={`配置提示词 - ${configName}`}
+      width={720}
+      height="80vh"
+      flushTop
+      bodyOverflow="hidden"
+      footer={<>
+        <button className="ghost-button" type="button" onClick={() => promptDirty.requestClose(onClose)}>取消</button>
+        <button className="primary-button" type="button" onClick={() => { promptDirty.markClean(); onSave(); }} disabled={loading}>
+          {loading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+          保存
+        </button>
+      </>}
+    >
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 40 }}>
+          <Loader2 size={24} className="animate-spin" />
+          <p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>
+          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0, flexShrink: 0 }}>
+            配置「{configName}」节点的全局默认提示词。普通用户打开编辑时将看到此处配置的提示词，用户可自行修改。
+          </p>
+          <textarea
+            className="form-textarea"
+            value={prompt}
+            onChange={(e) => { onPromptChange(e.target.value); promptDirty.markDirty(); }}
+            placeholder={`请输入${configName}的默认提示词...`}
+            required
+            style={{ fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.6, flex: 1, overflow: "auto", padding: "12px" }}
+          />
+        </div>
+      )}
+      {promptDirty.confirmDialog}
     </Modal>
   );
 }

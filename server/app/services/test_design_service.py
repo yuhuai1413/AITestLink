@@ -56,7 +56,7 @@ class TestDesignService(BaseService):
                 title=item.get("title", ""),
                 description=item.get("description", ""),
                 priority=item.get("priority", "P1"),
-                automatable=item.get("automatable", False),
+                automatable=bool(item.get("automatable", False)),
             )
             self.db.add(tp)
             test_points.append(tp)
@@ -262,24 +262,6 @@ class TestDesignService(BaseService):
             count += 1
         await self.db.commit()
         return count
-
-    async def review_test_cases(self, project_id: str, case_ids: list[str], user_id: str) -> dict:
-        # 获取测试用例
-        result = await self.db.execute(
-            select(TestCase).where(TestCase.id.in_(case_ids))
-        )
-        cases = result.scalars().all()
-        if not cases:
-            from fastapi import HTTPException
-            raise HTTPException(status_code=400, detail="未找到测试用例数据")
-
-        # 构建用例文本
-        cases_text = "\n".join([
-            f"- 编号: {c.case_code}, 模块: {c.module}, 标题: {c.title}, 步骤: {c.steps[:100]}"
-            for c in cases
-        ])
-
-        return await self.ai_service.review_test_cases(cases_text, user_id)
 
     # ── Coverage ─────────────────────────────────────────────────────
 

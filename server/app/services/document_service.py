@@ -173,7 +173,7 @@ class DocumentService(BaseService):
             "rule": "rule",
             "question": "question",
             "confirmed": "confirmed",
-            "review_status": "review_status",
+            "reviewStatus": "review_status",
         }
         for schema_key, db_key in field_map.items():
             if schema_key in update_data:

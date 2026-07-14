@@ -2,7 +2,7 @@
 
 .detail-grid {
   display: grid;
-  gap: 0;
+  gap: 4px;
 }
 
 .detail-row {
@@ -12,7 +12,7 @@
   min-height: 36px;
   align-items: center;
   border-bottom: 1px solid var(--line);
-  padding: 8px 4px;
+  padding: 10px 4px;
   font-size: 14px;
   color: var(--text);
 }

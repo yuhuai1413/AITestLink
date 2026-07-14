@@ -12,7 +12,7 @@ import {
   FolderOpen,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { navigationItems } from "../data/platformData";
 import { useStore, useUnreadCount } from "../../app/store";
 import { LOGIN_URL } from "../config/deploy";
@@ -21,6 +21,7 @@ import { getMeWithAdmin } from "../../features/auth/api/auth";
 import type { ViewKey } from "../types/platform";
 import type { AppNotification } from "../types/platform";
 import { useNavHighlight } from "../hooks/useNavHighlight";
+import { notificationsApi } from "../../api/client";
 import { LogoMark } from "../../features/auth/components/LogoMark";
 import { TOKEN_KEY } from "../config/storage";
 
@@ -78,8 +79,21 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
   }, []);
 
   useEffect(() => { fetchUser(); }, [fetchUser]);
+
+  useEffect(() => {
+    const handler = () => fetchUser();
+    window.addEventListener("profile-updated", handler);
+    return () => window.removeEventListener("profile-updated", handler);
+  }, [fetchUser]);
+
   const { state, dispatch } = useStore();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // 路由切换时重新拉取用户信息，确保昵称/头像等始终最新
+  useEffect(() => {
+    fetchUser();
+  }, [location.pathname, fetchUser]);
 
   // 选中层：始终跟踪 activeIdx，collapsed 变化时重算
   const { containerRef, register, style: activeStyle } = useNavHighlight(`nav-${activeIdx}`, [collapsed]);
@@ -306,6 +320,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
                     state.notifications.forEach((n) => {
                       if (!n.read) dispatch({ type: "MARK_NOTIFICATION_READ", payload: n.id });
                     });
+                    notificationsApi.markAllRead().catch(() => {});
                   }
                 }}
               >
@@ -317,7 +332,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
                   <div className="notif-panel__header">
                     <span>通知</span>
                     {state.notifications.length > 0 && (
-                      <button className="text-button" type="button" onClick={() => dispatch({ type: "CLEAR_NOTIFICATIONS" })}>
+                      <button className="text-button" type="button" onClick={() => { dispatch({ type: "CLEAR_NOTIFICATIONS" }); notificationsApi.clear().catch(() => {}); }}>
                         清空
                       </button>
                     )}
@@ -327,7 +342,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
                       <div className="notif-panel__empty">暂无通知</div>
                     ) : (
                       state.notifications.slice(0, 20).map((n: AppNotification) => (
-                        <div key={n.id} className={`notif-item ${n.type === "任务失败" ? "notif-item--error" : "notif-item--success"}`} onClick={() => { const tab = n.taskType === "需求解析" ? "requirements" : n.taskType === "测试点生成" ? "testPoints" : n.taskType === "用例生成" ? "testCases" : n.taskType === "文档生成" ? "docGenerate" : "overview"; localStorage.setItem("aitestlink-project-tab-" + n.projectId, tab); window.dispatchEvent(new CustomEvent("aitestlink:navigate-tab", { detail: { tab, projectId: n.projectId } })); navigate(n.targetPath || `/projects/${n.projectId}`); dispatch({ type: "MARK_NOTIFICATION_READ", payload: n.id }); setShowNotifications(false); }}>
+                        <div key={n.id} className={`notif-item ${n.type === "任务失败" ? "notif-item--error" : "notif-item--success"}`} onClick={() => { const tab = n.taskType === "需求解析" ? "requirements" : n.taskType === "测试点生成" ? "testPoints" : n.taskType === "用例生成" ? "testCases" : n.taskType === "文档生成" ? "docGenerate" : "overview"; localStorage.setItem("aitestlink-project-tab-" + n.projectId, tab); window.dispatchEvent(new CustomEvent("aitestlink:navigate-tab", { detail: { tab, projectId: n.projectId } })); navigate(n.targetPath || `/projects/${n.projectId}`); dispatch({ type: "MARK_NOTIFICATION_READ", payload: n.id }); notificationsApi.markRead(n.id).catch(() => {}); setShowNotifications(false); }}>
                           <div className="notif-item__icon">{n.type === "任务完成" ? "✓" : "✕"}</div>
                           <div className="notif-item__body">
                             <div className="notif-item__title">{n.taskType} · {n.projectName}</div>
@@ -361,9 +376,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
                     <span style={{ width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Settings size={16} /></span> 个人设置
                   </button>
                   <button className="user-menu__item user-menu__item--danger" type="button" onClick={() => {
-                    localStorage.removeItem(TOKEN_KEY);
-                    localStorage.removeItem("user");
-                    localStorage.removeItem("aitestlink-store");
+localStorage.removeItem(TOKEN_KEY);
                     setShowUserMenu(false);
                     window.location.href = LOGIN_URL;
                   }} style={{ paddingLeft: 16, gap: 10 }}>

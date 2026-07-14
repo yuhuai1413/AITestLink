@@ -60,7 +60,12 @@ export function TestCaseEditModal({ open, testCase, onClose }: TestCaseEditModal
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="编辑测试用例" width={520}>
+    <Modal open={open} onClose={onClose} title="编辑测试用例" width={640}
+      footer={<>
+        <button className="ghost-button" type="button" onClick={onClose}>取消</button>
+        <button className="primary-button" type="button" onClick={handleSubmit}>保存</button>
+      </>}
+    >
       <form className="form-stack" onSubmit={handleSubmit}>
         <div className="form-row">
           <label className="form-label">
@@ -138,10 +143,7 @@ export function TestCaseEditModal({ open, testCase, onClose }: TestCaseEditModal
           </label>
         </div>
 
-        <div className="form-actions">
-          <button className="ghost-button" type="button" onClick={onClose}>取消</button>
-          <button className="primary-button" type="submit">保存</button>
-        </div>
+
       </form>
     </Modal>
   );

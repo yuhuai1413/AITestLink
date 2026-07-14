@@ -143,7 +143,6 @@ export type AITaskType =
   | "需求解析"
   | "测试点生成"
   | "用例生成"
-  | "用例评审"
   | "脚本生成"
   | "文档生成";
 export type AITaskStatus = "等待" | "执行中" | "成功" | "失败";
@@ -199,18 +198,6 @@ export interface RoadmapPhase {
   status: "当前" | "下一步" | "规划";
 }
 
-// ─── 通知 ───
+// ─── 通知（重新导出自 contracts/system.ts） ───
 
-export type NotificationType = "任务完成" | "任务失败";
-
-export interface AppNotification {
-  id: string;
-  type: NotificationType;
-  taskType: AITaskType;
-  projectName: string;
-  projectId: string;
-  message: string;
-  targetPath: string;
-  read: boolean;
-  createdAt: string;
-}
+export type { NotificationType, AppNotification } from "../../contracts/system";

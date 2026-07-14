@@ -5,8 +5,9 @@ import { renderAsync } from "docx-preview";
 import { useStore, useProjectTestCases } from "../../app/store";
 import { useProjectData } from "./useProjectData";
 import { useAPISync } from "../../api/useAPISync";
-import { useAIAction } from "../../shared/hooks/useAIAction";
 import { useConfigError } from "../../shared/hooks/useConfigError";
+import { addNotification } from "../../shared/hooks/aiTaskManager";
+import { useUnsavedChanges } from "../../shared/hooks/useUnsavedChanges";
 import { aiApi, modelConfigApi, filesApi, requirementsApi, scriptsApi, testCasesApi, testPointsApi, docGenApi, type ApiFile, type ApiRequirement, type ApiTestPoint, type ApiTestCase, type ApiScript } from "../../api/client";
 import { DataTable } from "../../shared/components/DataTable";
 import { SectionHeader } from "../../shared/components/SectionHeader";
@@ -121,7 +122,10 @@ function FilesTab({ projectId }: { projectId: string }) {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [deletingFile, setDeletingFile] = useState<{ id: string; name: string } | null>(null);
+  const [deletingFile, setDeletingFile] = useState<{ id: string; name: string; parseStatus?: string } | null>(null);
+  const [previewFile, setPreviewFile] = useState<ApiFile | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 监听 AI 任务完成后刷新文件列表
@@ -157,13 +161,86 @@ function FilesTab({ projectId }: { projectId: string }) {
     e.preventDefault(); setDragOver(false); handleUpload(e.dataTransfer.files);
   }, [projectId, files]);
 
+  const handlePreview = useCallback(async (file: ApiFile) => {
+    if (!file.storagePath) { toast.warning("该文件无存储路径"); return; }
+    const filePath = file.storagePath.replace(/^\.\//, "/");
+    const ext = file.storagePath.split(".").pop()?.toLowerCase() || "";
+    setPreviewFile(file);
+    setPreviewLoading(true);
+    try {
+      const response = await fetch(filePath, {
+        headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ""}` },
+      });
+      if (!response.ok) throw new Error("下载失败");
+      const blob = await response.blob();
+      if (ext === "docx" || ext === "doc") {
+        if (previewRef.current) {
+          previewRef.current.innerHTML = "";
+          await renderAsync(blob, previewRef.current, undefined, {
+            className: "docx-preview",
+            inWrapper: true,
+            ignoreWidth: false,
+            ignoreHeight: false,
+            ignoreFonts: false,
+            breakPages: true,
+            ignoreLastRenderedPageBreak: true,
+            experimental: true,
+          });
+        }
+      } else if (ext === "pdf") {
+        const url = URL.createObjectURL(blob);
+        if (previewRef.current) {
+          previewRef.current.innerHTML = `<embed src="${url}" type="application/pdf" style="width:100%;height:calc(90vh - 130px);display:block;" />`;
+        }
+      } else if (["md", "txt", "json", "yaml", "yml", "csv"].includes(ext || "")) {
+        const text = await blob.text();
+        if (previewRef.current) {
+          previewRef.current.innerHTML = `<pre style="margin:0;padding:16px;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-all;">${text.replace(/</g, "&lt;")}</pre>`;
+        }
+      } else {
+        toast.warning("该文件类型暂不支持预览");
+        setPreviewFile(null);
+        return;
+      }
+    } catch (error) {
+      console.error("Preview error:", error);
+      toast.error("预览加载失败");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, []);
+
+  const handleDownloadFile = useCallback(async (file: ApiFile) => {
+    if (!file.storagePath) return;
+    const filePath = file.storagePath.replace(/^\.\//, "/");
+    try {
+      const response = await fetch(filePath, {
+        headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ""}` },
+      });
+      if (!response.ok) throw new Error("下载失败");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Download error:", error);
+      toast.error("下载失败");
+    }
+  }, []);
+
 
 
   const handleDelete = async () => {
     if (!deletingFile) return;
-    try { 
+    const isParsed = deletingFile.parseStatus === "已完成";
+    try {
       const result = await deleteFile(deletingFile.id);
-      toast.success("删除成功，关联的需求、测试点、用例和脚本已一并清除"); 
+      toast.success(isParsed ? "删除成功，关联的需求、测试点、用例和脚本已一并清除" : "删除成功");
       await refreshFiles();
       // 通知其他 tab 刷新数据
       window.dispatchEvent(new CustomEvent("aitestlink:data-refresh", { detail: { projectId } })); 
@@ -202,16 +279,62 @@ function FilesTab({ projectId }: { projectId: string }) {
             { key: "size", label: "文件大小", render: (r) => r.size },
             { key: "parseStatus", label: "解析状态", align: "center", render: (r) => <span title={r.parseError || undefined}><StatusPill tone={r.parseStatus === "已完成" ? "green" : r.parseStatus === "解析中" ? "blue" : r.parseStatus === "失败" ? "red" : "slate"}>{r.parseStatus}</StatusPill></span> },
             { key: "date", label: "上传时间", render: (r) => formatTime(r.uploadedAt) },
-            { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => <button className="text-button text-button--danger" type="button" onClick={() => setDeletingFile({ id: r.id, name: r.name })}>删除</button> },
+            { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
+              <div className="inline-actions">
+                <button className="text-button" type="button" onClick={() => handlePreview(r)}>查看</button>
+                <button className="text-button text-button--danger" type="button" onClick={() => {
+                  if (r.parseStatus === "解析中") { toast.warning("文件正在解析中，请稍后再试"); return; }
+                  setDeletingFile({ id: r.id, name: r.name, parseStatus: r.parseStatus });
+                }}>删除</button>
+              </div>
+            ) },
 
           ]} />
         )}
       </section>
 
+      {/* 预览弹窗 */}
+      <Modal
+        open={!!previewFile}
+        onClose={() => { setPreviewFile(null); if (previewRef.current) previewRef.current.innerHTML = ""; }}
+        title={`预览文档 - ${previewFile?.name}`}
+        width={1100}
+        height="90vh"
+        flushTop
+        footer={<>
+          <button
+            className="ghost-button"
+            type="button"
+            onClick={() => { setPreviewFile(null); if (previewRef.current) previewRef.current.innerHTML = ""; }}
+          >
+            关闭
+          </button>
+        </>}
+      >
+        {previewLoading && (
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: "40px" }}>
+            <Loader2 size={24} className="animate-spin" style={{ marginRight: 8 }} />
+            <span>加载文档中...</span>
+          </div>
+        )}
+        <div
+          ref={previewRef}
+          style={{
+            flex: 1,
+            overflow: "auto",
+            background: "#fff",
+            borderRadius: 8,
+            padding: "0 16px 0 16px",
+          }}
+        />
+      </Modal>
+
       <ConfirmDialog
         open={!!deletingFile}
         title="删除文件"
-        message={`确定删除文件「${deletingFile?.name}」？\n\n⚠️ 删除文件将同时清除该项目已生成的需求、测试点、测试用例和自动化脚本。`}
+        message={deletingFile?.parseStatus === "已完成"
+          ? `确定删除文件「${deletingFile.name}」？\n\n⚠️ 删除文件将同时清除该项目已生成的需求、测试点、测试用例和自动化脚本。`
+          : `确定删除文件「${deletingFile?.name}」？`}
         confirmLabel="删除"
         onConfirm={handleDelete}
         onCancel={() => setDeletingFile(null)}
@@ -229,7 +352,7 @@ const truncateText = (text: string, maxLen = 50) => text.length > maxLen ? text.
 function RequirementsTab({ projectId }: { projectId: string }) {
   const { files, requirements, refresh, loading, initialLoading } = useProjectData(projectId);
   const { state, dispatch } = useStore();
-  const parsing = useMemo(() => state.activeAITasks.includes("需求解析"), [state.activeAITasks]);
+  const parsing = useMemo(() => state.activeAITasks.includes(`${projectId}:需求解析`), [state.activeAITasks, projectId]);
   const { showConfigError, dialog: configErrorDialog } = useConfigError();
   const [showReparseConfirm, setShowReparseConfirm] = useState(false);
   const [viewReq, setViewReq] = useState<typeof requirements[0] | null>(null);
@@ -238,6 +361,7 @@ function RequirementsTab({ projectId }: { projectId: string }) {
   const [editQuestion, setEditQuestion] = useState("");
   const [deletingReq, setDeletingReq] = useState<{ id: string; name: string } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const reqDirty = useUnsavedChanges("需求");
 
   const hasFiles = files.length > 0;
   const hasParsedFiles = requirements.length > 0;
@@ -267,22 +391,60 @@ function RequirementsTab({ projectId }: { projectId: string }) {
     await refresh();
   };
 
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [isReceiving, setIsReceiving] = useState(false);
+  const [streamCount, setStreamCount] = useState(0);
+
   const doParse = async () => {
+    if (files.length === 0) { toast.warning("请先在「输入资料」页面上传文件"); return; }
+
+    dispatch({ type: "CLEAR_REQUIREMENTS", payload: projectId });
+    setIsStreaming(true);
+    setIsReceiving(true);
+    setStreamCount(0);
+    toast.info("需求解析已启动，完成后会在通知列表中提醒");
+
     try {
-      const result = await startParseRequirements(projectId);
-      if (result.success) {
-        toast.success("需求解析完成！");
-        await refresh();
-        window.dispatchEvent(new CustomEvent("aitestlink:files-refresh", { detail: { projectId } }));
-      } else if (result.error) {
-        showConfigError(result.error);
+      const config = await aiApi.checkConfig(projectId, "需求解析");
+      if (!config.configured) {
+        showConfigError(config.message || "模型未配置");
+        setIsStreaming(false);
+        setIsReceiving(false);
+        return;
       }
+
+      await aiApi.streamParseRequirements(
+        projectId,
+        (count) => { setStreamCount(count); setIsReceiving(false); },
+        async (total) => {
+          toast.success(`需求解析完成！共 ${total} 条`);
+          addNotification("任务完成", "需求解析", projectId, `需求解析完成，共 ${total} 条需求`, `/projects/${projectId}`);
+          await refresh();
+          window.dispatchEvent(new CustomEvent("aitestlink:files-refresh", { detail: { projectId } }));
+          setIsStreaming(false);
+          setIsReceiving(false);
+          setStreamCount(0);
+        },
+        (msg) => {
+          toast.error(msg);
+          setIsStreaming(false);
+          setIsReceiving(false);
+          setStreamCount(0);
+          refresh();
+        },
+        () => { setIsReceiving(true); }
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "解析失败");
+      setIsStreaming(false);
+      setIsReceiving(false);
+      setStreamCount(0);
+      refresh();
     }
   };
 
   const handleParse = async () => {
+    if (isStreaming) return;
     // 直接调 API 检查文件数量，避免跨实例状态不同步
     try {
       const freshFiles = await filesApi.list(projectId);
@@ -295,7 +457,7 @@ function RequirementsTab({ projectId }: { projectId: string }) {
       return;
     }
     if (hasParsedFiles) { setShowReparseConfirm(true); return; }
-    doParse();
+    await doParse();
   };
 
   return (
@@ -305,9 +467,8 @@ function RequirementsTab({ projectId }: { projectId: string }) {
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
               {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
-              <button className="primary-button" type="button" onClick={handleParse} disabled={parsing}>
-                {parsing ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}
-                {parsing ? "解析中..." : "需求解析"}
+              <button className="primary-button" type="button" onClick={handleParse} disabled={parsing || isStreaming}>
+                {parsing || isStreaming ? <><Loader2 size={13} className="animate-spin" /> {isReceiving ? "AI 生成中..." : streamCount > 0 ? `写入中... (${streamCount})` : "解析中..."}</> : <><WandSparkles size={13} /> 需求解析</>}
               </button>
             </div>
             <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{requirements.length}</strong> 条需求</span>
@@ -344,7 +505,7 @@ function RequirementsTab({ projectId }: { projectId: string }) {
       </section>
 
       {/* 查看需求弹窗 */}
-      <Modal open={!!viewReq} onClose={() => setViewReq(null)} title="需求详情" width={520}>
+      <Modal open={!!viewReq} onClose={() => setViewReq(null)} title="需求详情" width={640}>
         {viewReq && (
           <div className="detail-grid">
             <div className="detail-row"><span className="detail-label">模块</span><span>{viewReq.module}</span></div>
@@ -359,29 +520,32 @@ function RequirementsTab({ projectId }: { projectId: string }) {
       </Modal>
 
       {/* 编辑需求弹窗 */}
-      <Modal open={!!editReq} onClose={() => setEditReq(null)} title="编辑需求" width={520}>
+      <Modal open={!!editReq} onClose={() => reqDirty.requestClose(() => setEditReq(null))} title="编辑需求" width={640}
+        footer={<>
+          <button className="ghost-button" type="button" onClick={() => reqDirty.requestClose(() => setEditReq(null))}>取消</button>
+          <button className="primary-button" type="button" onClick={async () => {
+            if (!editReq) return;
+            try {
+              const updatedReq = await requirementsApi.update(editReq.id, { rule: editRule, question: editQuestion } as any);
+              dispatch({ type: "UPDATE_REQUIREMENT", payload: { ...editReq, rule: editRule, question: editQuestion, createdAt: updatedReq.createdAt, updatedAt: updatedReq.updatedAt } });
+              toast.success("保存成功");
+              reqDirty.markClean();
+              setEditReq(null);
+            } catch { toast.error("保存失败"); }
+          }}>保存</button>
+        </>}
+      >
         {editReq && (
           <div className="detail-grid">
             <div className="detail-row"><span className="detail-label">模块</span><span>{editReq.module}</span></div>
             <div className="detail-row"><span className="detail-label">功能点</span><span>{editReq.feature}</span></div>
             <div className="detail-row"><span className="detail-label">来源</span><span>{editReq.source}</span></div>
             <div className="detail-row"><span className="detail-label">风险等级</span><StatusPill tone={editReq.risk === "高" ? "red" : editReq.risk === "中" ? "amber" : "green"}>{editReq.risk}</StatusPill></div>
-            <div className="detail-row detail-row--full"><span className="detail-label">业务规则</span><textarea className="form-textarea" style={{ flex: 1 }} rows={3} value={editRule} onChange={(e) => setEditRule(e.target.value)} /></div>
-            <div className="detail-row detail-row--full"><span className="detail-label">待确认问题</span><textarea className="form-textarea" style={{ flex: 1 }} rows={3} value={editQuestion} onChange={(e) => setEditQuestion(e.target.value)} /></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">业务规则</span><textarea className="form-textarea" style={{ flex: 1 }} rows={5} value={editRule} onChange={(e) => { setEditRule(e.target.value); reqDirty.markDirty(); }} /></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">待确认问题</span><textarea className="form-textarea" style={{ flex: 1 }} rows={5} value={editQuestion} onChange={(e) => { setEditQuestion(e.target.value); reqDirty.markDirty(); }} /></div>
             <div className="detail-row"><span className="detail-label">生成时间</span><span>{formatTime(editReq.createdAt)}</span></div>
             <div className="detail-row"><span className="detail-label">更新时间</span><span>{formatTime(editReq.updatedAt)}</span></div>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 12 }}>
-              <button className="ghost-button" type="button" onClick={() => setEditReq(null)}>取消</button>
-              <button className="primary-button" type="button" onClick={async () => {
-                if (!editReq) return;
-                try {
-                  const updatedReq = await requirementsApi.update(editReq.id, { rule: editRule, question: editQuestion } as any);
-                  dispatch({ type: "UPDATE_REQUIREMENT", payload: { ...editReq, rule: editRule, question: editQuestion, createdAt: updatedReq.createdAt, updatedAt: updatedReq.updatedAt } });
-                  toast.success("保存成功");
-                  setEditReq(null);
-                } catch { toast.error("保存失败"); }
-              }}>保存</button>
-            </div>
+
           </div>
         )}
       </Modal>
@@ -389,6 +553,7 @@ function RequirementsTab({ projectId }: { projectId: string }) {
       <ConfirmDialog open={showReparseConfirm} title="重新解析" message="部分文件已解析完成，再次解析将覆盖之前的解析数据和需求，是否继续？" confirmLabel="继续解析" onConfirm={() => { setShowReparseConfirm(false); doParse(); }} onCancel={() => setShowReparseConfirm(false)} />
       <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 条需求标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
       {configErrorDialog}
+      {reqDirty.confirmDialog}
 
     </div>
   );
@@ -402,9 +567,9 @@ function TestPointsTab({ projectId }: { projectId: string }) {
   const { testPoints, files, requirements, refresh, refreshTestPoints, loading, initialLoading } = useProjectData(projectId);
   const { dispatch } = useStore();
   const { showConfigError, dialog: configErrorDialog } = useConfigError();
-  const { loadingTestPoints, error, generateTestPoints } = useAIAction(projectId, showConfigError);
-  const prevLoadingRef = useRef(loadingTestPoints);
-  useEffect(() => { if (prevLoadingRef.current && !loadingTestPoints) { refreshTestPoints(); } prevLoadingRef.current = loadingTestPoints; }, [loadingTestPoints, refreshTestPoints]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [isReceiving, setIsReceiving] = useState(false);
+  const [streamCount, setStreamCount] = useState(0);
   const [moduleFilter, setModuleFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
@@ -412,15 +577,64 @@ function TestPointsTab({ projectId }: { projectId: string }) {
   const [editTP, setEditTP] = useState<typeof testPoints[0] | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
+  const tpDirty = useUnsavedChanges("测试点");
 
   const hasPrerequisite = requirements.length > 0;
   const unreviewedReqCount = requirements.filter((r) => (r as any).reviewStatus !== "已通过").length;
-  const handleGenerate = () => {
+
+  const handleGenerateStream = async () => {
     if (!hasPrerequisite) { toast.warning("请先在「需求列表」页面完成需求解析"); return; }
     if (unreviewedReqCount > 0) { toast.warning(`还有 ${unreviewedReqCount} 条需求未评审通过，请先完成需求评审`); return; }
-    if (testPoints.length > 0) { setShowGenerateConfirm(true); return; }
-    generateTestPoints();
+    if (testPoints.length > 0 && !showGenerateConfirm) { setShowGenerateConfirm(true); return; }
+    setShowGenerateConfirm(false);
+
+    // 先清空本地数据
+    dispatch({ type: "CLEAR_TEST_POINTS", payload: projectId });
+    setIsStreaming(true);
+    setIsReceiving(true);
+    setStreamCount(0);
+    toast.info("测试点生成已启动，完成后会在通知列表中提醒");
+
+    try {
+      // 先校验配置
+      const config = await aiApi.checkConfig(projectId, "测试点生成");
+      if (!config.configured) {
+        showConfigError(config.message || "模型未配置");
+        setIsStreaming(false);
+        setIsReceiving(false);
+        return;
+      }
+
+      await aiApi.streamTestPoints(
+        projectId,
+        (count) => { setStreamCount(count); setIsReceiving(false); },
+        async (total) => {
+          toast.success(`测试点生成完成！共 ${total} 个`);
+          addNotification("任务完成", "测试点生成", projectId, `测试点生成完成，共 ${total} 个`, `/projects/${projectId}`);
+          await refreshTestPoints();
+          setIsStreaming(false);
+          setIsReceiving(false);
+          setStreamCount(0);
+        },
+        (msg) => {
+          toast.error(msg);
+          setIsStreaming(false);
+          setIsReceiving(false);
+          setStreamCount(0);
+          refreshTestPoints();
+        },
+        () => { setIsReceiving(true); }
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "生成失败");
+      setIsStreaming(false);
+      setIsReceiving(false);
+      setStreamCount(0);
+      refreshTestPoints();
+    }
   };
+
+  const handleGenerate = handleGenerateStream;
   const modules = useMemo(() => Array.from(new Set(testPoints.map((tp) => tp.module))), [testPoints]);
   const filtered = useMemo(() => moduleFilter === "all" ? testPoints : testPoints.filter((tp) => tp.module === moduleFilter), [testPoints, moduleFilter]);
   const allSelected = filtered.length > 0 && filtered.every((tp) => selectedIds.has(tp.id));
@@ -460,6 +674,7 @@ function TestPointsTab({ projectId }: { projectId: string }) {
       const updatedTP = await testPointsApi.update(editTP.id, { title: editTitle, description: editDesc } as any);
       dispatch({ type: "UPDATE_TEST_POINT", payload: { ...editTP, title: editTitle, description: editDesc, createdAt: updatedTP.createdAt, updatedAt: updatedTP.updatedAt } });
       toast.success("保存成功");
+      tpDirty.markClean();
       setEditTP(null);
     } catch {
       toast.error("保存失败");
@@ -473,12 +688,11 @@ function TestPointsTab({ projectId }: { projectId: string }) {
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
               {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
-              <button className="primary-button" type="button" onClick={handleGenerate} disabled={loadingTestPoints}>{loadingTestPoints ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loadingTestPoints ? "生成中..." : "生成测试点"}</button>
+              <button className="primary-button" type="button" onClick={handleGenerate} disabled={isStreaming}>{isStreaming ? <><Loader2 size={13} className="animate-spin" /> {isReceiving ? "AI 生成中..." : streamCount > 0 ? `写入中... (${streamCount})` : "生成中..."}</> : <><WandSparkles size={13} /> 生成测试点</>}</button>
             </div>
             <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{testPoints.length}</strong> 个测试点</span>
           </div>
         </>} />
-      {error && <div className="error-banner"><span>{error}</span></div>}
       {modules.length > 0 && <div className="filter-bar"><span className="filter-label">模块筛选</span><select className="filter-select" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}><option value="all">全部模块</option>{modules.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>}
       <section className="work-panel">
         {initialLoading && filtered.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : filtered.length === 0 ? <div className="empty-state"><p>暂无测试点</p></div> : (
@@ -504,7 +718,7 @@ function TestPointsTab({ projectId }: { projectId: string }) {
       </section>
 
       {/* 查看测试点弹窗 */}
-      <Modal open={!!viewTP} onClose={() => setViewTP(null)} title="测试点详情" width={520}>
+      <Modal open={!!viewTP} onClose={() => setViewTP(null)} title="测试点详情" width={640}>
         {viewTP && (
           <div className="detail-grid">
             <div className="detail-row"><span className="detail-label">编号</span><span>{viewTP.id}</span></div>
@@ -521,7 +735,12 @@ function TestPointsTab({ projectId }: { projectId: string }) {
       </Modal>
 
       {/* 编辑测试点弹窗 */}
-      <Modal open={!!editTP} onClose={() => setEditTP(null)} title="编辑测试点" width={520}>
+      <Modal open={!!editTP} onClose={() => tpDirty.requestClose(() => setEditTP(null))} title="编辑测试点" width={640}
+        footer={<>
+          <button className="ghost-button" type="button" onClick={() => tpDirty.requestClose(() => setEditTP(null))}>取消</button>
+          <button className="primary-button" type="button" onClick={handleSaveEdit}>保存</button>
+        </>}
+      >
         {editTP && (
           <div className="detail-grid">
             <div className="detail-row"><span className="detail-label">编号</span><span>{editTP.id}</span></div>
@@ -529,19 +748,17 @@ function TestPointsTab({ projectId }: { projectId: string }) {
             <div className="detail-row"><span className="detail-label">类型</span><span>{editTP.type}</span></div>
             <div className="detail-row"><span className="detail-label">优先级</span><StatusPill tone={priorityTone(editTP.priority)}>{editTP.priority}</StatusPill></div>
             <div className="detail-row"><span className="detail-label">评审状态</span><StatusPill tone={reviewTone(editTP.reviewStatus)}>{editTP.reviewStatus}</StatusPill></div>
-            <div className="detail-row detail-row--full"><span className="detail-label">测试点</span><input className="form-input" style={{ flex: 1 }} value={editTitle} onChange={(e) => setEditTitle(e.target.value)} /></div>
-            <div className="detail-row detail-row--full"><span className="detail-label">描述</span><textarea className="form-textarea" style={{ flex: 1 }} rows={4} value={editDesc} onChange={(e) => setEditDesc(e.target.value)} /></div>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 12 }}>
-              <button className="ghost-button" type="button" onClick={() => setEditTP(null)}>取消</button>
-              <button className="primary-button" type="button" onClick={handleSaveEdit}>保存</button>
-            </div>
+            <div className="detail-row detail-row--full"><span className="detail-label">测试点</span><input className="form-input" style={{ flex: 1 }} value={editTitle} onChange={(e) => { setEditTitle(e.target.value); tpDirty.markDirty(); }} /></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">描述</span><textarea className="form-textarea" style={{ flex: 1 }} rows={6} value={editDesc} onChange={(e) => { setEditDesc(e.target.value); tpDirty.markDirty(); }} /></div>
+
           </div>
         )}
       </Modal>
 
-      <ConfirmDialog open={showGenerateConfirm} title="重新生成测试点" message={`当前已有 ${testPoints.length} 个测试点，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={() => { setShowGenerateConfirm(false); generateTestPoints(); }} onCancel={() => setShowGenerateConfirm(false)} />
+      <ConfirmDialog open={showGenerateConfirm} title="重新生成测试点" message={`当前已有 ${testPoints.length} 个测试点，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={handleGenerateStream} onCancel={() => setShowGenerateConfirm(false)} />
       <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 个测试点标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
       {configErrorDialog}
+      {tpDirty.confirmDialog}
 
     </div>
   );
@@ -555,60 +772,74 @@ function TestCasesTab({ projectId }: { projectId: string }) {
   const { project, testCases, testPoints, refresh, refreshTestCases, refreshTestPoints, loading, initialLoading } = useProjectData(projectId);
   const { dispatch } = useStore();
   const { showConfigError, dialog: configErrorDialog } = useConfigError();
-  const { loadingTestCases, loadingReview, error, generateTestCases, reviewTestCases } = useAIAction(projectId, showConfigError);
-  const prevLoadingRef = useRef(loadingTestCases);
-  useEffect(() => { if (prevLoadingRef.current && !loadingTestCases) { refreshTestCases(); setReviewResult(null); setShowReviewResult(false); } prevLoadingRef.current = loadingTestCases; }, [loadingTestCases, refreshTestCases]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [isReceiving, setIsReceiving] = useState(false);
+  const [streamCount, setStreamCount] = useState(0);
   const [detailCase, setDetailCase] = useState<TestCase | null>(null);
   const [editCase, setEditCase] = useState<TestCase | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editSteps, setEditSteps] = useState("");
   const [editExpected, setEditExpected] = useState("");
+  const tcDirty = useUnsavedChanges("用例");
   const [moduleFilter, setModuleFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
-  const busy = loadingTestCases || loadingReview;
-  const [reviewResult, setReviewResult] = useState<any>(null);
-  const [showReviewResult, setShowReviewResult] = useState(false);
-
-  // 组件挂载时加载最近一次评审结果
-  useEffect(() => {
-    (async () => {
-      try {
-        const tasks = await aiApi.listTasks(projectId);
-        const latestReview = tasks.find((t: any) => t.type === "用例评审" && t.status === "成功");
-        if (latestReview && latestReview.result) {
-          const parsed = typeof latestReview.result === "string" ? JSON.parse(latestReview.result) : latestReview.result;
-          setReviewResult(parsed);
-        }
-      } catch {}
-    })();
-  }, [projectId]);
-
-  const handleAIReview = async () => {
-    if (testCases.length === 0) { toast.warning("暂无测试用例，请先生成"); return; }
-    const result = await reviewTestCases();
-    if (result.success) {
-      try {
-        const tasks = await aiApi.listTasks(projectId);
-        const latestReview = tasks.find((t: any) => t.type === "用例评审" && t.status === "成功");
-        if (latestReview && latestReview.result) {
-          const parsed = typeof latestReview.result === "string" ? JSON.parse(latestReview.result) : latestReview.result;
-          setReviewResult(parsed);
-          setShowReviewResult(true);
-        }
-      } catch {}
-    }
-  };
 
   const hasPrerequisite = testPoints.length > 0;
   const unreviewedTPCount = testPoints.filter((tp) => tp.reviewStatus !== "已通过").length;
-  const handleGenerate = () => {
+
+  const handleGenerateStream = async () => {
     if (!hasPrerequisite) { toast.warning("请先生成测试点"); return; }
     if (unreviewedTPCount > 0) { toast.warning(`还有 ${unreviewedTPCount} 个测试点未评审通过，请先完成测试点评审`); return; }
-    if (testCases.length > 0) { setShowGenerateConfirm(true); return; }
-    generateTestCases();
+    if (testCases.length > 0 && !showGenerateConfirm) { setShowGenerateConfirm(true); return; }
+    setShowGenerateConfirm(false);
+
+    dispatch({ type: "CLEAR_TEST_CASES", payload: projectId });
+    setIsStreaming(true);
+    setIsReceiving(true);
+    setStreamCount(0);
+    toast.info("用例生成已启动，完成后会在通知列表中提醒");
+
+    try {
+      const config = await aiApi.checkConfig(projectId, "用例生成");
+      if (!config.configured) {
+        showConfigError(config.message || "模型未配置");
+        setIsStreaming(false);
+        setIsReceiving(false);
+        return;
+      }
+
+      await aiApi.streamTestCases(
+        projectId,
+        (count) => { setStreamCount(count); setIsReceiving(false); },
+        async (total) => {
+          toast.success(`用例生成完成！共 ${total} 条`);
+          addNotification("任务完成", "用例生成", projectId, `用例生成完成，共 ${total} 条`, `/projects/${projectId}`);
+          await refreshTestCases();
+          setIsStreaming(false);
+          setIsReceiving(false);
+          setStreamCount(0);
+        },
+        (msg) => {
+          toast.error(msg);
+          setIsStreaming(false);
+          setIsReceiving(false);
+          setStreamCount(0);
+          refreshTestCases();
+        },
+        () => { setIsReceiving(true); }
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "生成失败");
+      setIsStreaming(false);
+      setIsReceiving(false);
+      setStreamCount(0);
+      refreshTestCases();
+    }
   };
+
+  const handleGenerate = handleGenerateStream;
   const modules = useMemo(() => Array.from(new Set(testCases.map((tc) => tc.module))), [testCases]);
   const filtered = useMemo(() => moduleFilter === "all" ? testCases : testCases.filter((tc) => tc.module === moduleFilter), [testCases, moduleFilter]);
   const allSelected = filtered.length > 0 && filtered.every((tc) => selectedIds.has(tc.id));
@@ -647,6 +878,7 @@ function TestCasesTab({ projectId }: { projectId: string }) {
       const updatedTC = await testCasesApi.update(editCase.id, { title: editTitle, steps: editSteps, expectedResult: editExpected } as any);
       dispatch({ type: "UPDATE_TEST_CASE", payload: { ...editCase, title: editTitle, steps: editSteps, expectedResult: editExpected, createdAt: updatedTC.createdAt, updatedAt: updatedTC.updatedAt } });
       toast.success("保存成功");
+      tcDirty.markClean();
       setEditCase(null);
     } catch {
       toast.error("保存失败");
@@ -663,20 +895,17 @@ function TestCasesTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="用例生成" description="从测试点生成可执行用例，支持评审。"
+      <SectionHeader title="用例生成" description="从测试点生成可执行用例，AI 在生成时自动进行质量自检。"
         actions={<>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
-              {selectedIds.size > 0 && <button className="ghost-button" type="button" disabled={busy} onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
-              <button className="ghost-button" type="button" disabled={busy} onClick={() => { if (!reviewResult) { toast.warning("暂无评审报告，请先执行 AI 评审"); return; } setShowReviewResult(true); }}><Eye size={13} /> 查看评审报告</button>
-              <button className="primary-button" type="button" onClick={handleAIReview} disabled={busy}>{loadingReview ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}{loadingReview ? "评审中..." : "AI 评审"}</button>
-              <button className="primary-button" type="button" onClick={handleExportManual} disabled={busy}><Download size={13} /> 导出手动测试用例</button>
-              <button className="primary-button" type="button" onClick={handleGenerate} disabled={busy}>{loadingTestCases ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}{loadingTestCases ? "生成中..." : "生成用例"}</button>
+              {selectedIds.size > 0 && <button className="ghost-button" type="button" disabled={isStreaming} onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
+              <button className="primary-button" type="button" onClick={handleExportManual} disabled={isStreaming}><Download size={13} /> 导出手动测试用例</button>
+              <button className="primary-button" type="button" onClick={handleGenerate} disabled={isStreaming}>{isStreaming ? <><Loader2 size={13} className="animate-spin" /> {isReceiving ? "AI 生成中..." : streamCount > 0 ? `写入中... (${streamCount})` : "生成中..."}</> : <><WandSparkles size={13} /> 生成用例</>}</button>
             </div>
             <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{testCases.length}</strong> 条用例</span>
           </div>
         </>} />
-      {error && <div className="error-banner"><span>{error}</span></div>}
       {modules.length > 0 && <div className="filter-bar"><span className="filter-label">模块筛选</span><select className="filter-select" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}><option value="all">全部模块</option>{modules.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>}
       <section className="work-panel">
         {initialLoading && filtered.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : filtered.length === 0 ? <div className="empty-state"><p>暂无测试用例</p></div> : (
@@ -707,72 +936,33 @@ function TestCasesTab({ projectId }: { projectId: string }) {
       <TestCaseDetailModal open={!!detailCase} testCase={detailCase} onClose={() => setDetailCase(null)} />
 
       {/* 编辑用例弹窗 */}
-      <Modal open={!!editCase} onClose={() => setEditCase(null)} title="编辑用例" width={520}>
+      <Modal open={!!editCase} onClose={() => tcDirty.requestClose(() => setEditCase(null))} title="编辑用例" width={640}
+        footer={<>
+          <button className="ghost-button" type="button" onClick={() => tcDirty.requestClose(() => setEditCase(null))}>取消</button>
+          <button className="primary-button" type="button" onClick={handleSaveEdit}>保存</button>
+        </>}
+      >
         {editCase && (
           <div className="detail-grid">
             <div className="detail-row"><span className="detail-label">用例编号</span><span>{editCase.caseCode}</span></div>
             <div className="detail-row"><span className="detail-label">模块</span><span>{editCase.module}</span></div>
             <div className="detail-row detail-row--full"><span className="detail-label">测试点</span><span>{editCase.feature}</span></div>
-            <div className="detail-row detail-row--full"><span className="detail-label">用例标题</span><input className="form-input" style={{ flex: 1 }} value={editTitle} onChange={(e) => setEditTitle(e.target.value)} /></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">用例标题</span><input className="form-input" style={{ flex: 1 }} value={editTitle} onChange={(e) => { setEditTitle(e.target.value); tcDirty.markDirty(); }} /></div>
             <div className="detail-row"><span className="detail-label">优先级</span><StatusPill tone={priorityTone(editCase.priority)}>{editCase.priority}</StatusPill></div>
             <div className="detail-row"><span className="detail-label">评审状态</span><StatusPill tone={reviewTone(editCase.reviewStatus)}>{editCase.reviewStatus}</StatusPill></div>
             <div className="detail-row"><span className="detail-label">是否自动化</span><span>{editCase.automation === "适合" ? "是" : "否"}</span></div>
-            <div className="detail-row detail-row--full"><span className="detail-label">测试步骤</span><textarea className="form-textarea" style={{ flex: 1 }} rows={4} value={editSteps} onChange={(e) => setEditSteps(e.target.value)} /></div>
-            <div className="detail-row detail-row--full"><span className="detail-label">预期结果</span><textarea className="form-textarea" style={{ flex: 1 }} rows={4} value={editExpected} onChange={(e) => setEditExpected(e.target.value)} /></div>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 12 }}>
-              <button className="ghost-button" type="button" onClick={() => setEditCase(null)}>取消</button>
-              <button className="primary-button" type="button" onClick={handleSaveEdit}>保存</button>
-            </div>
+            <div className="detail-row detail-row--full"><span className="detail-label">测试步骤</span><textarea className="form-textarea" style={{ flex: 1 }} rows={6} value={editSteps} onChange={(e) => { setEditSteps(e.target.value); tcDirty.markDirty(); }} /></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">预期结果</span><textarea className="form-textarea" style={{ flex: 1 }} rows={6} value={editExpected} onChange={(e) => { setEditExpected(e.target.value); tcDirty.markDirty(); }} /></div>
+
           </div>
         )}
       </Modal>
 
-      {/* AI 评审结果弹窗 */}
-      <Modal open={showReviewResult} onClose={() => setShowReviewResult(false)} title="AI 用例评审报告" width={640}>
-        {reviewResult && (
-          <div className="review-report">
-            <div className="review-score-section" style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 20, padding: 16, background: "var(--bg-secondary)", borderRadius: 8 }}>
-              <div style={{ fontSize: 48, fontWeight: 700, color: reviewResult.overallScore >= 80 ? "var(--green)" : reviewResult.overallScore >= 60 ? "var(--amber)" : "var(--red)" }}>{reviewResult.overallScore ?? "-"}</div>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>总体评分</div>
-                <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>{reviewResult.overallLevel ?? ""}</div>
-              </div>
-            </div>
-            {reviewResult.summary && <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 16 }}>{reviewResult.summary}</p>}
-            {Array.isArray(reviewResult.dimensions) && reviewResult.dimensions.map((dim: any, i: number) => (
-              <div key={i} style={{ marginBottom: 12, padding: 12, border: "1px solid var(--border)", borderRadius: 8 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13 }}>{dim.name}</span>
-                  <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{dim.score}/5</span>
-                </div>
-                {Array.isArray(dim.issues) && dim.issues.length > 0 && (
-                  <div style={{ marginBottom: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--red)" }}>问题：</span>
-                    {dim.issues.map((issue: string, j: number) => <div key={j} style={{ fontSize: 12, color: "var(--text-secondary)", paddingLeft: 8 }}>• {issue}</div>)}
-                  </div>
-                )}
-                {Array.isArray(dim.suggestions) && dim.suggestions.length > 0 && (
-                  <div>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--green)" }}>建议：</span>
-                    {dim.suggestions.map((sug: string, j: number) => <div key={j} style={{ fontSize: 12, color: "var(--text-secondary)", paddingLeft: 8 }}>• {sug}</div>)}
-                  </div>
-                )}
-              </div>
-            ))}
-            {Array.isArray(reviewResult.mustFix) && reviewResult.mustFix.length > 0 && (
-              <div style={{ marginTop: 12, padding: 12, background: "#fef2f2", borderRadius: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "var(--red)", marginBottom: 4 }}>必须修复</div>
-                {reviewResult.mustFix.map((item: string, i: number) => <div key={i} style={{ fontSize: 12, paddingLeft: 8 }}>• {item}</div>)}
-              </div>
-            )}
-          </div>
-        )}
-      </Modal>
-
-      <ConfirmDialog open={showGenerateConfirm} title="重新生成用例" message={`当前已有 ${testCases.length} 条用例，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={() => { setShowGenerateConfirm(false); generateTestCases(); }} onCancel={() => setShowGenerateConfirm(false)} />
+      <ConfirmDialog open={showGenerateConfirm} title="重新生成用例" message={`当前已有 ${testCases.length} 条用例，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={handleGenerateStream} onCancel={() => setShowGenerateConfirm(false)} />
 
       <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 条用例标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
       {configErrorDialog}
+      {tcDirty.confirmDialog}
     </div>
   );
 }
@@ -791,6 +981,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
   const [viewScript, setViewScript] = useState<AutomationScript | null>(null);
   const [editScript, setEditScript] = useState<AutomationScript | null>(null);
   const [editCode, setEditCode] = useState("");
+  const scriptDirty = useUnsavedChanges("脚本");
   const [deletingScript, setDeletingScript] = useState<{ id: string; name: string } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
@@ -832,49 +1023,57 @@ function ScriptsTab({ projectId }: { projectId: string }) {
     await refreshScripts();
   };
 
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [isReceiving, setIsReceiving] = useState(false);
+  const [streamCount, setStreamCount] = useState(0);
+
   const handleGenerate = async () => {
     if (!hasPrerequisite) { toast.warning("请先生成测试用例并标记适合自动化的用例"); return; }
-    if (unreviewedTCCount > 0) { toast.warning(`还有 ${unreviewedTCCount} 条用例未评审通过，请先完成用例评审`); return; }
-    // 检查模型配置 + 连通性
+    if (existingScriptCount > 0 && !showGenerateConfirm) { setShowGenerateConfirm(true); return; }
+    setShowGenerateConfirm(false);
+
+    // 检查模型配置
     try {
       const config = await aiApi.checkConfig(projectId, "脚本生成");
       if (!config.configured) {
         showConfigError(config.message || "模型未配置，请先在模型配置中设置");
         return;
       }
-      if (config.configId) {
-        const test = await modelConfigApi.test(config.configId);
-        if (!test.ok) {
-          showConfigError(test.message || "模型连通测试失败");
-          return;
-        }
-      }
-    } catch { /* 配置检查失败，继续尝试（后端会再次校验） */ }
-    setGenerating(true);
-    setError(null);
+    } catch { /* 配置检查失败，继续尝试 */ }
+
+    dispatch({ type: "CLEAR_SCRIPTS", payload: projectId });
+    setIsStreaming(true);
+    setIsReceiving(true);
+    setStreamCount(0);
+    toast.info("脚本生成已启动，完成后会在通知列表中提醒");
+
     try {
-      const result = await scriptsApi.generate(projectId);
-      if (result.ok && result.scripts) {
-        dispatch({ type: "CLEAR_SCRIPTS", payload: projectId });
-        result.scripts.forEach((s) => dispatch({ type: "ADD_SCRIPT", payload: {
-          id: s.id, projectId: s.projectId, testCaseId: s.testCaseId ?? undefined,
-          scriptType: s.scriptType as AutomationScript["scriptType"],
-          framework: s.framework as AutomationScript["framework"],
-          language: s.language, code: s.code,
-          status: s.status as AutomationScript["status"],
-          generatedByAi: s.generatedByAi,
-          createdAt: s.createdAt, updatedAt: s.updatedAt,
-        }}));
-        toast.success(`成功生成 ${result.count} 个自动化脚本`);
-        await refreshScripts();
-      }
+      await aiApi.streamScripts(
+        projectId,
+        (count) => { setStreamCount(count); setIsReceiving(false); },
+        async (total) => {
+          toast.success(`脚本生成完成！共 ${total} 个`);
+          await refreshScripts();
+          addNotification("任务完成", "脚本生成", projectId, `脚本生成完成，共 ${total} 个`, `/projects/${projectId}`);
+          setIsStreaming(false);
+          setIsReceiving(false);
+          setStreamCount(0);
+          setShowGenerateConfirm(false);
+        },
+        (msg) => {
+          toast.error(msg);
+          setIsStreaming(false);
+          setIsReceiving(false);
+          setStreamCount(0);
+          refreshScripts();
+        },
+        () => { setIsReceiving(true); }
+      );
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "生成失败";
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setGenerating(false);
-      setShowGenerateConfirm(false);
+      toast.error(err instanceof Error ? err.message : "生成失败");
+      setIsStreaming(false);
+      setStreamCount(0);
+      refreshScripts();
     }
   };
 
@@ -886,6 +1085,7 @@ function ScriptsTab({ projectId }: { projectId: string }) {
         ...editScript, code: updated.code, updatedAt: updated.updatedAt,
       } as AutomationScript });
       toast.success("保存成功");
+      scriptDirty.markClean();
       setEditScript(null);
     } catch {
       toast.error("保存失败");
@@ -921,12 +1121,10 @@ function ScriptsTab({ projectId }: { projectId: string }) {
 
               <button className="primary-button" type="button" onClick={() => {
                 if (!hasPrerequisite) { toast.warning("请先生成测试用例并标记适合自动化的用例"); return; }
-                if (unreviewedTCCount > 0) { toast.warning(`还有 ${unreviewedTCCount} 条用例未评审通过，请先完成用例评审`); return; }
                 if (existingScriptCount > 0) { setShowGenerateConfirm(true); return; }
                 handleGenerate();
-              }} disabled={generating}>
-                {generating ? <Loader2 size={13} className="animate-spin" /> : <Code size={13} />}
-                {generating ? "生成中..." : "生成自动化脚本"}
+              }} disabled={isStreaming}>
+                {isStreaming ? <><Loader2 size={13} className="animate-spin" /> {isReceiving ? "AI 生成中..." : streamCount > 0 ? `写入中... (${streamCount})` : "生成中..."}</> : <><Code size={13} /> 生成自动化脚本</>}
               </button>
             </div>
             <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{automatable.length}</strong> 条适合自动化的用例，已生成 <strong style={{ color: "var(--text)" }}>{existingScriptCount}</strong> 个脚本</span>
@@ -1005,13 +1203,13 @@ function ScriptsTab({ projectId }: { projectId: string }) {
 
       {/* 编辑脚本弹窗 */}
       {editScript && (
-        <div className="confirm-overlay" onClick={() => setEditScript(null)}>
+        <div className="confirm-overlay" onClick={() => scriptDirty.requestClose(() => setEditScript(null))}>
           <div className="confirm-dialog" style={{ width: 700, maxWidth: "90vw" }} onClick={(e) => e.stopPropagation()}>
             <div className="confirm-dialog__body" style={{ flexDirection: "column", gap: 12 }}>
               <h3 style={{ margin: 0, fontSize: 16 }}>编辑脚本 - {editScript.framework}</h3>
               <textarea
                 value={editCode}
-                onChange={(e) => setEditCode(e.target.value)}
+                onChange={(e) => { setEditCode(e.target.value); scriptDirty.markDirty(); }}
                 style={{
                   width: "100%",
                   minHeight: 400,
@@ -1028,16 +1226,17 @@ function ScriptsTab({ projectId }: { projectId: string }) {
               />
             </div>
             <div className="confirm-dialog__actions">
-              <button className="ghost-button" type="button" onClick={() => setEditScript(null)}>取消</button>
+              <button className="ghost-button" type="button" onClick={() => scriptDirty.requestClose(() => setEditScript(null))}>取消</button>
               <button className="primary-button" type="button" onClick={handleSaveEdit}>保存</button>
             </div>
           </div>
         </div>
       )}
 
-      <ConfirmDialog open={showGenerateConfirm} title="重新生成脚本" message={`当前已有 ${existingScriptCount} 个脚本，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" confirmLoading={generating} onConfirm={() => { setShowGenerateConfirm(false); handleGenerate(); }} onCancel={() => setShowGenerateConfirm(false)} />
+      <ConfirmDialog open={showGenerateConfirm} title="重新生成脚本" message={`当前已有 ${existingScriptCount} 个脚本，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" confirmLoading={isStreaming} onConfirm={handleGenerate} onCancel={() => setShowGenerateConfirm(false)} />
       <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 个脚本标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
       {configErrorDialog}
+      {scriptDirty.confirmDialog}
 
     </div>
   );
@@ -1452,6 +1651,7 @@ function DocFusionTab({ projectId }: { projectId: string }) {
   const [viewCase, setViewCase] = useState<typeof testCases[0] | null>(null);
   const [editCase, setEditCase] = useState<typeof testCases[0] | null>(null);
   const [editActual, setEditActual] = useState("");
+  const execDirty = useUnsavedChanges("实测结果");
   const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
 
   const allSelected = testCases.length > 0 && testCases.every((tc) => selectedIds.has(tc.id));
@@ -1474,6 +1674,7 @@ function DocFusionTab({ projectId }: { projectId: string }) {
       const updated = await testCasesApi.update(editCase.id, { actualResult: editActual } as any);
       dispatch({ type: "UPDATE_TEST_CASE", payload: { ...editCase, actualResult: updated.actualResult, createdAt: updated.createdAt, updatedAt: updated.updatedAt } });
       toast.success("保存成功");
+      execDirty.markClean();
       setEditCase(null);
     } catch { toast.error("保存失败"); }
   };
@@ -1556,7 +1757,7 @@ function DocFusionTab({ projectId }: { projectId: string }) {
       </section>
 
       {/* 查看弹窗 - 字段与表格一致 */}
-      <Modal open={!!viewCase} onClose={() => setViewCase(null)} title="用例详情" width={560}>
+      <Modal open={!!viewCase} onClose={() => setViewCase(null)} title="用例详情" width={640}>
         {viewCase && (() => {
           const matched = viewCase.actualResult && viewCase.expectedResult && viewCase.actualResult.trim() === viewCase.expectedResult.trim();
           return (
@@ -1579,7 +1780,12 @@ function DocFusionTab({ projectId }: { projectId: string }) {
       </Modal>
 
       {/* 编辑弹窗 - 只能编辑实测结果，是否通过自动计算 */}
-      <Modal open={!!editCase} onClose={() => setEditCase(null)} title="编辑实测结果" width={560}>
+      <Modal open={!!editCase} onClose={() => execDirty.requestClose(() => setEditCase(null))} title="编辑实测结果" width={640}
+        footer={<>
+          <button className="ghost-button" type="button" onClick={() => execDirty.requestClose(() => setEditCase(null))}>取消</button>
+          <button className="primary-button" type="button" onClick={handleSaveEdit}>保存</button>
+        </>}
+      >
         {editCase && (
           <div className="detail-grid">
             <div className="detail-row"><span className="detail-label">模块</span><span>{editCase.module}</span></div>
@@ -1590,18 +1796,16 @@ function DocFusionTab({ projectId }: { projectId: string }) {
             <div className="detail-row"><span className="detail-label">测试类型</span><span>{editCase.testType || "功能测试"}</span></div>
             <div className="detail-row detail-row--full"><span className="detail-label">测试步骤</span><span>{editCase.steps || "-"}</span></div>
             <div className="detail-row detail-row--full"><span className="detail-label">预期结果</span><span>{editCase.expectedResult || "-"}</span></div>
-            <div className="detail-row detail-row--full"><span className="detail-label">实测结果</span><textarea className="form-textarea" style={{ flex: 1 }} rows={3} value={editActual} onChange={(e) => setEditActual(e.target.value)} placeholder="输入实际测试结果" /></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">实测结果</span><textarea className="form-textarea" style={{ flex: 1 }} rows={5} value={editActual} onChange={(e) => { setEditActual(e.target.value); execDirty.markDirty(); }} placeholder="输入实际测试结果" /></div>
             <div className="detail-row"><span className="detail-label">是否通过</span><StatusPill tone={editActual && editCase.expectedResult && editActual.trim() === editCase.expectedResult.trim() ? "green" : editActual ? "red" : "slate"}>{editActual && editCase.expectedResult && editActual.trim() === editCase.expectedResult.trim() ? "通过" : editActual ? "未通过" : "未执行"}</StatusPill></div>
             <div className="detail-row"><span className="detail-label">是否自动化</span><span>{editCase.automation === "适合" ? "是" : editCase.automation === "不适合" ? "否" : "待评估"}</span></div>
             <div className="detail-row"><span className="detail-label">测试时间</span><span>{getScriptTime(editCase)}</span></div>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, paddingTop: 12 }}>
-              <button className="ghost-button" type="button" onClick={() => setEditCase(null)}>取消</button>
-              <button className="primary-button" type="button" onClick={handleSaveEdit}>保存</button>
-            </div>
+
           </div>
         )}
       </Modal>
       <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 条用例标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
+      {execDirty.confirmDialog}
     </div>
   );
 }

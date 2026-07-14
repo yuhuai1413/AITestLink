@@ -35,17 +35,6 @@
       "enabled": true
     },
     {
-      "id": "review-test-cases",
-      "name": "用例评审",
-      "aiNode": "测试设计",
-      "provider": "小米-MiMo大模型平台",
-      "modelName": "mimo-v2.5",
-      "apiKey": "",
-      "endpoint": "https://api.xiaomimimo.com/v1",
-      "description": "评审测试用例的完整性和可执行性",
-      "enabled": true
-    },
-    {
       "id": "generate-scripts",
       "name": "脚本生成",
       "aiNode": "自动化",

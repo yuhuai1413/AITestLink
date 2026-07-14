@@ -1,3 +1,5 @@
+import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -5,21 +7,39 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.database import init_db, close_db
-from app.routers import projects, files, requirements, test_points, test_cases, ai, model_config, auth, automation, doc_config, status_logs, doc_gen
+from app.database import init_db, close_db, async_session
+from app.routers import projects, files, requirements, test_points, test_cases, ai, model_config, auth, automation, doc_config, status_logs, doc_gen, notification
 
 # 导入所有模型，确保表被创建
-from app.models import project, requirement, test_point, test_case, file_asset, ai_task, model_config as mc_model, user, automation_script, doc_template as dc_model, status_log, doc_gen_status
+from app.models import project, requirement, test_point, test_case, file_asset, ai_task, model_config as mc_model, user, automation_script, doc_template as dc_model, status_log, doc_gen_status, notification as notif_model
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 启动时清理上次中断的任务
+    try:
+        from sqlalchemy import update
+        from app.models.ai_task import AITask
+        async with async_session() as db:
+            await db.execute(
+                update(AITask).where(AITask.status == "执行中").values(
+                    status="失败",
+                    error_message="任务因服务器重启而中断，请重新执行",
+                )
+            )
+            await db.commit()
+            logger.info("Cleaned up stale AI tasks")
+    except Exception as e:
+        logger.warning(f"Failed to cleanup stale tasks: {e}")
+
     await init_db()
     yield
     await close_db()
 
 
-app = FastAPI(title="AITestLink API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="AI TestLink API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,9 +61,9 @@ app.include_router(automation.router, prefix="/api", tags=["automation"])
 app.include_router(doc_config.router, prefix="/api", tags=["doc-config"])
 app.include_router(doc_gen.router, prefix="/api", tags=["doc-gen"])
 app.include_router(status_logs.router, prefix="/api", tags=["status-logs"])
+app.include_router(notification.router, prefix="/api", tags=["notifications"])
 
 # 静态文件服务（头像等上传文件）
-import os
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 

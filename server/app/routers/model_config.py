@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.model_config import ModelConfig
-from app.routers.deps import get_current_user, get_model_config_service
+from app.routers.deps import get_current_user, require_admin, get_model_config_service
 from app.services.model_config_service import ModelConfigService
 from app.utils import encrypt_value, decrypt_value, ensure_chat_endpoint
 
@@ -17,10 +17,9 @@ DEFAULT_CONFIGS = [
     {"config_key": "parse-requirements", "name": "需求解析", "ai_node": ["需求解析"], "description": "从需求文档中提取模块、功能点和业务规则", "display_order": 1},
     {"config_key": "generate-test-points", "name": "测试点生成", "ai_node": ["生成测试点"], "description": "根据需求生成覆盖多种场景的测试点", "display_order": 2},
     {"config_key": "generate-test-cases", "name": "用例生成", "ai_node": ["生成测试用例"], "description": "根据测试点生成详细测试用例", "display_order": 3},
-    {"config_key": "review-test-cases", "name": "用例评审", "ai_node": ["用例评审"], "description": "自动评审测试用例质量", "display_order": 4},
-    {"config_key": "generate-scripts", "name": "脚本生成", "ai_node": ["生成脚本"], "description": "自动生成自动化测试脚本", "display_order": 5},
-    {"config_key": "execute-scripts", "name": "执行脚本", "ai_node": ["执行脚本"], "description": "执行自动化测试脚本", "display_order": 6},
-    {"config_key": "generate-docs", "name": "文档生成", "ai_node": ["文档生成"], "description": "自动生成测试文档", "display_order": 7},
+    {"config_key": "generate-scripts", "name": "脚本生成", "ai_node": ["生成脚本"], "description": "自动生成自动化测试脚本", "display_order": 4},
+    {"config_key": "execute-scripts", "name": "执行脚本", "ai_node": ["执行脚本"], "description": "执行自动化测试脚本", "display_order": 5},
+    {"config_key": "generate-docs", "name": "文档生成", "ai_node": ["文档生成"], "description": "自动生成测试文档", "display_order": 6},
 ]
 
 
@@ -34,6 +33,7 @@ class ModelConfigSchema(BaseModel):
     endpoint: str
     description: str
     enabled: bool
+    prompt: str = ""
 
 
 class ModelConfigUpdate(BaseModel):
@@ -67,6 +67,7 @@ def _to_dict(m) -> dict:
         "endpoint": m.endpoint,
         "description": m.description,
         "enabled": m.enabled,
+        "prompt": m.prompt or "",
     }
 
 
@@ -85,10 +86,19 @@ async def _ensure_user_configs(db: AsyncSession, user_id: str):
     result = await db.execute(
         select(ModelConfig).where(ModelConfig.user_id == user_id)
     )
-    existing = {c.config_key for c in result.scalars().all()}
+    user_configs = {c.config_key: c for c in result.scalars().all()}
 
+    # 获取管理员的提示词作为默认值
+    from app.models.user import User
+    admin_result = await db.execute(
+        select(ModelConfig).join(User, ModelConfig.user_id == User.id).where(User.is_admin == True)
+    )
+    admin_map = {c.config_key: c.prompt or "" for c in admin_result.scalars().all()}
+
+    changed = False
     for config in DEFAULT_CONFIGS:
-        if config["config_key"] not in existing:
+        if config["config_key"] not in user_configs:
+            # 新用户：创建配置并复制管理员提示词
             config_id = f"{user_id}_{config['config_key']}"
             db.add(ModelConfig(
                 id=config_id,
@@ -103,9 +113,18 @@ async def _ensure_user_configs(db: AsyncSession, user_id: str):
                 description=config["description"],
                 enabled=True,
                 display_order=config["display_order"],
+                prompt=admin_map.get(config["config_key"], ""),
             ))
+            changed = True
+        else:
+            # 旧用户：如果提示词为空，从管理员同步
+            user_config = user_configs[config["config_key"]]
+            if not user_config.prompt and admin_map.get(config["config_key"]):
+                user_config.prompt = admin_map[config["config_key"]]
+                changed = True
 
-    await db.commit()
+    if changed:
+        await db.commit()
 
 
 @router.get("/model-configs")
@@ -120,7 +139,75 @@ async def list_model_configs(
         select(ModelConfig).where(ModelConfig.user_id == user_id).order_by(ModelConfig.display_order)
     )
     configs = result.scalars().all()
-    return [_to_dict(c) for c in configs]
+
+    # 获取管理员的默认提示词
+    from app.models.user import User
+    admin_result = await db.execute(
+        select(ModelConfig).join(User, ModelConfig.user_id == User.id).where(User.is_admin == True)
+    )
+    admin_map = {c.config_key: c.prompt or "" for c in admin_result.scalars().all()}
+
+    return [{**_to_dict(c), "adminPrompt": admin_map.get(c.config_key, "")} for c in configs]
+
+
+# ─── 管理员提示词管理（必须在 {config_id} 路由之前，避免路径冲突）───
+
+class AdminPromptItem(BaseModel):
+    configKey: str
+    prompt: str
+
+
+class AdminPromptUpdate(BaseModel):
+    prompts: list[AdminPromptItem]
+
+
+@router.get("/model-configs/admin-prompts")
+async def get_admin_prompts(
+    user: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """管理员获取所有节点的默认提示词"""
+    from app.models.user import User
+    result = await db.execute(
+        select(ModelConfig)
+        .join(User, ModelConfig.user_id == User.id)
+        .where(User.is_admin == True)
+        .order_by(ModelConfig.display_order)
+    )
+    configs = result.scalars().all()
+    return [
+        {"configKey": c.config_key, "name": c.name, "prompt": c.prompt or ""}
+        for c in configs
+    ]
+
+
+@router.put("/model-configs/admin-prompts")
+async def update_admin_prompts(
+    data: AdminPromptUpdate,
+    user: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """管理员批量更新所有节点的默认提示词"""
+    from app.models.user import User
+    admin_id = user["sub"]
+
+    for item in data.prompts:
+        if not item.prompt or not item.prompt.strip():
+            raise HTTPException(status_code=400, detail=f"「{item.configKey}」的提示词不能为空")
+
+    prompt_map = {item.configKey: item.prompt for item in data.prompts}
+
+    result = await db.execute(
+        select(ModelConfig).where(ModelConfig.user_id == admin_id)
+    )
+    updated = 0
+    for config in result.scalars().all():
+        if config.config_key in prompt_map:
+            config.prompt = prompt_map[config.config_key]
+            updated += 1
+
+    await db.commit()
+    return {"ok": True, "updated": updated}
 
 
 @router.get("/model-configs/{config_id}")
@@ -216,6 +303,7 @@ async def update_model_configs(
             m.endpoint = cfg.endpoint
             m.description = cfg.description
             m.enabled = cfg.enabled
+            m.prompt = cfg.prompt or ""
 
     await db.commit()
     return {"ok": True, "count": len(data.configs)}

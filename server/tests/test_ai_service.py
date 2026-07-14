@@ -101,7 +101,7 @@ class TestAIServiceLLMCall:
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
         with patch("app.services.ai_service.httpx.AsyncClient", return_value=mock_client):
-            result = _run_async(service._call_llm("system prompt", "user prompt", "需求解析", "user-1"))
+            result = _run_async(service._call_llm("user prompt", "需求解析", "user-1"))
 
         assert result == "test response"
         mock_client.post.assert_called_once()
@@ -211,7 +211,7 @@ class TestAIServiceLLMCall:
 
         with patch("app.services.ai_service.httpx.AsyncClient", return_value=mock_client):
             with pytest.raises(httpx.TimeoutException):
-                _run_async(service._call_llm("sys", "usr", "需求解析", "user-1"))
+                _run_async(service._call_llm("usr", "需求解析", "user-1"))
 
     @patch("app.services.ai_service._get_config_for_task")
     def test_llm_returns_invalid_json(self, mock_get_config):

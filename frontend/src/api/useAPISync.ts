@@ -220,6 +220,7 @@ function apiToRequirement(r: ApiRequirement): Requirement {
     id: r.id, projectId: r.projectId, module: r.module, feature: r.feature,
     source: r.source, risk: r.risk as Requirement["risk"],
     rule: r.rule, question: r.question, confirmed: r.confirmed,
+    reviewStatus: (r as any).reviewStatus ?? "待评审",
   };
 }
 

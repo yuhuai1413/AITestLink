@@ -17,6 +17,7 @@ export {
   aiApi,
   docGenApi,
 } from "./system.api";
+export { notificationsApi } from "./notification.api";
 
 // Re-export types with original names (Api prefix) for backward compatibility
 export type { Project as ApiProject } from "../contracts/project";

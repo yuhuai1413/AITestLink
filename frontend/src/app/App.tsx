@@ -21,6 +21,7 @@ import { useStore } from "./store";
 import { BASE_PATH } from "../shared/config/deploy";
 import { initManager } from "../shared/hooks/aiTaskManager";
 import { LAST_PATH_KEY } from "../shared/config/storage";
+import { notificationsApi } from "../api/client";
 
 
 function pathnameToView(rawPathname: string): ViewKey {
@@ -103,6 +104,16 @@ export function App() {
   useEffect(() => {
     initManager(dispatch, () => state.projects.map((p) => ({ id: p.id, name: p.name })));
   }, [dispatch, state.projects]);
+
+  // 从后端加载通知列表
+  useEffect(() => {
+    if (!authed) return;
+    notificationsApi.list().then((list) => {
+      if (list.length > 0) {
+        dispatch({ type: "SET_NOTIFICATIONS", payload: list });
+      }
+    }).catch(() => {});
+  }, [authed, dispatch]);
 
   return (
     <>

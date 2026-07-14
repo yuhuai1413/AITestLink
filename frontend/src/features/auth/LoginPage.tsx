@@ -87,10 +87,10 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       } else {
         const res = await login(phone, password, captchaId, captchaCode);
         if (res.ok) {
+
+          // 记住登录账号和密码
           localStorage.setItem("lastPhone", phone);
           localStorage.setItem("lastPassword", password);
-          // 清除旧用户的本地数据
-          localStorage.removeItem("aitestlink-store");
           toast.success("登录成功");
           onLogin();
         } else {

@@ -44,9 +44,4 @@ export const testCasesApi = {
     }),
   getCoverage: (projectId: string) =>
     request<TestCoverage>(`/projects/${projectId}/coverage`),
-  review: (projectId: string, caseIds: string[]) =>
-    request<any>(`/projects/${projectId}/test-cases/review`, {
-      method: "POST",
-      body: JSON.stringify({ case_ids: caseIds }),
-    }),
 };

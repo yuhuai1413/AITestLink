@@ -74,6 +74,7 @@ class ModelConfigService(BaseService):
             description=data.description,
             enabled=data.enabled,
             display_order=data.display_order,
+            prompt=data.prompt or "",
         )
         self.db.add(config)
         await self.db.commit()
@@ -110,6 +111,7 @@ class ModelConfigService(BaseService):
             "description": "description",
             "enabled": "enabled",
             "display_order": "display_order",
+            "prompt": "prompt",
         }
         for schema_key, db_key in field_map.items():
             if schema_key in update_data:

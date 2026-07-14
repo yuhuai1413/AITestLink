@@ -39,7 +39,12 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="新建项目" width={520}>
+    <Modal open={open} onClose={onClose} title="新建项目" width={640}
+      footer={<>
+        <button className="ghost-button" type="button" onClick={onClose}>取消</button>
+        <button className="primary-button" type="button" onClick={handleSubmit}>创建</button>
+      </>}
+    >
       <form className="form-stack" onSubmit={handleSubmit}>
         <div className="form-row">
           <label className="form-label">

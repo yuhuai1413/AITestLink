@@ -129,17 +129,3 @@ async def get_coverage(
     service: TestDesignService = Depends(get_test_design_service),
 ):
     return await service.get_coverage(project_id)
-
-
-class ReviewRequest(BaseModel):
-    case_ids: list[str]
-
-
-@router.post("/projects/{project_id}/test-cases/review")
-async def review_test_cases(
-    project_id: str,
-    data: ReviewRequest,
-    user: dict = Depends(get_current_user),
-    service: TestDesignService = Depends(get_test_design_service),
-):
-    return await service.review_test_cases(project_id, data.case_ids, user["sub"])

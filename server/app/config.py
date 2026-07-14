@@ -1,3 +1,4 @@
+import pathlib
 import secrets
 import warnings
 
@@ -15,7 +16,7 @@ class Settings(BaseSettings):
     BASE_URL: str = "http://localhost:8001"
 
     class Config:
-        env_file = ".env"
+        env_file = str(pathlib.Path(__file__).resolve().parent.parent / ".env")
         env_file_encoding = "utf-8"
 
 

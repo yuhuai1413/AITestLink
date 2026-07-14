@@ -42,7 +42,7 @@ export function StatusLogModal({ open, onClose, projectId }: StatusLogModalProps
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="状态变更日志" width={600}>
+    <Modal open={open} onClose={onClose} title="状态变更日志" width={640}>
       <div style={{ maxHeight: "400px", overflowY: "auto" }}>
         {loading ? (
           <div style={{ textAlign: "center", padding: "20px", color: "#64748b" }}>

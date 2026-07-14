@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import uuid
@@ -16,6 +17,7 @@ from app.models.requirement import Requirement
 from app.models.test_point import TestPoint
 from app.models.test_case import TestCase
 from app.routers.auth import get_current_user
+from app.routers.deps import get_current_user_sse
 from app.services.ai_service import AIService, check_config_for_task
 from app.utils import model_to_dict
 from app.utils import verify_project_owner
@@ -230,7 +232,7 @@ def _read_file_content(file_obj: FileAsset) -> str:
                 if len(table_text) > 1:
                     parts.append("\n".join(table_text))
             text = "\n".join(parts)
-            return text[:8000]
+            return text
 
         if ext in ("xlsx", "xls"):
             import openpyxl
@@ -240,24 +242,23 @@ def _read_file_content(file_obj: FileAsset) -> str:
                 ws = wb[sheet]
                 rows = []
                 for row in ws.iter_rows(values_only=True):
-                    # 过滤掉空单元格，只保留有内容的单元格
                     cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
                     if cells:
                         rows.append(" | ".join(cells))
                 if rows:
-                    parts.append(f"Sheet: {sheet}\n" + "\n".join(rows[:100]))
+                    parts.append(f"Sheet: {sheet}\n" + "\n".join(rows))
             wb.close()
-            return "\n".join(parts)[:8000]
+            return "\n".join(parts)
 
         if ext == "pdf":
             import PyPDF2
             reader = PyPDF2.PdfReader(file_obj.storage_path)
-            text = "\n".join(page.extract_text() or "" for page in reader.pages[:20])
-            return text[:8000]
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
+            return text
 
         if ext in ("md", "txt", "json", "yaml", "yml", "csv"):
             with open(file_obj.storage_path, "r", errors="ignore") as fh:
-                return fh.read()[:8000]
+                return fh.read()
 
         return f"(不支持的格式: {ext})"
 
@@ -300,6 +301,18 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
                             requirements = v
                             logger.info(f"extracted list from dict key '{k}', len={len(v)}")
                             break
+            # 如果返回单个 dict（截断响应），尝试包装为列表
+            if isinstance(requirements, dict):
+                if {"module", "feature"}.issubset(requirements.keys()):
+                    requirements = [requirements]
+                else:
+                    logger.error(f"parse_requirements: invalid result, type={type(requirements).__name__}, preview={str(requirements)[:500]}")
+                    for f in files:
+                        f.parse_status = "失败"
+                        f.parse_error = "AI 未返回有效的解析数据"
+                    await db.commit()
+                    await _update_task_status(db, task_id, "失败", "AI 未返回有效的解析数据，请检查模型配置或文件内容后重试")
+                    return
             if not isinstance(requirements, list) or not requirements:
                 logger.error(f"parse_requirements: invalid result, type={type(requirements).__name__}, preview={str(requirements)[:500]}")
                 for f in files:
@@ -348,6 +361,7 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
 
 
 async def run_generate_test_points(task_id: str, project_id: str, user_id: str):
+    logger.info(f"run_generate_test_points: task_id={task_id}, project_id={project_id}, user_id={user_id}")
     async with async_session() as db:
         try:
             result = await db.execute(
@@ -380,29 +394,38 @@ async def run_generate_test_points(task_id: str, project_id: str, user_id: str):
                             points = v
                             logger.info(f"extracted list from dict key '{k}', len={len(v)}")
                             break
+            # 如果返回单个 dict（截断响应），尝试包装为列表
+            if isinstance(points, dict):
+                if {"module", "type", "title"}.issubset(points.keys()):
+                    points = [points]
+                else:
+                    logger.error(f"generate_test_points: invalid result, type={type(points).__name__}, preview={str(points)[:500]}")
+                    await _update_task_status(db, task_id, "失败", "AI 未返回有效的测试点数据，请检查模型配置或需求数据后重试")
+                    return
             if not isinstance(points, list) or not points:
                 logger.error(f"generate_test_points: invalid result, type={type(points).__name__}, preview={str(points)[:500]}")
                 await _update_task_status(db, task_id, "失败", "AI 未返回有效的测试点数据，请检查模型配置或需求数据后重试")
                 return
 
-            for (tp_id, _), pt in zip(_module_counter(points, "TP"), points):
+            for pt in points:
                 db.add(TestPoint(
-                    id=tp_id,
+                    id=pt.get("id") or str(uuid.uuid4()),
                     project_id=project_id,
                     module=pt["module"],
                     type=pt["type"],
                     title=pt["title"],
                     description=pt.get("description", ""),
                     priority=pt.get("priority", "P1"),
-                    automatable=pt.get("automatable", False),
+                    automatable=bool(pt.get("automatable", False)),
                 ))
 
 
             await db.commit()
+            logger.info(f"run_generate_test_points: task {task_id} completed successfully, {len(points)} points saved")
             await _update_task_status(db, task_id, "成功")
 
         except Exception as e:
-            logger.exception("run_generate_test_points failed")
+            logger.exception(f"run_generate_test_points failed: task_id={task_id}")
             await _update_task_status(db, task_id, "失败", _friendly_error(e, "测试点生成"))
 
 
@@ -439,6 +462,14 @@ async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
                             cases = v
                             logger.info(f"extracted list from dict key '{k}', len={len(v)}")
                             break
+            # 如果返回单个 dict（截断响应），尝试包装为列表
+            if isinstance(cases, dict):
+                if {"module", "title"}.issubset(cases.keys()):
+                    cases = [cases]
+                else:
+                    logger.error(f"generate_test_cases: invalid result, type={type(cases).__name__}, preview={str(cases)[:500]}")
+                    await _update_task_status(db, task_id, "失败", "AI 未返回有效的测试用例数据，请检查模型配置或测试点数据后重试")
+                    return
             if not isinstance(cases, list) or not cases:
                 logger.error(f"generate_test_cases: invalid result, type={type(cases).__name__}, preview={str(cases)[:500]}")
                 await _update_task_status(db, task_id, "失败", "AI 未返回有效的测试用例数据，请检查模型配置或测试点数据后重试")
@@ -455,7 +486,7 @@ async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
                     priority=c.get("priority", "P1"),
                     precondition=c.get("precondition", ""),
                     steps=c.get("steps", ""),
-                    test_data=c.get("testData", ""),
+                    test_data=json.dumps(c.get("testData", ""), ensure_ascii=False) if isinstance(c.get("testData"), (dict, list)) else str(c.get("testData", "")),
                     expected_result=c.get("expectedResult", ""),
                     test_type=c.get("testType", "功能测试"),
                     automation=c.get("automation", "待评估"),
@@ -611,76 +642,6 @@ async def generate_test_cases(
     await db.commit()
 
     background_tasks.add_task(run_generate_test_cases, task.id, project_id, user["sub"])
-    return model_to_dict(task)
-
-
-# ─── 用例评审 ───
-
-async def run_review_test_cases(task_id: str, project_id: str, user_id: str):
-    async with async_session() as db:
-        try:
-            result = await db.execute(
-                select(TestCase).where(TestCase.project_id == project_id)
-            )
-            cases = result.scalars().all()
-            if not cases:
-                await _update_task_status(db, task_id, "失败", "测试用例列表为空，无法评审")
-                return
-
-            tc_text = "\n".join(
-                f"- 编号:{c.case_code} 模块:{c.module} 标题:{c.title} 优先级:{c.priority} "
-                f"步骤:{c.steps or '无'} 预期结果:{c.expected_result or '无'} "
-                f"自动化:{c.automation} 评审状态:{c.review_status or '待评审'}"
-                for c in cases
-            )
-
-            review_result = await ai_service.review_test_cases(tc_text, user_id)
-
-            # 将评审结果保存到 AITask 的 result 字段
-            task_result = await db.execute(select(AITask).where(AITask.id == task_id))
-            task = task_result.scalar_one_or_none()
-            if task:
-                import json
-                task.result = json.dumps(review_result, ensure_ascii=False) if isinstance(review_result, dict) else str(review_result)
-
-            await _update_task_status(db, task_id, "成功")
-        except Exception as e:
-            logger.exception("run_review_test_cases failed")
-            await _update_task_status(db, task_id, "失败", _friendly_error(e, "用例评审"))
-
-
-@router.post("/projects/{project_id}/ai/review-test-cases")
-async def review_test_cases(
-    project_id: str,
-    background_tasks: BackgroundTasks,
-    user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    await verify_project_owner(db, project_id, user["sub"])
-
-    # 检查是否有测试用例
-    tc_result = await db.execute(
-        select(TestCase).where(TestCase.project_id == project_id)
-    )
-    if not tc_result.scalars().first():
-        raise HTTPException(status_code=400, detail="测试用例列表为空，请先生成测试用例")
-
-    # 检查配置
-    config_check = await check_config_for_task("用例评审", user["sub"])
-    if not config_check["configured"]:
-        raise HTTPException(status_code=400, detail=config_check["message"])
-
-    task = AITask(
-        id=str(uuid.uuid4()),
-        project_id=project_id,
-        type="用例评审",
-        status="执行中",
-        model_name="AI",
-    )
-    db.add(task)
-    await db.commit()
-
-    background_tasks.add_task(run_review_test_cases, task.id, project_id, user["sub"])
     return model_to_dict(task)
 
 
@@ -948,3 +909,408 @@ async def generate_docs(
 
     background_tasks.add_task(run_generate_docs, task.id, project_id, user["sub"], template_id)
     return model_to_dict(task)
+
+
+# ─── 流式生成（SSE） ───────────────────────────────────────────────
+
+from fastapi.responses import StreamingResponse
+
+
+async def _stream_generate_test_points(task_id: str, project_id: str, user_id: str):
+    """流式生成测试点，每批写库后通过 SSE 推送。"""
+    ai_service = AIService()
+    async with async_session() as db:
+        try:
+            result = await db.execute(
+                select(Requirement).where(Requirement.project_id == project_id)
+            )
+            requirements = result.scalars().all()
+            if not requirements:
+                yield f"data: {json.dumps({'event': 'error', 'message': '需求列表为空'})}\n\n"
+                return
+
+            req_text = "\n".join(
+                f"- 模块:{r.module} 功能:{r.feature} 规则:{r.rule} 风险:{r.risk}"
+                for r in requirements
+            )
+            user_prompt = f"请以资深测试架构师的视角，根据以下需求生成全面的测试点。\n\n需求列表：\n\n{req_text[:3000]}"
+
+            total_saved = 0
+            async for batch in ai_service.generate_stream(user_prompt, "测试点生成", user_id, batch_size=5):
+                if not batch:
+                    yield f"data: {json.dumps({'event': 'receiving'}, ensure_ascii=False)}\n\n"
+                    continue
+                # 先删除旧测试点（首次写入时）
+                if total_saved == 0:
+                    from sqlalchemy import delete
+                    await db.execute(delete(TestPoint).where(TestPoint.project_id == project_id))
+                    await db.commit()
+
+                for pt in batch:
+                    db.add(TestPoint(
+                        id=pt.get("id") or str(uuid.uuid4()),
+                        project_id=project_id,
+                        module=pt.get("module", ""),
+                        type=pt.get("type", ""),
+                        title=pt.get("title", ""),
+                        description=pt.get("description", ""),
+                        priority=pt.get("priority", "P1"),
+                        automatable=bool(pt.get("automatable", False)),
+                    ))
+                await db.commit()
+                total_saved += len(batch)
+                yield f"data: {json.dumps({'event': 'progress', 'count': total_saved, 'batch': len(batch)}, ensure_ascii=False)}\n\n"
+
+            yield f"data: {json.dumps({'event': 'done', 'total': total_saved}, ensure_ascii=False)}\n\n"
+
+        except Exception as e:
+            logger.exception(f"stream_generate_test_points failed: task_id={task_id}")
+            yield f"data: {json.dumps({'event': 'error', 'message': _friendly_error(e, '测试点生成')}, ensure_ascii=False)}\n\n"
+
+
+@router.get("/projects/{project_id}/ai/stream-test-points")
+async def stream_test_points(
+    project_id: str,
+    user: dict = Depends(get_current_user_sse),
+    db: AsyncSession = Depends(get_db),
+):
+    await verify_project_owner(db, project_id, user["sub"])
+
+    # 检查需求数据
+    req_result = await db.execute(
+        select(Requirement).where(Requirement.project_id == project_id)
+    )
+    if not req_result.scalars().first():
+        raise HTTPException(status_code=400, detail="需求列表为空，请先在「需求列表」页面完成需求解析")
+
+    # 检查配置
+    config_check = await check_config_for_task("测试点生成", user["sub"])
+    if not config_check["configured"]:
+        raise HTTPException(status_code=400, detail=config_check["message"])
+
+    return StreamingResponse(
+        _stream_generate_test_points("", project_id, user["sub"]),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+async def _stream_generate_test_cases(task_id: str, project_id: str, user_id: str):
+    """流式生成测试用例，每批写库后通过 SSE 推送。"""
+    ai_service = AIService()
+    async with async_session() as db:
+        try:
+            tp_result = await db.execute(
+                select(TestPoint).where(TestPoint.project_id == project_id)
+            )
+            points = tp_result.scalars().all()
+            if not points:
+                yield f"data: {json.dumps({'event': 'error', 'message': '测试点列表为空，请先生成测试点'})}\n\n"
+                return
+
+            pt_text = "\n".join(
+                f"- 模块:{tp.module} 类型:{tp.type} 标题:{tp.title} 优先级:{tp.priority}"
+                for tp in points
+            )
+            user_prompt = (
+                "请以资深测试工程师的视角，根据以下测试点生成可执行的测试用例。要求："
+                "1. 步骤使用 步骤N: 格式，每步包含验证点 "
+                "2. 预期结果包含步骤编号和 应 字 "
+                "3. 数据具体化，不使用模糊描述 "
+                "4. 编号格式 TC_XXX_NNN "
+                "5. 用例标题只写验证目标本身"
+                f"\n\n测试点列表：\n\n{pt_text[:3000]}"
+            )
+
+            total_saved = 0
+            async for batch in ai_service.generate_stream(user_prompt, "用例生成", user_id, batch_size=5, max_tokens=16000):
+                if not batch:
+                    yield f"data: {json.dumps({'event': 'receiving'}, ensure_ascii=False)}\n\n"
+                    continue
+                # 先删除旧测试用例（首次写入时）
+                if total_saved == 0:
+                    from sqlalchemy import delete
+                    await db.execute(delete(TestCase).where(TestCase.project_id == project_id))
+                    await db.commit()
+
+                module_counter: dict[str, int] = {}
+                for c in batch:
+                    mod = c.get("module", "DEFAULT")
+                    module_counter[mod] = module_counter.get(mod, 0) + 1
+                    case_code = f"TC_{mod.upper().replace(' ', '_')}_{module_counter[mod]:03d}"
+                    db.add(TestCase(
+                        id=str(uuid.uuid4()),
+                        project_id=project_id,
+                        case_code=case_code,
+                        module=c.get("module", ""),
+                        feature=c.get("feature", ""),
+                        title=c.get("title", ""),
+                        priority=c.get("priority", "P1"),
+                        precondition=c.get("precondition", ""),
+                        steps=c.get("steps", ""),
+                        test_data=json.dumps(c.get("testData", ""), ensure_ascii=False) if isinstance(c.get("testData"), (dict, list)) else str(c.get("testData", "")),
+                        expected_result=c.get("expectedResult", ""),
+                        test_type=c.get("testType", "功能测试"),
+                        automation=c.get("automation", "待评估"),
+                    ))
+                await db.commit()
+                total_saved += len(batch)
+                yield f"data: {json.dumps({'event': 'progress', 'count': total_saved, 'batch': len(batch)}, ensure_ascii=False)}\n\n"
+
+            yield f"data: {json.dumps({'event': 'done', 'total': total_saved}, ensure_ascii=False)}\n\n"
+
+        except Exception as e:
+            logger.exception(f"stream_generate_test_cases failed: task_id={task_id}")
+            yield f"data: {json.dumps({'event': 'error', 'message': _friendly_error(e, '用例生成')}, ensure_ascii=False)}\n\n"
+
+
+@router.get("/projects/{project_id}/ai/stream-test-cases")
+async def stream_test_cases(
+    project_id: str,
+    user: dict = Depends(get_current_user_sse),
+    db: AsyncSession = Depends(get_db),
+):
+    await verify_project_owner(db, project_id, user["sub"])
+
+    # 检查测试点数据
+    tp_result = await db.execute(
+        select(TestPoint).where(TestPoint.project_id == project_id)
+    )
+    if not tp_result.scalars().first():
+        raise HTTPException(status_code=400, detail="测试点列表为空，请先在「测试点」页面生成测试点")
+
+    # 检查配置
+    config_check = await check_config_for_task("用例生成", user["sub"])
+    if not config_check["configured"]:
+        raise HTTPException(status_code=400, detail=config_check["message"])
+
+    return StreamingResponse(
+        _stream_generate_test_cases("", project_id, user["sub"]),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ─── 需求解析流式 ──────────────────────────────────────────────────
+
+async def _stream_parse_requirements(project_id: str, user_id: str):
+    """流式需求解析，每批写库后通过 SSE 推送。"""
+    logger.info(f"stream_parse_requirements: project_id={project_id}, user_id={user_id}")
+    ai_service = AIService()
+    async with async_session() as db:
+        try:
+            # 读取文件内容
+            file_result = await db.execute(
+                select(FileAsset).where(FileAsset.project_id == project_id)
+            )
+            files = file_result.scalars().all()
+            if not files:
+                logger.warning("stream_parse_requirements: no files found")
+                yield f"data: {json.dumps({'event': 'error', 'message': '没有上传文件'})}\n\n"
+                return
+
+            logger.info(f"stream_parse_requirements: found {len(files)} files")
+
+            # 标记文件为解析中
+            for f in files:
+                f.parse_status = "解析中"
+            await db.commit()
+
+            # 读取所有文件内容
+            content_parts = []
+            for f in files:
+                try:
+                    from app.services.document_service import DocumentService
+                    doc_service = DocumentService(db)
+                    text = await doc_service.get_content(f.id)
+                    if text:
+                        content_parts.append(f"=== 文件: {f.name} ===\n{text}")
+                except Exception as e:
+                    logger.warning(f"Failed to read file {f.name}: {e}")
+
+            if not content_parts:
+                for f in files:
+                    f.parse_status = "失败"
+                    f.parse_error = "无法读取文件内容"
+                await db.commit()
+                yield f"data: {json.dumps({'event': 'error', 'message': '无法读取文件内容'})}\n\n"
+                return
+
+            file_content = "\n\n".join(content_parts)
+            logger.info(f"stream_parse_requirements: file_content length={len(file_content)}")
+
+            # 删除旧需求
+            from sqlalchemy import delete
+            await db.execute(delete(Requirement).where(Requirement.project_id == project_id))
+            await db.commit()
+
+            user_prompt = f"请对以下文档内容进行专业的需求分析。\n\n文档内容：\n\n{file_content}"
+            logger.info(f"stream_parse_requirements: starting LLM stream...")
+
+            total_saved = 0
+            async for batch in ai_service.generate_stream(user_prompt, "需求解析", user_id, batch_size=5):
+                if not batch:
+                    # 空 batch = LLM 仍在生成中
+                    yield f"data: {json.dumps({'event': 'receiving'}, ensure_ascii=False)}\n\n"
+                    continue
+                logger.info(f"stream_parse_requirements: received batch of {len(batch)} items")
+                for req in batch:
+                    db.add(Requirement(
+                        id=str(uuid.uuid4()),
+                        project_id=project_id,
+                        module=req.get("module", ""),
+                        feature=req.get("feature", ""),
+                        source=req.get("source", ""),
+                        risk=req.get("risk", "中"),
+                        rule=req.get("rule", ""),
+                        question=req.get("question", ""),
+                    ))
+                await db.commit()
+                total_saved += len(batch)
+                yield f"data: {json.dumps({'event': 'progress', 'count': total_saved, 'batch': len(batch)}, ensure_ascii=False)}\n\n"
+
+            # 标记文件为已完成
+            for f in files:
+                f.parse_status = "已完成"
+                f.parse_error = ""
+            await db.commit()
+
+            yield f"data: {json.dumps({'event': 'done', 'total': total_saved}, ensure_ascii=False)}\n\n"
+
+        except Exception as e:
+            logger.exception(f"stream_parse_requirements failed: project_id={project_id}")
+            yield f"data: {json.dumps({'event': 'error', 'message': _friendly_error(e, '需求解析')}, ensure_ascii=False)}\n\n"
+
+
+@router.get("/projects/{project_id}/ai/stream-parse-requirements")
+async def stream_parse_requirements(
+    project_id: str,
+    user: dict = Depends(get_current_user_sse),
+    db: AsyncSession = Depends(get_db),
+):
+    await verify_project_owner(db, project_id, user["sub"])
+
+    # 检查文件
+    file_result = await db.execute(
+        select(FileAsset).where(FileAsset.project_id == project_id)
+    )
+    if not file_result.scalars().first():
+        raise HTTPException(status_code=400, detail="没有上传文件，请先在「输入资料」页面上传文件")
+
+    # 检查配置
+    config_check = await check_config_for_task("需求解析", user["sub"])
+    if not config_check["configured"]:
+        raise HTTPException(status_code=400, detail=config_check["message"])
+
+    return StreamingResponse(
+        _stream_parse_requirements(project_id, user["sub"]),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ─── 脚本生成流式 ──────────────────────────────────────────────────
+
+async def _stream_generate_scripts(project_id: str, user_id: str):
+    """流式生成自动化脚本，每批写库后通过 SSE 推送。"""
+    ai_service = AIService()
+    async with async_session() as db:
+        try:
+            # 获取适合自动化的测试用例
+            result = await db.execute(
+                select(TestCase).where(
+                    TestCase.project_id == project_id,
+                    TestCase.automation == "适合"
+                )
+            )
+            test_cases = result.scalars().all()
+            if not test_cases:
+                yield f"data: {json.dumps({'event': 'error', 'message': '没有适合自动化的测试用例'})}\n\n"
+                return
+
+            # 删除旧脚本
+            from sqlalchemy import delete
+            await db.execute(delete(AutomationScript).where(AutomationScript.project_id == project_id))
+            await db.commit()
+
+            # 构建测试用例文本
+            tc_text = "\n".join(
+                f"- 编号:{tc.case_code} 模块:{tc.module} 标题:{tc.title} 优先级:{tc.priority} "
+                f"前置条件:{tc.precondition or '无'} 步骤:{tc.steps or '无'} "
+                f"预期结果:{tc.expected_result or '无'}"
+                for tc in test_cases
+            )
+            user_prompt = f"请根据以下测试用例生成可直接运行的 Playwright 自动化测试脚本。\n\n测试用例列表：\n\n{tc_text[:4000]}"
+
+            total_saved = 0
+            async for batch in ai_service.generate_stream(user_prompt, "脚本生成", user_id, batch_size=3):
+                if not batch:
+                    yield f"data: {json.dumps({'event': 'receiving'}, ensure_ascii=False)}\n\n"
+                    continue
+                for ai_script in batch:
+                    tc_id = ai_script.get("testCaseId", "")
+                    matched_tc = None
+                    for tc in test_cases:
+                        if tc.case_code == tc_id or tc.id == tc_id:
+                            matched_tc = tc
+                            break
+
+                    module = (matched_tc or test_cases[0]).module or ""
+                    abbr_map = {
+                        "用户管理": "USER", "订单处理": "ORDER", "菜单": "MENU",
+                        "客户管理": "CUST", "登录": "LOGIN", "系统": "SYS",
+                        "权限": "PERM", "配置": "CONF", "报表": "RPT",
+                    }
+                    abbr = abbr_map.get(module, "".join(c for c in module if c.isalpha())[:4].upper() or "MISC")
+
+                    db.add(AutomationScript(
+                        id=str(uuid.uuid4()),
+                        project_id=project_id,
+                        test_case_id=(matched_tc or test_cases[0]).id,
+                        script_code=f"SC_{abbr}_{total_saved + 1:03d}",
+                        script_type=ai_script.get("scriptType", "UI"),
+                        framework=ai_script.get("framework", "Playwright"),
+                        language=ai_script.get("language", "Python"),
+                        code=ai_script.get("code", "# AI generation failed"),
+                        status="待执行",
+                        generated_by_ai=True,
+                    ))
+                await db.commit()
+                total_saved += len(batch)
+                yield f"data: {json.dumps({'event': 'progress', 'count': total_saved, 'batch': len(batch)}, ensure_ascii=False)}\n\n"
+
+            yield f"data: {json.dumps({'event': 'done', 'total': total_saved}, ensure_ascii=False)}\n\n"
+
+        except Exception as e:
+            logger.exception(f"stream_generate_scripts failed: project_id={project_id}")
+            yield f"data: {json.dumps({'event': 'error', 'message': _friendly_error(e, '脚本生成')}, ensure_ascii=False)}\n\n"
+
+
+@router.get("/projects/{project_id}/ai/stream-scripts")
+async def stream_scripts(
+    project_id: str,
+    user: dict = Depends(get_current_user_sse),
+    db: AsyncSession = Depends(get_db),
+):
+    await verify_project_owner(db, project_id, user["sub"])
+
+    # 检查测试用例
+    tc_result = await db.execute(
+        select(TestCase).where(
+            TestCase.project_id == project_id,
+            TestCase.automation == "适合"
+        )
+    )
+    if not tc_result.scalars().first():
+        raise HTTPException(status_code=400, detail="没有适合自动化的测试用例")
+
+    # 检查配置
+    config_check = await check_config_for_task("脚本生成", user["sub"])
+    if not config_check["configured"]:
+        raise HTTPException(status_code=400, detail=config_check["message"])
+
+    return StreamingResponse(
+        _stream_generate_scripts(project_id, user["sub"]),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

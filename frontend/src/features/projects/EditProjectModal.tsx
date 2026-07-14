@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Modal } from "../../shared/components/Modal";
 import { useAPISync } from "../../api/useAPISync";
+import { useUnsavedChanges } from "../../shared/hooks/useUnsavedChanges";
 import type { Project, TestType } from "../../shared/types/platform";
 
 interface EditProjectModalProps {
@@ -22,6 +23,7 @@ const docStatusOptions = ["待生成", "生成中", "已完成"];
 
 export function EditProjectModal({ open, onClose, project }: EditProjectModalProps) {
   const { updateProject } = useAPISync();
+  const projDirty = useUnsavedChanges();
 
   const [name, setName] = useState("");
   const [testType, setTestType] = useState<TestType>("首轮全量测试");
@@ -77,6 +79,7 @@ export function EditProjectModal({ open, onClose, project }: EditProjectModalPro
     try {
       await updateProject(project.id, { name, testType, description, priority, testStatus, docStatus });
       toast.success("项目更新成功");
+      projDirty.markClean();
       onClose();
     } catch (err: any) {
       toast.error(err.message || "更新失败");
@@ -84,18 +87,24 @@ export function EditProjectModal({ open, onClose, project }: EditProjectModalPro
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="编辑项目" width={520}>
+    <>
+    <Modal open={open} onClose={() => projDirty.requestClose(onClose)} title="编辑项目" width={640}
+      footer={<>
+        <button className="ghost-button" type="button" onClick={() => projDirty.requestClose(onClose)}>取消</button>
+        <button className="primary-button" type="button" onClick={handleSubmit}>保存</button>
+      </>}
+    >
       <form className="form-stack" onSubmit={handleSubmit}>
         <div className="form-row">
           <label className="form-label">
             项目名称 *
-            <input className="form-input" type="text" value={name} onChange={(e) => setName(e.target.value)} required />
+            <input className="form-input" type="text" value={name} onChange={(e) => { setName(e.target.value); projDirty.markDirty(); }} required />
           </label>
         </div>
         <div className="form-row">
           <label className="form-label">
             测试类型 *
-            <select className="form-select" value={testType} onChange={(e) => setTestType(e.target.value as TestType)}>
+            <select className="form-select" value={testType} onChange={(e) => { setTestType(e.target.value as TestType); projDirty.markDirty(); }}>
               {testTypeOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
@@ -103,7 +112,7 @@ export function EditProjectModal({ open, onClose, project }: EditProjectModalPro
         <div className="form-row">
           <label className="form-label">
             优先级
-            <select className="form-select" value={priority} onChange={(e) => setPriority(e.target.value as "高" | "中" | "低")}>
+            <select className="form-select" value={priority} onChange={(e) => { setPriority(e.target.value as "高" | "中" | "低"); projDirty.markDirty(); }}>
               <option value="高">高</option>
               <option value="中">中</option>
               <option value="低">低</option>
@@ -113,7 +122,7 @@ export function EditProjectModal({ open, onClose, project }: EditProjectModalPro
         <div className="form-row">
           <label className="form-label">
             测试状态
-            <select className="form-select" value={testStatus} onChange={(e) => setTestStatus(e.target.value)}>
+            <select className="form-select" value={testStatus} onChange={(e) => { setTestStatus(e.target.value); projDirty.markDirty(); }}>
               {testStatusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>
@@ -121,7 +130,7 @@ export function EditProjectModal({ open, onClose, project }: EditProjectModalPro
         <div className="form-row">
           <label className="form-label">
             文档状态
-            <select className="form-select" value={docStatus} onChange={(e) => setDocStatus(e.target.value)}>
+            <select className="form-select" value={docStatus} onChange={(e) => { setDocStatus(e.target.value); projDirty.markDirty(); }}>
               {docStatusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>
@@ -129,14 +138,13 @@ export function EditProjectModal({ open, onClose, project }: EditProjectModalPro
         <div className="form-row">
           <label className="form-label">
             项目说明
-            <textarea className="form-textarea" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
+            <textarea className="form-textarea" value={description} onChange={(e) => { setDescription(e.target.value); projDirty.markDirty(); }} rows={3} />
           </label>
         </div>
-        <div className="form-actions">
-          <button className="ghost-button" type="button" onClick={onClose}>取消</button>
-          <button className="primary-button" type="submit">保存</button>
-        </div>
+
       </form>
     </Modal>
+    {projDirty.confirmDialog}
+    </>
   );
 }

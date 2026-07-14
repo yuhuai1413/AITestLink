@@ -9,6 +9,7 @@ import { DataPanel } from "../../shared/components/DataPanel";
 import { docConfigApi, type ApiDocConfig } from "../../api/client";
 import { getMeWithAdmin } from "../auth/api/auth";
 import { TOKEN_KEY } from "../../shared/config/storage";
+import { useUnsavedChanges } from "../../shared/hooks/useUnsavedChanges";
 
 const DOC_CATEGORY_MAP: Record<string, string> = {
   "tpl-plan": "测试计划",
@@ -37,6 +38,7 @@ export function DocConfigPage() {
   const [searchName, setSearchName] = useState("");
   const [filterCategory, setFilterCategory] = useState("all");
   const [isAdmin, setIsAdmin] = useState(false);
+  const docDirty = useUnsavedChanges();
 
   useEffect(() => {
     loadConfigs();
@@ -86,6 +88,7 @@ export function DocConfigPage() {
           prev.map((c) => (c.id === editingConfig.id ? editingConfig : c))
         );
         toast.success("保存成功");
+        docDirty.markClean();
         setEditingConfig(null);
       }
     } catch (error) {
@@ -375,9 +378,15 @@ export function DocConfigPage() {
       {/* 编辑弹窗 */}
       <Modal
         open={!!editingConfig}
-        onClose={() => setEditingConfig(null)}
+        onClose={() => docDirty.requestClose(() => setEditingConfig(null))}
         title={`编辑模板 - ${editingConfig?.name}`}
         width={640}
+        footer={<>
+          <button className="ghost-button" type="button" onClick={() => docDirty.requestClose(() => setEditingConfig(null))}>取消</button>
+          <button className="primary-button" type="button" onClick={handleSaveEdit} disabled={saving}>
+            <Save size={16} /> {saving ? "保存中..." : "保存"}
+          </button>
+        </>}
       >
         {editingConfig && (
           <form
@@ -393,9 +402,7 @@ export function DocConfigPage() {
                 <input
                   className="form-input"
                   value={editingConfig.name}
-                  onChange={(e) =>
-                    setEditingConfig({ ...editingConfig, name: e.target.value })
-                  }
+                  onChange={(e) => { setEditingConfig({ ...editingConfig, name: e.target.value }); docDirty.markDirty(); }}
                   required
                 />
               </label>
@@ -406,9 +413,7 @@ export function DocConfigPage() {
                 <input
                   className="form-input"
                   value={editingConfig.description}
-                  onChange={(e) =>
-                    setEditingConfig({ ...editingConfig, description: e.target.value })
-                  }
+                  onChange={(e) => { setEditingConfig({ ...editingConfig, description: e.target.value }); docDirty.markDirty(); }}
                 />
               </label>
             </div>
@@ -418,9 +423,7 @@ export function DocConfigPage() {
                 <input
                   className="form-input"
                   value={editingConfig.outputFields}
-                  onChange={(e) =>
-                    setEditingConfig({ ...editingConfig, outputFields: e.target.value })
-                  }
+                  onChange={(e) => { setEditingConfig({ ...editingConfig, outputFields: e.target.value }); docDirty.markDirty(); }}
                 />
               </label>
             </div>
@@ -431,32 +434,23 @@ export function DocConfigPage() {
                   className="form-textarea"
                   rows={12}
                   value={editingConfig.promptTemplate}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setEditingConfig({
                       ...editingConfig,
                       promptTemplate: e.target.value,
-                    })
+                    });
+                    docDirty.markDirty();
+                  }
                   }
                   style={{ fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.6 }}
                 />
               </label>
             </div>
-            <div className="form-actions">
-              <button
-                className="ghost-button"
-                type="button"
-                onClick={() => setEditingConfig(null)}
-              >
-                取消
-              </button>
-              <button className="primary-button" type="submit" disabled={saving}>
-                <Save size={16} />
-                {saving ? "保存中..." : "保存"}
-              </button>
-            </div>
+
           </form>
         )}
       </Modal>
+      {docDirty.confirmDialog}
     </div>
   );
 }

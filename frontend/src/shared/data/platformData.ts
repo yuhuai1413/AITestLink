@@ -87,12 +87,6 @@ export const agentCapabilities: AgentCapability[] = [
     status: "MVP",
   },
   {
-    name: "用例评审 Agent",
-    input: "测试用例、需求解析表",
-    output: "遗漏场景、重复用例、不可执行步骤",
-    status: "MVP",
-  },
-  {
     name: "自动化 Agent",
     input: "测试用例、页面信息、接口文档",
     output: "Playwright/pytest 脚本",

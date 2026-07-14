@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -30,6 +30,33 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="登录已过期，请重新登录")
 
     # 检查用户是否仍激活
+    from sqlalchemy import select
+    from app.models.user import User
+    user_id = payload.get("sub")
+    if user_id:
+        result = await db.execute(select(User).where(User.id == user_id))
+        db_user = result.scalar_one_or_none()
+        if not db_user or not db_user.is_active:
+            raise HTTPException(status_code=401, detail="账号已被禁用，请联系管理员")
+
+    return payload
+
+
+async def get_current_user_sse(
+    token: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """SSE 端点认证：支持 query 参数 token 或 Authorization header"""
+    raw_token = token
+    if not raw_token and authorization and authorization.startswith("Bearer "):
+        raw_token = authorization.removeprefix("Bearer ")
+    if not raw_token:
+        raise HTTPException(status_code=401, detail="未登录")
+    payload = decode_token(raw_token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="登录已过期，请重新登录")
+
     from sqlalchemy import select
     from app.models.user import User
     user_id = payload.get("sub")

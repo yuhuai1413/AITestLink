@@ -61,6 +61,7 @@ class ModelConfigCreate(BaseModel):
     description: str = ""
     enabled: bool = True
     display_order: int = Field(default=0, alias="displayOrder")
+    prompt: str = ""
 
     model_config = {"populate_by_name": True}
 
@@ -75,6 +76,7 @@ class ModelConfigUpdate(BaseModel):
     description: str | None = None
     enabled: bool | None = None
     display_order: int | None = Field(default=None, alias="displayOrder")
+    prompt: str | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -92,6 +94,7 @@ class ModelConfigResponse(BaseModel):
     description: str
     enabled: bool
     display_order: int = Field(alias="displayOrder")
+    prompt: str = ""
     created_at: datetime
     updated_at: datetime
 
