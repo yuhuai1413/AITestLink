@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class RequirementUpdate(BaseModel):
@@ -10,7 +10,9 @@ class RequirementUpdate(BaseModel):
 
 
 class RequirementResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
+    reqId: str = ""
     projectId: str
     module: str
     feature: str
@@ -20,6 +22,3 @@ class RequirementResponse(BaseModel):
     question: str
     confirmed: bool
     reviewStatus: str = "待评审" 
-
-    class Config:
-        from_attributes = True

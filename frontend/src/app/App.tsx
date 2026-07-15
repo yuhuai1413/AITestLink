@@ -1,19 +1,9 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Toaster } from "sonner";
 import { GlobalAlert } from "../shared/components/GlobalAlert";
 import { Routes, Route, useNavigate, useLocation, Navigate } from "react-router-dom";
 import { AppShell } from "../shared/components/AppShell";
 import type { ViewKey } from "../shared/types/platform";
-import { DashboardPage } from "../features/dashboard/DashboardPage";
-import { ProjectsPage } from "../features/projects/ProjectsPage";
-import { ProjectDetailPage } from "../features/projects/ProjectDetailPage";
-import { TestCenterListPage } from "../features/test-center/TestCenterListPage";
-import { TestCenterProjectPage } from "../features/test-center/TestCenterProjectPage";
-import { DocumentCenterListPage } from "../features/document-center/DocumentCenterListPage";
-import { DocumentCenterProjectPage } from "../features/document-center/DocumentCenterProjectPage";
-import { ModelConfigPage } from "../features/model-config/ModelConfigPage";
-import { UserManagementPage } from "../features/user-management/UserManagementPage";
-import { DocConfigPage } from "../features/doc-config/DocConfigPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { isLoggedIn } from "../features/auth/api/auth";
 import { useAPISync } from "../api/useAPISync";
@@ -22,6 +12,21 @@ import { BASE_PATH } from "../shared/config/deploy";
 import { initManager } from "../shared/hooks/aiTaskManager";
 import { LAST_PATH_KEY } from "../shared/config/storage";
 import { notificationsApi } from "../api/client";
+
+const DashboardPage = lazy(() => import("../features/dashboard/DashboardPage").then((module) => ({ default: module.DashboardPage })));
+const ProjectsPage = lazy(() => import("../features/projects/ProjectsPage").then((module) => ({ default: module.ProjectsPage })));
+const ProjectDetailPage = lazy(() => import("../features/projects/ProjectDetailPage").then((module) => ({ default: module.ProjectDetailPage })));
+const TestCenterListPage = lazy(() => import("../features/test-center/TestCenterListPage").then((module) => ({ default: module.TestCenterListPage })));
+const TestCenterProjectPage = lazy(() => import("../features/test-center/TestCenterProjectPage").then((module) => ({ default: module.TestCenterProjectPage })));
+const DocumentCenterListPage = lazy(() => import("../features/document-center/DocumentCenterListPage").then((module) => ({ default: module.DocumentCenterListPage })));
+const DocumentCenterProjectPage = lazy(() => import("../features/document-center/DocumentCenterProjectPage").then((module) => ({ default: module.DocumentCenterProjectPage })));
+const ModelConfigPage = lazy(() => import("../features/model-config/ModelConfigPage").then((module) => ({ default: module.ModelConfigPage })));
+const UserManagementPage = lazy(() => import("../features/user-management/UserManagementPage").then((module) => ({ default: module.UserManagementPage })));
+const DocConfigPage = lazy(() => import("../features/doc-config/DocConfigPage").then((module) => ({ default: module.DocConfigPage })));
+
+function RouteFallback() {
+  return <div className="empty-state"><p>页面加载中...</p></div>;
+}
 
 
 function pathnameToView(rawPathname: string): ViewKey {
@@ -136,6 +141,7 @@ export function App() {
         path="/*"
         element={
           <AppShellLayout>
+            <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/projects" element={<ProjectsPage />} />
@@ -148,6 +154,7 @@ export function App() {
               <Route path="/model-config" element={<ModelConfigPage />} />
               <Route path="/user-management" element={<UserManagementPage />} />
             </Routes>
+            </Suspense>
           </AppShellLayout>
         }
       />

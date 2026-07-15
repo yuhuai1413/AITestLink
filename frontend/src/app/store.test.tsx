@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { reducer as storeReducer, type AppState } from "../store";
+import { reducer as storeReducer, type AppState } from "./store";
 
 // Initial state for testing reducer
 const emptyState: AppState = {
@@ -10,31 +10,40 @@ const emptyState: AppState = {
   testPoints: [],
   testCases: [],
   aiTasks: [],
+  scripts: [],
+  notifications: [],
+  activeAITasks: [],
 };
 
 const sampleProject = {
   id: "p-1", name: "Test Project",
-  testType: "功能测试" as const, testStatus: "待测试" as const, docStatus: "待解析" as const,
+  testType: "首轮全量测试" as const, testStatus: "待测试" as const, docStatus: "待解析" as const,
   description: "", caseCount: 0, passRate: 0, priority: "中" as const,
   createdAt: "2025-01-01", updatedAt: "2025-01-01",
 };
 
 const sampleRequirement = {
-  id: "r-1", projectId: "p-1", module: "M", feature: "F",
+  id: "r-1", reqId: "REQ_001", projectId: "p-1", module: "M", feature: "F",
   source: "", risk: "中" as const, rule: "", question: "", confirmed: false,
+  reviewStatus: "待评审", createdAt: "2025-01-01", updatedAt: "2025-01-01",
 };
 
 const sampleTestPoint = {
-  id: "tp-1", projectId: "p-1", module: "M", type: "正常流程" as const,
+  id: "tp-1", projectId: "p-1", requirementId: null, module: "M", type: "正常流程" as const,
   title: "T", description: "", priority: "P1" as const,
   automatable: false, reviewStatus: "待评审" as const,
+  createdAt: "2025-01-01", updatedAt: "2025-01-01",
 };
 
 const sampleTestCase = {
-  id: "tc-1", projectId: "p-1", caseCode: "TC_001", module: "M",
+  id: "tc-1", projectId: "p-1", testPointId: null, requirementId: null,
+  caseCode: "TC_001", module: "M",
   feature: "", title: "T", priority: "P1" as const,
   precondition: "", steps: "", testData: "", expectedResult: "",
-  automation: "待评估" as const, reviewStatus: "待评审" as const, remark: "",
+  environmentId: null, targetPlatform: "PC" as const, testUrl: "", requiredRole: "无",
+  testType: "功能测试", actualResult: "", passed: "未执行",
+  automation: "否" as const, reviewStatus: "待评审" as const, remark: "",
+  tester: "", testDate: "",
   createdAt: "2025-01-01", updatedAt: "2025-01-01",
 };
 
@@ -202,7 +211,7 @@ describe("storeReducer", () => {
 
   describe("Default case", () => {
     it("returns state for unknown action", () => {
-      const state = storeReducer(emptyState, { type: "UNKNOWN" as any, payload: null });
+      const state = storeReducer(emptyState, { type: "UNKNOWN", payload: null } as any);
       expect(state).toBe(emptyState);
     });
   });

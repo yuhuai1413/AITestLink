@@ -6,12 +6,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+# 配置日志级别
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.getLogger("app").setLevel(logging.INFO)
+
 from app.config import settings
 from app.database import init_db, close_db, async_session
-from app.routers import projects, files, requirements, test_points, test_cases, ai, model_config, auth, automation, doc_config, status_logs, doc_gen, notification
+from app.routers import projects, files, requirements, test_points, test_cases, ai, model_config, auth, automation, doc_config, status_logs, doc_gen, notification, environment
 
 # 导入所有模型，确保表被创建
-from app.models import project, requirement, test_point, test_case, file_asset, ai_task, model_config as mc_model, user, automation_script, doc_template as dc_model, status_log, doc_gen_status, notification as notif_model
+from app.models import project, requirement, test_point, test_case, file_asset, ai_task, model_config as mc_model, prompt_version, user, automation_script, execution_run, doc_template as dc_model, status_log, doc_gen_status, notification as notif_model
+from app.models.environment_config import EnvironmentConfig, TestAccount
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +67,7 @@ app.include_router(doc_config.router, prefix="/api", tags=["doc-config"])
 app.include_router(doc_gen.router, prefix="/api", tags=["doc-gen"])
 app.include_router(status_logs.router, prefix="/api", tags=["status-logs"])
 app.include_router(notification.router, prefix="/api", tags=["notifications"])
+app.include_router(environment.router, prefix="/api", tags=["environments"])
 
 # 静态文件服务（头像等上传文件）
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)

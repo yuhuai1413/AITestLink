@@ -2,10 +2,14 @@ import pathlib
 import secrets
 import warnings
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=str(pathlib.Path(__file__).resolve().parent.parent / ".env"),
+        env_file_encoding="utf-8",
+    )
     DATABASE_URL: str = "sqlite+aiosqlite:///./aitestlink.db"
     LLM_API_KEY: str = ""
     LLM_BASE_URL: str = "https://api.openai.com/v1"
@@ -14,11 +18,6 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:5174"
     JWT_SECRET: str = ""  # 空字符串表示未配置
     BASE_URL: str = "http://localhost:8001"
-
-    class Config:
-        env_file = str(pathlib.Path(__file__).resolve().parent.parent / ".env")
-        env_file_encoding = "utf-8"
-
 
 settings = Settings()
 

@@ -30,7 +30,7 @@ interface LoginPageProps {
 export function LoginPage({ onLogin }: LoginPageProps) {
   const [mainTab, setMainTab] = useState<MainTab>("login");
   const [phone, setPhone] = useState(() => localStorage.getItem("lastPhone") || "");
-  const [password, setPassword] = useState(() => localStorage.getItem("lastPassword") || "");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -48,11 +48,14 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       setCaptchaId(res.captcha_id);
       setCaptchaDisplay(res.code);
     } catch {
-      // 静默失败
+      toast.error("验证码加载失败，请检查后端服务后重试");
     }
   }, []);
 
   useEffect(() => {
+    // 旧版本曾将明文密码写入 localStorage。启动登录页时主动清理，
+    // 后续只保留账号，绝不在浏览器持久化用户密码。
+    localStorage.removeItem("lastPassword");
     loadCaptcha();
   }, [loadCaptcha]);
 
@@ -88,9 +91,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         const res = await login(phone, password, captchaId, captchaCode);
         if (res.ok) {
 
-          // 记住登录账号和密码
+          // 仅记住登录账号，密码不得持久化到浏览器存储。
           localStorage.setItem("lastPhone", phone);
-          localStorage.setItem("lastPassword", password);
           toast.success("登录成功");
           onLogin();
         } else {

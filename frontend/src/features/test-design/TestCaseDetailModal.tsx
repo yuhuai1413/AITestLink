@@ -60,12 +60,24 @@ export function TestCaseDetailModal({ open, testCase, onClose }: TestCaseDetailM
           <span>{testCase.testType || "功能测试"}</span>
         </div>
         <div className="detail-row">
+          <span className="detail-label">测试端</span>
+          <span>{testCase.targetPlatform}</span>
+        </div>
+        <div className="detail-row detail-row--full">
+          <span className="detail-label">测试地址</span>
+          <span style={{ overflowWrap: "anywhere" }}>{testCase.testUrl || "未配置"}</span>
+        </div>
+        <div className="detail-row">
+          <span className="detail-label">所需角色</span>
+          <span>{testCase.requiredRole || "无"}</span>
+        </div>
+        <div className="detail-row">
           <span className="detail-label">评审状态</span>
           <StatusPill tone={reviewTone(testCase.reviewStatus)}>{testCase.reviewStatus}</StatusPill>
         </div>
         <div className="detail-row">
           <span className="detail-label">是否自动化</span>
-          <span>{testCase.automation === "适合" ? "是" : "否"}</span>
+          <span>{testCase.automation === "是" ? "是" : "否"}</span>
         </div>
         <div className="detail-row detail-row--full">
           <span className="detail-label">测试步骤</span>

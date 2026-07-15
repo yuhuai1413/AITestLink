@@ -1,26 +1,31 @@
 // Test Design Types
 
+export type TestPointType = "正常流程" | "异常流程" | "边界值" | "权限控制" | "数据一致性" | "状态流转";
+export type Priority = "P0" | "P1" | "P2" | "P3";
+export type ReviewStatus = "待评审" | "评审中" | "已通过" | "需修改" | "已驳回";
+export type AutomationFlag = "是" | "否";
+
 export interface TestPoint {
   id: string;
   projectId: string;
   requirementId: string | null;
   module: string;
-  type: string;
+  type: TestPointType;
   title: string;
   description: string;
-  priority: string;
+  priority: Priority;
   automatable: boolean;
-  reviewStatus: string;
+  reviewStatus: ReviewStatus;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface TestPointCreate {
   module: string;
-  type: string;
+  type: TestPointType;
   title: string;
   description?: string;
-  priority?: string;
+  priority?: Priority;
   automatable?: boolean;
 }
 
@@ -37,16 +42,20 @@ export interface TestCase {
   module: string;
   feature: string;
   title: string;
-  priority: string;
+  priority: Priority;
   precondition: string;
   steps: string;
   testData: string;
   expectedResult: string;
+  environmentId: string | null;
+  targetPlatform: "PC" | "APP";
+  testUrl: string;
+  requiredRole: string;
   testType: string;
   actualResult: string;
   passed: string;
-  automation: string;
-  reviewStatus: string;
+  automation: AutomationFlag;
+  reviewStatus: ReviewStatus;
   remark: string;
   tester: string;
   testDate: string;
@@ -59,14 +68,18 @@ export interface TestCaseCreate {
   module: string;
   feature?: string;
   title: string;
-  priority?: string;
+  priority?: Priority;
   precondition?: string;
   steps?: string;
   testData?: string;
   expectedResult?: string;
+  environmentId?: string;
+  targetPlatform?: "PC" | "APP";
+  testUrl?: string;
+  requiredRole?: string;
   testType?: string;
-  automation?: string;
-  reviewStatus?: string;
+  automation?: AutomationFlag;
+  reviewStatus?: ReviewStatus;
   remark?: string;
   testPointId?: string;
   requirementId?: string;
@@ -84,7 +97,6 @@ export interface TestCoverage {
   automationRate: number;
 }
 
-export type ScenarioType = "正常流程" | "异常流程" | "边界值" | "权限控制" | "数据一致性" | "状态流转";
-export type TestPriority = "P0" | "P1" | "P2" | "P3";
-export type ReviewStatus = "待评审" | "评审中" | "已通过" | "已驳回";
+export type ScenarioType = TestPointType;
+export type TestPriority = Priority;
 export type TestStatus = "未执行" | "通过" | "失败" | "阻塞" | "跳过";

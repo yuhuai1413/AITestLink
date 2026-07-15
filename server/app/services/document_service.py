@@ -94,16 +94,31 @@ class DocumentService(BaseService):
         return self._to_dict(file_asset)
 
     async def delete(self, doc_id: str) -> bool:
+        from sqlalchemy import delete
         result = await self.db.execute(select(FileAsset).where(FileAsset.id == doc_id))
         file_asset = result.scalar_one_or_none()
         if not file_asset:
             return False
+
+        project_id = file_asset.project_id
 
         # 删除物理文件
         if file_asset.storage_path and os.path.exists(file_asset.storage_path):
             os.remove(file_asset.storage_path)
 
         await self.db.delete(file_asset)
+
+        # 级联删除关联数据：需求、测试点、测试用例、自动化脚本
+        from app.models.requirement import Requirement
+        from app.models.test_point import TestPoint
+        from app.models.test_case import TestCase
+        from app.models.automation_script import AutomationScript
+
+        await self.db.execute(delete(Requirement).where(Requirement.project_id == project_id))
+        await self.db.execute(delete(TestPoint).where(TestPoint.project_id == project_id))
+        await self.db.execute(delete(TestCase).where(TestCase.project_id == project_id))
+        await self.db.execute(delete(AutomationScript).where(AutomationScript.project_id == project_id))
+
         await self.db.commit()
         return True
 
@@ -133,12 +148,14 @@ class DocumentService(BaseService):
 
         if ext == "pdf":
             try:
-                import subprocess
-                result = subprocess.run(
-                    ["pdftotext", file_asset.storage_path, "-"],
-                    capture_output=True, text=True, timeout=30
-                )
-                return result.stdout
+                from PyPDF2 import PdfReader
+                reader = PdfReader(file_asset.storage_path)
+                texts = []
+                for page in reader.pages:
+                    text = page.extract_text()
+                    if text:
+                        texts.append(text)
+                return "\n".join(texts) if texts else "[PDF 文件无法提取文本内容]"
             except Exception:
                 return "[PDF 解析失败]"
 

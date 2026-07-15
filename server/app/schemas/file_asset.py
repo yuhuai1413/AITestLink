@@ -1,8 +1,9 @@
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class FileAssetResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
     projectId: str
     name: str
@@ -10,6 +11,3 @@ class FileAssetResponse(BaseModel):
     size: str
     parseStatus: str
     uploadedAt: str
-
-    class Config:
-        from_attributes = True

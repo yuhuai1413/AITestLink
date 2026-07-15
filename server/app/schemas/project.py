@@ -1,13 +1,13 @@
-from typing import Optional
+from typing import Annotated, Optional
 
 from pydantic import BaseModel, Field
 
 
 class ProjectCreate(BaseModel):
     name: str
-    test_type: str = Field(alias="testType")
-    test_status: str = Field(default="待测试", alias="testStatus")
-    doc_status: str = Field(default="待解析", alias="docStatus")
+    test_type: Annotated[str, Field(alias="testType")]
+    test_status: Annotated[str, Field(alias="testStatus")] = "待测试"
+    doc_status: Annotated[str, Field(alias="docStatus")] = "待解析"
     priority: str = "中"
     description: str = ""
 
@@ -16,9 +16,9 @@ class ProjectCreate(BaseModel):
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
-    test_type: Optional[str] = Field(default=None, alias="testType")
-    test_status: Optional[str] = Field(default=None, alias="testStatus")
-    doc_status: Optional[str] = Field(default=None, alias="docStatus")
+    test_type: Annotated[Optional[str], Field(alias="testType")] = None
+    test_status: Annotated[Optional[str], Field(alias="testStatus")] = None
+    doc_status: Annotated[Optional[str], Field(alias="docStatus")] = None
     priority: Optional[str] = None
     description: Optional[str] = None
 

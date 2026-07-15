@@ -3,66 +3,27 @@
  * 独立于 React 组件运行，切换 tab 或退出页面时轮询不中断。
  * 任务完成/失败时自动往 store 里写通知。
  */
-import { aiApi, modelConfigApi, requirementsApi, testPointsApi, testCasesApi, notificationsApi } from "../../api/client";
+import { aiApi, modelConfigApi, requirementsApi, testPointsApi, testCasesApi, scriptsApi } from "../../api/client";
 import type { ApiRequirement, ApiTestPoint, ApiTestCase } from "../../api/client";
 import { toast } from "sonner";
-import type { AppNotification, AITaskType } from "../types/platform";
+import { addTaskNotification, initNotificationContext } from "../ai-tasks/aiTaskNotifications";
+import type { AITaskType } from "../types/platform";
 
 // ── 持有 store dispatch 的引用（由 initManager 注入） ──
 let _dispatch: React.Dispatch<any> | null = null;
-let _getProjects: (() => { id: string; name: string }[]) | null = null;
 
 export function initManager(
   dispatch: React.Dispatch<any>,
   getProjects: () => { id: string; name: string }[],
 ) {
   _dispatch = dispatch;
-  _getProjects = getProjects;
+  initNotificationContext(dispatch, getProjects);
 }
+
+export const addNotification = addTaskNotification;
 
 // ── 活跃轮询任务 ──
 const activeTasks = new Map<string, AbortController>();
-
-function getProjectName(projectId: string): string {
-  if (_getProjects) {
-    const p = _getProjects().find((p) => p.id === projectId);
-    if (p) return p.name;
-  }
-  return "未知项目";
-}
-
-export function addNotification(
-  type: "任务完成" | "任务失败",
-  taskType: AITaskType,
-  projectId: string,
-  message: string,
-  targetPath: string,
-) {
-  if (!_dispatch) return;
-  const projectName = getProjectName(projectId);
-  const n: AppNotification = {
-    id: crypto.randomUUID(),
-    type,
-    taskType,
-    projectName,
-    projectId,
-    message: `项目「${projectName}」${message}`,
-    targetPath,
-    read: false,
-    createdAt: new Date().toISOString(),
-  };
-  _dispatch({ type: "ADD_NOTIFICATION", payload: n });
-
-  // 同步写入后端数据库
-  notificationsApi.create({
-    type,
-    taskType,
-    projectId,
-    projectName,
-    message: n.message,
-    targetPath,
-  }).catch(() => {});
-}
 
 // ── 轮询 AI 任务状态 ──
 async function pollAITask(
@@ -320,6 +281,8 @@ export async function startGenerateTestCases(projectId: string) {
               caseCode: tc.caseCode, module: tc.module, feature: tc.feature, title: tc.title,
               priority: tc.priority, precondition: tc.precondition, steps: tc.steps,
               testData: tc.testData, expectedResult: tc.expectedResult,
+              environmentId: tc.environmentId, targetPlatform: tc.targetPlatform,
+              testUrl: tc.testUrl, requiredRole: tc.requiredRole,
               testType: tc.testType ?? "功能测试", actualResult: tc.actualResult ?? "", passed: tc.passed ?? "未执行",
               automation: tc.automation, reviewStatus: tc.reviewStatus, remark: tc.remark,
               tester: tc.tester ?? "", testDate: tc.testDate ?? "",
@@ -333,6 +296,43 @@ export async function startGenerateTestCases(projectId: string) {
     const msg = err instanceof Error ? err.message : "用例生成失败";
     addNotification("任务失败", "用例生成", projectId, msg, `/projects/${projectId}`);
     if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:用例生成` });
+    return { success: false, error: msg };
+  }
+}
+
+export async function startGenerateScripts(projectId: string) {
+  try {
+    if (_dispatch) _dispatch({ type: "START_ACTIVE_AI_TASK", payload: `${projectId}:脚本生成` });
+
+    const verify = await verifyAIConfig(projectId, "脚本生成");
+    if (!verify.ok) {
+      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:脚本生成` });
+      addNotification("任务失败", "脚本生成", projectId, `脚本生成失败：${verify.error}`, `/projects/${projectId}`);
+      return { success: false, error: verify.error };
+    }
+
+    toast.info("脚本生成已启动，完成后会在通知列表中提醒");
+    return await runTask(projectId, "脚本生成", () => aiApi.generateScripts(projectId), async () => {
+      const scripts = await scriptsApi.list(projectId);
+      if (_dispatch) {
+        _dispatch({ type: "CLEAR_SCRIPTS", payload: projectId });
+        scripts.forEach((s: any) => {
+          _dispatch!({
+            type: "ADD_SCRIPT",
+            payload: {
+              id: s.id, projectId: s.projectId, testCaseId: s.testCaseId,
+              caseCode: s.caseCode, module: s.module, title: s.title,
+              code: s.code, reviewStatus: s.reviewStatus,
+              createdAt: s.createdAt, updatedAt: s.updatedAt,
+            },
+          });
+        });
+      }
+    }, { skipStartDispatch: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "脚本生成失败";
+    addNotification("任务失败", "脚本生成", projectId, msg, `/projects/${projectId}`);
+    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:脚本生成` });
     return { success: false, error: msg };
   }
 }
@@ -354,6 +354,27 @@ export async function startGenerateDocs(projectId: string, templateId: string) {
     const msg = err instanceof Error ? err.message : "文档生成失败";
     addNotification("任务失败", "文档生成", projectId, msg, `/projects/${projectId}`);
     if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:文档生成` });
+    return { success: false, error: msg };
+  }
+}
+
+export async function startExecuteScripts(projectId: string) {
+  try {
+    if (_dispatch) _dispatch({ type: "START_ACTIVE_AI_TASK", payload: `${projectId}:执行脚本` });
+
+    const verify = await verifyAIConfig(projectId, "执行脚本");
+    if (!verify.ok) {
+      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:执行脚本` });
+      addNotification("任务失败", "执行脚本", projectId, `执行脚本失败：${verify.error}`, `/projects/${projectId}`);
+      return { success: false, error: verify.error };
+    }
+
+    toast.info("脚本执行分析已启动，完成后会在通知列表中提醒");
+    return await runTask(projectId, "执行脚本", () => aiApi.executeScripts(projectId), undefined, { skipStartDispatch: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "执行脚本失败";
+    addNotification("任务失败", "执行脚本", projectId, msg, `/projects/${projectId}`);
+    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:执行脚本` });
     return { success: false, error: msg };
   }
 }

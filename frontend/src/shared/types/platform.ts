@@ -68,6 +68,7 @@ export interface FileAsset {
 
 export interface Requirement {
   id: string;
+  reqId: string;
   projectId: string;
   module: string;
   feature: string;
@@ -76,6 +77,7 @@ export interface Requirement {
   rule: string;
   question: string;
   confirmed: boolean;
+  reviewStatus: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -90,32 +92,32 @@ export type TestPointType =
   | "数据一致性"
   | "状态流转";
 export type Priority = "P0" | "P1" | "P2" | "P3";
+export type ReviewStatus = "待评审" | "评审中" | "已通过" | "需修改" | "已驳回";
 
 export interface TestPoint {
   id: string;
   projectId: string;
-  requirementId?: string;
+  requirementId: string | null;
   module: string;
   type: TestPointType;
   title: string;
   description: string;
   priority: Priority;
   automatable: boolean;
-  reviewStatus: "待评审" | "已通过" | "需修改";
+  reviewStatus: ReviewStatus;
   createdAt: string;
   updatedAt: string;
 }
 
 // ─── 测试用例 ───
 
-export type ReviewStatus = "待评审" | "已通过" | "需修改";
-export type AutomationFlag = "适合" | "不适合" | "待评估";
+export type AutomationFlag = "是" | "否";
 
 export interface TestCase {
   id: string;
   projectId: string;
-  testPointId?: string;
-  requirementId?: string;
+  testPointId: string | null;
+  requirementId: string | null;
   caseCode: string;
   module: string;
   feature: string;
@@ -125,6 +127,10 @@ export interface TestCase {
   steps: string;
   testData: string;
   expectedResult: string;
+  environmentId: string | null;
+  targetPlatform: "PC" | "APP";
+  testUrl: string;
+  requiredRole: string;
   testType: string;
   actualResult: string;
   passed: string;
@@ -144,6 +150,7 @@ export type AITaskType =
   | "测试点生成"
   | "用例生成"
   | "脚本生成"
+  | "执行脚本"
   | "文档生成";
 export type AITaskStatus = "等待" | "执行中" | "成功" | "失败";
 
@@ -160,8 +167,8 @@ export interface AITask {
 
 // ─── 自动化脚本 ───
 
-export type ScriptType = "UI" | "API";
-export type ScriptFramework = "Playwright" | "pytest";
+export type ScriptType = "UI" | "API" | "混合";
+export type ScriptFramework = "Playwright" | "Selenium" | "pytest";
 export type ScriptStatus = "待执行" | "执行中" | "成功" | "失败";
 
 export interface AutomationScript {
@@ -174,6 +181,7 @@ export interface AutomationScript {
   language: string;
   code: string;
   status: ScriptStatus;
+  reviewStatus: string;
   executedAt: string | null;
   generatedByAi: boolean;
   createdAt: string;

@@ -23,6 +23,19 @@
   color: #334155;
 }
 
+.form-label-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: fit-content;
+}
+
+.form-required {
+  color: var(--red, #dc2626);
+  font-size: 14px;
+  line-height: 1;
+}
+
 .form-input,
 .form-select {
   width: 100%;
@@ -31,13 +44,36 @@
   border-radius: var(--radius-l4);
   background: var(--surface);
   color: var(--text);
-  padding: 0 32px 0 12px;
+  padding: 0 12px;
   font: inherit;
   font-size: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.form-input {
+  appearance: auto;
+  background-image: none;
+}
+
+.form-select {
+  padding-right: 32px;
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
+  cursor: pointer;
+}
+
+.form-input::placeholder,
+.form-textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.78;
+}
+
+.form-input:hover:not(:disabled),
+.form-select:hover:not(:disabled),
+.form-textarea:hover:not(:disabled) {
+  border-color: #a8b4c5;
 }
 
 .form-input:focus,
@@ -59,6 +95,25 @@
   font: inherit;
   font-size: 14px;
   resize: vertical;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.form-input:disabled,
+.form-select:disabled,
+.form-textarea:disabled {
+  cursor: not-allowed;
+  background-color: var(--canvas);
+  color: var(--muted);
+  opacity: 0.72;
+}
+
+.form-input[type="number"] {
+  padding-right: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.input-with-icon .form-input {
+  padding-right: 42px;
 }
 
 .inline-select {

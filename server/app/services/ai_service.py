@@ -8,6 +8,9 @@ from sqlalchemy import select
 from app.config import settings
 from app.database import async_session
 from app.models.model_config import ModelConfig
+from app.schemas.ai_output import output_json_schema, validate_ai_object, validate_ai_output
+from app.services.llm_client import OpenAICompatibleClient, json_schema_response_format, supports_json_schema
+from app.services.prompt_service import get_published_prompt
 from app.utils import decrypt_value, ensure_chat_endpoint
 
 logger = logging.getLogger(__name__)
@@ -24,11 +27,17 @@ TASK_CONFIG_MAP = {
 }
 
 
+async def _get_admin_prompt(db, config_key: str | None) -> str:
+    """兼容入口：实际读取集中式已发布版本。"""
+    return await get_published_prompt(db, config_key)
+
+
 async def _get_config_for_task(task_type: str, user_id: str) -> dict:
     """根据任务类型和用户ID从数据库获取配置"""
     config_key = TASK_CONFIG_MAP.get(task_type)
 
     async with async_session() as db:
+        admin_prompt = await _get_admin_prompt(db, config_key)
         if config_key:
             result = await db.execute(
                 select(ModelConfig).where(
@@ -45,7 +54,7 @@ async def _get_config_for_task(task_type: str, user_id: str) -> dict:
                         "api_key": decrypt_value(config.api_key),
                         "endpoint": config.endpoint,
                         "model": config.model_name,
-                        "prompt": config.prompt or "",
+                        "prompt": admin_prompt,
                     }
                 # 配置存在但字段不完整
                 raise ValueError(f"「{config.name}」配置不完整，请在模型配置页面补全供应商、模型、API Key 和 Endpoint")
@@ -67,7 +76,7 @@ async def _get_config_for_task(task_type: str, user_id: str) -> dict:
                 "api_key": decrypt_value(config.api_key),
                 "endpoint": config.endpoint,
                 "model": config.model_name,
-                "prompt": config.prompt or "",
+                "prompt": admin_prompt,
             }
 
     raise ValueError(f"未找到可用的模型配置，请在模型配置页面配置并启用至少一个模型")
@@ -106,50 +115,31 @@ async def check_config_for_task(task_type: str, user_id: str) -> dict:
 
 
 class AIService:
+    def __init__(self, llm_client: OpenAICompatibleClient | None = None):
+        self.llm_client = llm_client or OpenAICompatibleClient()
+
     async def _call_llm(self, user_prompt: str, task_type: str = "", user_id: str = "", max_tokens: int = 16000, system_prompt_override: str = "") -> str:
         """Call LLM API and return the response content.
 
-        system_prompt 从数据库读取（用户在模型配置页面设置）。
+        system_prompt 从管理员维护的节点提示词读取，普通用户配置只提供模型连接信息。
         system_prompt_override 仅在模板生成等特殊场景下使用，会跳过数据库读取。
         """
         config = await _get_config_for_task(task_type, user_id)
 
         final_system_prompt = system_prompt_override or config.get("prompt", "")
         if not final_system_prompt:
-            raise ValueError(f"「{task_type}」的提示词未配置，请在模型配置页面设置提示词")
+            raise ValueError(f"「{task_type}」的管理员提示词未发布，请联系管理员配置")
 
-        headers = {
-            "Authorization": f"Bearer {config['api_key']}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": config['model'],
-            "messages": [
-                {"role": "system", "content": final_system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": 0.3,
-            "max_tokens": max_tokens,
-        }
-
-        async with httpx.AsyncClient(timeout=600) as client:
-            response = await client.post(
-                ensure_chat_endpoint(config['endpoint']),
-                headers=headers,
-                json=payload,
-            )
-            logger.info(f"_call_llm: task={task_type}, status={response.status_code}")
-            if response.status_code != 200:
-                logger.error(f"_call_llm failed: task={task_type}, status={response.status_code}, body={response.text[:500]}")
-            response.raise_for_status()
-            data = response.json()
-            content = data["choices"][0]["message"].get("content")
-            if not content:
-                msg = data["choices"][0]["message"]
-                logger.warning(f"LLM returned empty content for task: {task_type}, message keys: {list(msg.keys())}, full message: {str(msg)[:500]}")
-                content = msg.get("reasoning_content") or ""
-            logger.info(f"_call_llm: task={task_type}, content_len={len(content) if content else 0}, preview={str(content)[:100] if content else 'None'}")
-            return content
+        return await self.llm_client.complete(
+            endpoint=config["endpoint"],
+            api_key=config["api_key"],
+            model=config["model"],
+            system_prompt=final_system_prompt,
+            user_prompt=user_prompt,
+            task_type=task_type,
+            max_tokens=max_tokens,
+            response_schema=output_json_schema(task_type),
+        )
 
     def _parse_json_response(self, text: str) -> list | dict:
         """Extract JSON from LLM response, handling various output formats."""
@@ -164,34 +154,82 @@ class AIService:
 
         # 1. Try direct parse first
         try:
-            return json.loads(text)
+            result = json.loads(text)
+            logger.info(f"_parse_json_response: direct parse succeeded, type={type(result).__name__}")
+            return result
         except (json.JSONDecodeError, ValueError):
             pass
 
         # 2. Extract from markdown code blocks (```json ... ``` or ``` ... ```)
         code_block_pattern = re.compile(r'```(?:json)?\s*\n?(.*?)```', re.DOTALL)
         matches = code_block_pattern.findall(text)
-        for match in matches:
+        logger.info(f"_parse_json_response: found {len(matches)} code blocks, total text len={len(text)}")
+        for idx, match in enumerate(matches):
+            stripped = match.strip()
+            logger.info(f"_parse_json_response: code block {idx}: len={len(stripped)}, first30={stripped[:30]!r}, last30={stripped[-30:]!r}")
             try:
-                return json.loads(match.strip())
-            except (json.JSONDecodeError, ValueError):
+                result = json.loads(stripped)
+                if isinstance(result, list):
+                    logger.info(f"_parse_json_response: code block parsed as list, len={len(result)}")
+                elif isinstance(result, dict):
+                    logger.info(f"_parse_json_response: code block parsed as dict, keys={list(result.keys())[:5]}")
+                return result
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.info(f"_parse_json_response: code block parse failed: {e}")
                 continue
 
-        # 3. Find the outermost JSON array or object using bracket matching
-        for start_char, end_char in [('[', ']'), ('{', '}')]:
-            start_idx = text.find(start_char)
-            if start_idx == -1:
-                continue
+        # 3. Find the outermost JSON array using bracket matching
+        # 优先查找数组，因为 LLM 通常返回数组格式
+        logger.info(f"_parse_json_response: trying bracket matching, text starts with: {text[:20]!r}")
+
+        # 先尝试匹配完整的数组
+        start_idx = text.find('[')
+        if start_idx >= 0:
             depth = 0
             for i in range(start_idx, len(text)):
-                if text[i] == start_char:
+                if text[i] == '[':
                     depth += 1
-                elif text[i] == end_char:
+                elif text[i] == ']':
                     depth -= 1
                     if depth == 0:
                         candidate = text[start_idx:i + 1]
                         try:
-                            return json.loads(candidate)
+                            result = json.loads(candidate)
+                            if isinstance(result, list):
+                                logger.info(f"_parse_json_response: bracket match found array, len={len(result)}")
+                                return result
+                        except (json.JSONDecodeError, ValueError):
+                            break
+
+            # 数组没有闭合，尝试修复（截断的 JSON）
+            logger.info(f"_parse_json_response: array not closed, trying to repair truncated JSON")
+            # 找到最后一个完整的对象结束位置
+            last_brace = text.rfind('}')
+            if last_brace > start_idx:
+                repaired = text[start_idx:last_brace + 1] + ']'
+                try:
+                    result = json.loads(repaired)
+                    if isinstance(result, list):
+                        logger.info(f"_parse_json_response: repaired truncated array, len={len(result)}")
+                        return result
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+        # 如果数组匹配失败，尝试匹配对象
+        start_idx = text.find('{')
+        if start_idx >= 0:
+            depth = 0
+            for i in range(start_idx, len(text)):
+                if text[i] == '{':
+                    depth += 1
+                elif text[i] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        candidate = text[start_idx:i + 1]
+                        try:
+                            result = json.loads(candidate)
+                            logger.info(f"_parse_json_response: bracket match found object")
+                            return result
                         except (json.JSONDecodeError, ValueError):
                             break
 
@@ -228,64 +266,60 @@ class AIService:
         user_prompt = f"请对以下文档内容进行专业的需求分析。\n\n注意区分需求文档和辅助文档，辅助文档中的关键测试数据（如账号、密码、部门信息等）请在「question」字段中标注，格式为：【辅助文档信息】xxx。\n\n文档内容：\n\n{doc_text}"
 
         response = await self._call_llm(user_prompt, "需求解析", user_id)
-        return self._parse_json_response(response)
+        return validate_ai_output("需求解析", self._parse_json_response(response))
 
     async def generate_test_points(self, requirements_text: str, user_id: str = "") -> list[dict]:
         """Generate test points from requirements."""
-        user_prompt = f"请以资深测试架构师的视角，根据以下需求生成全面的测试点。要求覆盖正常流程、异常流程、边界值、权限控制、数据一致性、状态流转等维度，并给出合理的优先级和自动化评估。\n\n需求列表：\n\n{requirements_text[:3000]}"
+        user_prompt = f"以下是本批需求 JSON。只处理这些需求，并保持 requirementId 原值不变：\n{requirements_text}"
 
         response = await self._call_llm(user_prompt, "测试点生成", user_id)
-        return self._parse_json_response(response)
+        return validate_ai_output("测试点生成", self._parse_json_response(response))
 
     async def generate_test_cases(self, test_points_text: str, user_id: str = "") -> list[dict]:
         """Generate test cases from test points."""
         user_prompt = (
-            "请以资深测试工程师的视角，根据以下测试点生成可执行的测试用例。要求："
-            "1. 步骤使用 步骤N: 格式，每步包含验证点（用 查看...是否... 句式） "
-            "2. 预期结果包含步骤编号和 应 字 "
-            "3. 数据具体化，不使用模糊描述 "
-            "4. 编号格式 TC_XXX_NNN "
-            "5. 用例标题只写验证目标本身，严禁在标题开头加 [xxx] 前缀（如 [正常流程]、[异常流程]、[边界值] 等），这些类型信息由 testType 字段单独存储"
-            f"\n\n测试点列表：\n\n{test_points_text[:3000]}"
+            "以下是本批测试点 JSON。每个测试点至少生成一条用例，保持 testPointId 原值不变：\n"
+            f"{test_points_text}"
         )
 
         response = await self._call_llm(user_prompt, "用例生成", user_id, max_tokens=16000)
-        return self._parse_json_response(response)
+        return validate_ai_output("用例生成", self._parse_json_response(response))
 
     async def generate_automation_scripts(self, test_cases_text: str, user_id: str = "") -> list[dict]:
         """Generate Playwright automation scripts from test cases using AI."""
-        user_prompt = f"请根据以下测试用例生成可直接运行的 Playwright 自动化测试脚本。要求代码完整、断言具体、结构清晰，遵循 Page Object Model 模式。\n\n测试用例列表：\n\n{test_cases_text[:4000]}"
+        user_prompt = f"以下是本批可自动化测试用例 JSON。每条用例生成一个脚本，保持 testCaseId 原值不变：\n{test_cases_text}"
 
         response = await self._call_llm(user_prompt, "脚本生成", user_id)
-        return self._parse_json_response(response)
+        return validate_ai_output("脚本生成", self._parse_json_response(response))
 
     async def analyze_script_execution(self, scripts_text: str, execution_results: str, user_id: str = "") -> dict:
         """AI analysis of script execution results and generate report."""
-        user_prompt = f"请分析以下自动化脚本的执行结果，生成详细的执行报告和缺陷报告。\n\n脚本信息：\n{scripts_text[:2000]}\n\n执行结果：\n{execution_results[:2000]}"
+        user_prompt = f"请只依据以下脚本元数据和 Worker 执行结果进行分析，不要模拟执行。\n\n脚本信息：\n{scripts_text}\n\n执行结果：\n{execution_results}"
 
         response = await self._call_llm(user_prompt, "执行脚本", user_id)
-        return self._parse_json_response(response)
+        return validate_ai_object("执行脚本", self._parse_json_response(response))
 
     async def generate_test_documents(self, project_info: str, requirements_text: str, test_points_text: str, test_cases_text: str, user_id: str = "") -> dict:
         """AI generate test documentation (test plan, test report, etc.)."""
-        user_prompt = f"请根据以下项目信息生成测试文档。\n\n项目信息：\n{project_info[:1000]}\n\n需求列表：\n{requirements_text[:1500]}\n\n测试点列表：\n{test_points_text[:1500]}\n\n测试用例列表：\n{test_cases_text[:1500]}"
+        user_prompt = f"请根据以下真实项目数据生成测试文档；缺失信息标记为待补充。\n\n项目信息：\n{project_info}\n\n需求列表：\n{requirements_text}\n\n测试点列表：\n{test_points_text}\n\n测试用例列表：\n{test_cases_text}"
 
         response = await self._call_llm(user_prompt, "文档生成", user_id)
-        return self._parse_json_response(response)
+        return validate_ai_object("文档生成", self._parse_json_response(response))
 
     async def generate_doc_by_template(self, template_prompt: str, project_info: str, requirements_text: str, test_points_text: str, test_cases_text: str, user_id: str = "") -> dict:
         """使用模板专属 prompt 生成文档"""
         user_prompt = (
             f"请根据以下项目信息生成文档。\n\n"
-            f"项目信息：\n{project_info[:1000]}\n\n"
-            f"需求列表：\n{requirements_text[:1500]}\n\n"
-            f"测试点列表：\n{test_points_text[:1500]}\n\n"
-            f"测试用例列表：\n{test_cases_text[:1500]}\n\n"
+            f"模板要求：\n{template_prompt}\n\n"
+            f"项目信息：\n{project_info}\n\n"
+            f"需求列表：\n{requirements_text}\n\n"
+            f"测试点列表：\n{test_points_text}\n\n"
+            f"测试用例列表：\n{test_cases_text}\n\n"
             f"输出格式要求：以 JSON 格式输出，包含 documentType、title、content（Markdown 格式）、metadata 字段。"
         )
 
-        response = await self._call_llm(user_prompt, "文档生成", user_id, system_prompt_override=template_prompt)
-        return self._parse_json_response(response)
+        response = await self._call_llm(user_prompt, "文档生成", user_id)
+        return validate_ai_object("文档生成", self._parse_json_response(response))
 
     # ── 流式调用 ────────────────────────────────────────────────────
 
@@ -294,7 +328,7 @@ class AIService:
         config = await _get_config_for_task(task_type, user_id)
         final_system_prompt = system_prompt_override or config.get("prompt", "")
         if not final_system_prompt:
-            raise ValueError(f"「{task_type}」的提示词未配置，请在模型配置页面设置提示词")
+            raise ValueError(f"「{task_type}」的管理员提示词未发布，请联系管理员配置")
 
         headers = {
             "Authorization": f"Bearer {config['api_key']}",
@@ -310,66 +344,72 @@ class AIService:
             "max_tokens": max_tokens,
             "stream": True,
         }
+        structured_format = None
+        if supports_json_schema(config["endpoint"]):
+            structured_format = json_schema_response_format(task_type, output_json_schema(task_type))
+            if structured_format:
+                payload["response_format"] = structured_format
 
         async with httpx.AsyncClient(timeout=600) as client:
-            async with client.stream(
-                "POST",
-                ensure_chat_endpoint(config['endpoint']),
-                headers=headers,
-                json=payload,
-            ) as response:
-                logger.info(f"_call_llm_stream: task={task_type}, status={response.status_code}")
-                if response.status_code != 200:
-                    body = await response.aread()
-                    logger.error(f"_call_llm_stream failed: task={task_type}, status={response.status_code}, body={body[:500]}")
-                    response.raise_for_status()
+            for attempt in range(2):
+                async with client.stream(
+                    "POST",
+                    ensure_chat_endpoint(config['endpoint']),
+                    headers=headers,
+                    json=payload,
+                ) as response:
+                    logger.info(f"_call_llm_stream: task={task_type}, status={response.status_code}")
+                    if structured_format and attempt == 0 and response.status_code in {400, 404, 422}:
+                        await response.aread()
+                        payload.pop("response_format", None)
+                        logger.warning("流式 JSON Schema 不受供应商支持，自动降级重试：task=%s", task_type)
+                        continue
+                    if response.status_code != 200:
+                        body = await response.aread()
+                        logger.error(f"_call_llm_stream failed: task={task_type}, status={response.status_code}, body={body[:500]}")
+                        response.raise_for_status()
 
-                async for line in response.aiter_lines():
-                    if not line or not line.startswith("data: "):
-                        continue
-                    data_str = line[6:]
-                    if data_str.strip() == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data_str)
-                        choices = chunk.get("choices", [])
-                        if not choices:
+                    async for line in response.aiter_lines():
+                        if not line or not line.startswith("data: "):
                             continue
-                        delta = choices[0].get("delta", {})
-                        content = delta.get("content")
-                        if content:
-                            yield content
-                    except json.JSONDecodeError:
-                        continue
+                        data_str = line[6:]
+                        if data_str.strip() == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                            choices = chunk.get("choices", [])
+                            if not choices:
+                                continue
+                            delta = choices[0].get("delta", {})
+                            content = delta.get("content")
+                            if content:
+                                yield content
+                        except json.JSONDecodeError:
+                            continue
+                    return
 
     async def generate_stream(self, user_prompt: str, task_type: str, user_id: str = "", batch_size: int = 5, max_tokens: int = 16000, system_prompt_override: str = "") -> AsyncGenerator[list[dict], None]:
-        """流式接收 LLM 响应，接收过程中发进度，攒完后解析 JSON 分批 yield。
-
-        LLM 流式返回逐字文本，不能边收边解析 JSON。
-        所以分两阶段：接收阶段发 "接收中" 进度 → 收完后解析分批 yield。
-        """
+        """流式接收 LLM 响应，接收完后解析 JSON 分批 yield。"""
         logger.info(f"generate_stream: starting LLM stream for task={task_type}")
 
-        # 阶段1：流式接收，每收到一段文本就 yield 一个进度标记
+        # 阶段1：流式接收
         full_text = ""
         chunk_count = 0
         async for chunk in self._call_llm_stream(user_prompt, task_type, user_id, max_tokens=max_tokens, system_prompt_override=system_prompt_override):
             full_text += chunk
             chunk_count += 1
-            # 每 10 个 chunk 发一次"接收中"进度（不写库，只通知前端）
+            # 每 10 个 chunk 发一次"接收中"进度
             if chunk_count % 10 == 0:
                 yield []  # 空 batch = 进度标记
 
         logger.info(f"generate_stream: received full response, length={len(full_text)}, chunks={chunk_count}")
 
         # 阶段2：解析 JSON
-        items = self._parse_json_response(full_text)
-        if not isinstance(items, list):
-            items = [items] if isinstance(items, dict) else []
+        items = validate_ai_output(task_type, self._parse_json_response(full_text))
 
         logger.info(f"generate_stream: parsed {len(items)} items from response")
 
-        # 阶段3：分批 yield（带数据的 batch）
+        # 阶段3：分批 yield
         for i in range(0, len(items), batch_size):
             batch = items[i:i + batch_size]
             yield batch

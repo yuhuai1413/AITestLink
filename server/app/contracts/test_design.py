@@ -65,6 +65,10 @@ class TestCaseCreate(BaseModel):
     steps: str = ""
     test_data: str = Field(default="", alias="testData")
     expected_result: str = Field(default="", alias="expectedResult")
+    environment_id: str | None = Field(default=None, alias="environmentId")
+    target_platform: str = Field(default="PC", alias="targetPlatform")
+    test_url: str = Field(default="", alias="testUrl")
+    required_role: str = Field(default="无", alias="requiredRole")
     test_type: str = Field(default="功能测试", alias="testType")
     automation: str = "待评估"
     review_status: str = Field(default="待评审", alias="reviewStatus")
@@ -82,6 +86,10 @@ class TestCaseUpdate(BaseModel):
     steps: str | None = None
     test_data: str | None = Field(default=None, alias="testData")
     expected_result: str | None = Field(default=None, alias="expectedResult")
+    environment_id: str | None = Field(default=None, alias="environmentId")
+    target_platform: str | None = Field(default=None, alias="targetPlatform")
+    test_url: str | None = Field(default=None, alias="testUrl")
+    required_role: str | None = Field(default=None, alias="requiredRole")
     test_type: str | None = Field(default=None, alias="testType")
     automation: str | None = None
     review_status: str | None = Field(default=None, alias="reviewStatus")
@@ -108,6 +116,10 @@ class TestCaseResponse(BaseModel):
     steps: str
     test_data: str = Field(alias="testData")
     expected_result: str = Field(alias="expectedResult")
+    environment_id: str | None = Field(default=None, alias="environmentId")
+    target_platform: str = Field(alias="targetPlatform")
+    test_url: str = Field(alias="testUrl")
+    required_role: str = Field(alias="requiredRole")
     test_type: str = Field(alias="testType")
     actual_result: str = Field(alias="actualResult")
     passed: str

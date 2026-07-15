@@ -1,0 +1,117 @@
+import { KeyRound, Plus, Users } from "lucide-react";
+
+import type { EnvironmentConfig, TestAccount } from "../../api/environment.api";
+import { DataTable } from "../../shared/components/DataTable";
+import { Modal } from "../../shared/components/Modal";
+import { StatusPill } from "../../shared/components/StatusPill";
+
+interface EnvironmentAccountsModalProps {
+  environment: EnvironmentConfig | null;
+  onClose: () => void;
+  onAdd: (environmentId: string) => void;
+  onEdit: (account: TestAccount) => void;
+  onDelete: (account: TestAccount) => void;
+}
+
+function formatTime(iso: string | undefined): string {
+  if (!iso) return "-";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+export function EnvironmentAccountsModal({
+  environment,
+  onClose,
+  onAdd,
+  onEdit,
+  onDelete,
+}: EnvironmentAccountsModalProps) {
+  const accounts = environment?.accounts ?? [];
+
+  return (
+    <Modal
+      open={!!environment}
+      onClose={onClose}
+      title={environment ? `账号管理 · ${environment.name}` : "账号管理"}
+      width={1040}
+      height="78vh"
+      footer={<button className="ghost-button" type="button" onClick={onClose}>关闭</button>}
+    >
+      {environment && (
+        <div className="page-stack page-stack--spaced page-stack--fill">
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) auto",
+              gap: 12,
+              alignItems: "stretch",
+            }}
+          >
+            <div className="work-panel" style={{ padding: "14px 16px", minWidth: 0, display: "grid", gridTemplateColumns: "72px minmax(0, 1fr)", alignItems: "center", columnGap: 14 }}>
+              <div style={{ color: "var(--muted)", fontSize: 13 }}>Web 地址</div>
+              <div title={environment.webUrl || "未配置"} style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600, textAlign: "left" }}>
+                {environment.webUrl || "未配置"}
+              </div>
+            </div>
+            <div className="work-panel" style={{ padding: "14px 16px", minWidth: 0, display: "grid", gridTemplateColumns: "72px minmax(0, 1fr)", alignItems: "center", columnGap: 14 }}>
+              <div style={{ color: "var(--muted)", fontSize: 13 }}>APP 地址</div>
+              <div title={environment.appUrl || "未配置"} style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600, textAlign: "left" }}>
+                {environment.appUrl || "未配置"}
+              </div>
+            </div>
+            <button className="primary-button" type="button" onClick={() => onAdd(environment.id)} style={{ alignSelf: "center" }}>
+              <Plus size={14} /> 添加账号
+            </button>
+          </div>
+
+          <section className="work-panel" style={{ minHeight: 0, flex: 1 }}>
+            {accounts.length === 0 ? (
+              <div className="empty-state" style={{ minHeight: 260 }}>
+                <Users size={36} style={{ color: "var(--muted)", marginBottom: 10 }} />
+                <p>当前环境还没有测试账号</p>
+                <p style={{ color: "var(--muted)", fontSize: 13 }}>添加的账号只会绑定到“{environment.name}”。</p>
+                <button className="primary-button" type="button" onClick={() => onAdd(environment.id)}>
+                  <Plus size={14} /> 添加第一个账号
+                </button>
+              </div>
+            ) : (
+              <DataTable<TestAccount>
+                rows={accounts}
+                getRowKey={(account) => account.id}
+                columns={[
+                  { key: "name", label: "账号名称", width: "14%", align: "center", render: (account) => <strong>{account.name}</strong> },
+                  { key: "username", label: "用户名", width: "18%", align: "center", render: (account) => account.username },
+                  { key: "password", label: "密码", width: "16%", align: "center", render: (account) => account.hasPassword ? (
+                    <span title="密码已加密保存，不回显明文" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <KeyRound size={13} /> ••••••••
+                    </span>
+                  ) : <StatusPill tone="slate">未配置</StatusPill> },
+                  { key: "role", label: "角色/权限", width: "14%", align: "center", render: (account) => account.role || <span style={{ color: "var(--muted)" }}>-</span> },
+                  { key: "notes", label: "备注", align: "center", render: (account) => account.notes || <span style={{ color: "var(--muted)" }}>-</span> },
+                  { key: "createdAt", label: "创建时间", width: "16%", align: "center", render: (account) => formatTime(account.createdAt) },
+                  { key: "actions", label: "操作", width: "110px", sticky: "right", align: "center", render: (account) => (
+                    <div className="inline-actions">
+                      <button className="text-button" type="button" onClick={() => onEdit(account)}>编辑</button>
+                      <button className="text-button text-button--danger" type="button" onClick={() => onDelete(account)}>删除</button>
+                    </div>
+                  ) },
+                ]}
+              />
+            )}
+          </section>
+          <div style={{ color: "var(--muted)", fontSize: 12 }}>
+            共 {accounts.length} 个账号；账号与当前环境独立绑定，密码以加密方式保存。
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}

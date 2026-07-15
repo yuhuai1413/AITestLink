@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 import re
+import json
 
 from sqlalchemy import select, func
 
@@ -10,6 +11,15 @@ from app.models.test_case import TestCase
 from app.models.requirement import Requirement
 from app.services.base import BaseService
 from app.services.ai_service import AIService
+from app.services.ai_input_builder import (
+    requirement_batches,
+    test_point_batches,
+    validate_case_environment,
+    validate_reference_values,
+    validate_references,
+)
+from app.services.ai_task_support import normalize_automation
+from app.services.environment_service import EnvironmentService
 from app.contracts.test_design import TestPointUpdate, TestCaseUpdate
 
 
@@ -24,22 +34,28 @@ class TestDesignService(BaseService):
 
     async def generate_test_points(self, project_id: str, requirement_ids: list[str], user_id: str) -> list[dict]:
         # 获取需求
-        result = await self.db.execute(
-            select(Requirement).where(Requirement.id.in_(requirement_ids))
-        )
+        result = await self.db.execute(select(Requirement).where(
+            Requirement.project_id == project_id,
+            Requirement.id.in_(requirement_ids),
+        ))
         requirements = result.scalars().all()
-        if not requirements:
+        if not requirements or {item.id for item in requirements} != set(requirement_ids):
             from fastapi import HTTPException
             raise HTTPException(status_code=400, detail="未找到需求数据")
 
-        # 构建需求文本
-        req_text = "\n".join([
-            f"- 模块: {r.module}, 功能: {r.feature}, 规则: {r.rule}"
-            for r in requirements
-        ])
-
-        # AI 生成测试点
-        generated = await self.ai_service.generate_test_points(req_text, user_id)
+        generated: list[dict] = []
+        for payload in requirement_batches(requirements):
+            batch_items = await self.ai_service.generate_test_points(payload, user_id)
+            payload_items = json.loads(payload)
+            allowed_ids = {item["requirementId"] for item in payload_items}
+            validate_references(batch_items, "requirementId", allowed_ids)
+            validate_reference_values(
+                batch_items,
+                "requirementId",
+                {item["requirementId"]: item for item in payload_items},
+                ("module",),
+            )
+            generated.extend(batch_items)
         if not generated:
             from fastapi import HTTPException
             raise HTTPException(status_code=500, detail="AI 生成测试点失败")
@@ -50,10 +66,10 @@ class TestDesignService(BaseService):
             tp = TestPoint(
                 id=str(uuid.uuid4()),
                 project_id=project_id,
-                requirement_id=requirement_ids[0] if len(requirement_ids) == 1 else None,
-                module=item.get("module", ""),
-                type=item.get("type", "正常流程"),
-                title=item.get("title", ""),
+                requirement_id=item["requirementId"],
+                module=item["module"],
+                type=item["type"],
+                title=item["title"],
                 description=item.get("description", ""),
                 priority=item.get("priority", "P1"),
                 automatable=bool(item.get("automatable", False)),
@@ -131,22 +147,39 @@ class TestDesignService(BaseService):
 
     async def generate_test_cases(self, project_id: str, test_point_ids: list[str], user_id: str) -> list[dict]:
         # 获取测试点
-        result = await self.db.execute(
-            select(TestPoint).where(TestPoint.id.in_(test_point_ids))
-        )
+        result = await self.db.execute(select(TestPoint).where(
+            TestPoint.project_id == project_id,
+            TestPoint.id.in_(test_point_ids),
+        ))
         test_points = result.scalars().all()
-        if not test_points:
+        if not test_points or {item.id for item in test_points} != set(test_point_ids):
             from fastapi import HTTPException
             raise HTTPException(status_code=400, detail="未找到测试点数据")
 
-        # 构建测试点文本
-        tp_text = "\n".join([
-            f"- 模块: {tp.module}, 类型: {tp.type}, 标题: {tp.title}, 描述: {tp.description}"
-            for tp in test_points
-        ])
+        if any(not item.requirement_id for item in test_points):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail="存在未关联需求的旧测试点，请先重新生成测试点")
 
-        # AI 生成测试用例
-        generated = await self.ai_service.generate_test_cases(tp_text, user_id)
+        requirement_result = await self.db.execute(select(Requirement).where(
+            Requirement.project_id == project_id,
+        ))
+        requirements_by_id = {item.id: item for item in requirement_result.scalars().all()}
+        environment_context = await EnvironmentService(self.db).get_generation_context(project_id, user_id)
+
+        generated: list[dict] = []
+        for payload in test_point_batches(test_points, requirements_by_id, environment_context):
+            batch_items = await self.ai_service.generate_test_cases(payload, user_id)
+            payload_items = json.loads(payload)
+            allowed_ids = {item["testPointId"] for item in payload_items}
+            validate_references(batch_items, "testPointId", allowed_ids)
+            validate_reference_values(
+                batch_items,
+                "testPointId",
+                {item["testPointId"]: item for item in payload_items},
+                ("module", "priority"),
+            )
+            validate_case_environment(batch_items, environment_context)
+            generated.extend(batch_items)
         if not generated:
             from fastapi import HTTPException
             raise HTTPException(status_code=500, detail="AI 生成测试用例失败")
@@ -155,23 +188,30 @@ class TestDesignService(BaseService):
         test_cases = []
         for item in generated:
             # 生成用例编号
-            case_code = await self._generate_case_code(project_id, item.get("module", ""))
+            point = next(value for value in test_points if value.id == item["testPointId"])
+            requirement = requirements_by_id.get(point.requirement_id)
+            case_code = await self._generate_case_code(project_id, point.module)
 
             tc = TestCase(
                 id=str(uuid.uuid4()),
                 project_id=project_id,
-                test_point_id=test_point_ids[0] if len(test_point_ids) == 1 else None,
+                test_point_id=point.id,
+                requirement_id=point.requirement_id,
+                environment_id=item["environmentId"],
                 case_code=case_code,
-                module=item.get("module", ""),
-                feature=item.get("feature", ""),
-                title=item.get("title", ""),
+                module=point.module,
+                feature=requirement.feature if requirement else "",
+                title=item["title"],
                 priority=item.get("priority", "P1"),
                 precondition=item.get("precondition", ""),
                 steps=item.get("steps", ""),
-                test_data=item.get("testData", ""),
+                test_data=json.dumps(item.get("testData", ""), ensure_ascii=False) if isinstance(item.get("testData"), (dict, list)) else str(item.get("testData", "")),
                 expected_result=item.get("expectedResult", ""),
+                target_platform=item["targetPlatform"],
+                test_url=item["testUrl"],
+                required_role=item["requiredRole"],
                 test_type=item.get("testType", "功能测试"),
-                automation=item.get("automation", "待评估"),
+                automation=normalize_automation(item.get("automation")),
             )
             self.db.add(tc)
             test_cases.append(tc)
@@ -214,6 +254,10 @@ class TestDesignService(BaseService):
             "steps": "steps",
             "test_data": "test_data",
             "expected_result": "expected_result",
+            "environment_id": "environment_id",
+            "target_platform": "target_platform",
+            "test_url": "test_url",
+            "required_role": "required_role",
             "test_type": "test_type",
             "automation": "automation",
             "review_status": "review_status",
@@ -311,7 +355,7 @@ class TestDesignService(BaseService):
         auto_result = await self.db.execute(
             select(func.count(TestCase.id)).where(
                 TestCase.project_id == project_id,
-                TestCase.automation == "适合"
+                TestCase.automation == "是"
             )
         )
         automation_count = auto_result.scalar() or 0

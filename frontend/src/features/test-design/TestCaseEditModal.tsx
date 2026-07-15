@@ -15,7 +15,7 @@ export function TestCaseEditModal({ open, testCase, onClose }: TestCaseEditModal
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<Priority>("P0");
   const [reviewStatus, setReviewStatus] = useState<ReviewStatus>("待评审");
-  const [automation, setAutomation] = useState<AutomationFlag>("待评估");
+  const [automation, setAutomation] = useState<AutomationFlag>("否");
   const [precondition, setPrecondition] = useState("");
   const [steps, setSteps] = useState("");
   const [testData, setTestData] = useState("");
@@ -101,9 +101,8 @@ export function TestCaseEditModal({ open, testCase, onClose }: TestCaseEditModal
           <label className="form-label">
             自动化标识
             <select className="form-select" value={automation} onChange={(e) => setAutomation(e.target.value as AutomationFlag)}>
-              <option value="适合">适合</option>
-              <option value="不适合">不适合</option>
-              <option value="待评估">待评估</option>
+              <option value="是">是</option>
+              <option value="否">否</option>
             </select>
           </label>
         </div>

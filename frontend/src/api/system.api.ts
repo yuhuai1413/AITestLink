@@ -47,7 +47,10 @@ export const modelConfigApi = {
   update: (configs: ModelConfig[]) =>
     request<{ ok: boolean; count: number }>("/model-configs", {
       method: "PUT",
-      body: JSON.stringify({ configs }),
+      // 普通配置保存只提交模型连接信息，提示词由管理员专用接口维护。
+      body: JSON.stringify({
+        configs: configs.map(({ prompt: _prompt, adminPrompt: _adminPrompt, ...config }) => config),
+      }),
     }),
   test: (id: string) =>
     request<{ ok: boolean; message: string; detail?: string }>(`/model-configs/${id}/test`, {
@@ -95,6 +98,10 @@ export const aiApi = {
     request<AITask>(`/projects/${projectId}/ai/generate-test-points`, { method: "POST" }),
   generateTestCases: (projectId: string) =>
     request<AITask>(`/projects/${projectId}/ai/generate-test-cases`, { method: "POST" }),
+  generateScripts: (projectId: string) =>
+    request<AITask>(`/projects/${projectId}/ai/generate-scripts`, { method: "POST" }),
+  executeScripts: (projectId: string) =>
+    request<AITask>(`/projects/${projectId}/ai/execute-scripts`, { method: "POST" }),
   generateDocs: (projectId: string, templateId?: string) =>
     request<AITask>(`/projects/${projectId}/ai/generate-docs`, {
       method: "POST",

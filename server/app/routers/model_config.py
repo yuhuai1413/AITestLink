@@ -7,8 +7,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.model_config import ModelConfig
+from app.models.prompt_version import PromptVersion
+from app.prompts.prompt_catalog import PROMPT_TEST_INPUTS
 from app.routers.deps import get_current_user, require_admin, get_model_config_service
+from app.schemas.ai_output import validate_ai_output
+from app.services.ai_service import AIService
 from app.services.model_config_service import ModelConfigService
+from app.services.prompt_service import (
+    create_prompt_version,
+    get_published_prompt,
+    list_prompt_versions,
+    publish_prompt_version,
+)
 from app.utils import encrypt_value, decrypt_value, ensure_chat_endpoint
 
 router = APIRouter()
@@ -33,7 +43,9 @@ class ModelConfigSchema(BaseModel):
     endpoint: str
     description: str
     enabled: bool
-    prompt: str = ""
+    # 仅用于识别并拒绝旧客户端或绕过前端提交的提示词字段。
+    # 提示词只能通过管理员专用接口维护。
+    prompt: str | None = None
 
 
 class ModelConfigUpdate(BaseModel):
@@ -67,7 +79,8 @@ def _to_dict(m) -> dict:
         "endpoint": m.endpoint,
         "description": m.description,
         "enabled": m.enabled,
-        "prompt": m.prompt or "",
+        # 普通模型配置接口不再暴露用户配置行中的历史提示词副本。
+        "prompt": "",
     }
 
 
@@ -88,17 +101,10 @@ async def _ensure_user_configs(db: AsyncSession, user_id: str):
     )
     user_configs = {c.config_key: c for c in result.scalars().all()}
 
-    # 获取管理员的提示词作为默认值
-    from app.models.user import User
-    admin_result = await db.execute(
-        select(ModelConfig).join(User, ModelConfig.user_id == User.id).where(User.is_admin == True)
-    )
-    admin_map = {c.config_key: c.prompt or "" for c in admin_result.scalars().all()}
-
     changed = False
     for config in DEFAULT_CONFIGS:
         if config["config_key"] not in user_configs:
-            # 新用户：创建配置并复制管理员提示词
+            # 新用户只创建模型连接配置；提示词始终在运行时读取管理员配置。
             config_id = f"{user_id}_{config['config_key']}"
             db.add(ModelConfig(
                 id=config_id,
@@ -113,15 +119,9 @@ async def _ensure_user_configs(db: AsyncSession, user_id: str):
                 description=config["description"],
                 enabled=True,
                 display_order=config["display_order"],
-                prompt=admin_map.get(config["config_key"], ""),
+                prompt="",
             ))
             changed = True
-        else:
-            # 旧用户：如果提示词为空，从管理员同步
-            user_config = user_configs[config["config_key"]]
-            if not user_config.prompt and admin_map.get(config["config_key"]):
-                user_config.prompt = admin_map[config["config_key"]]
-                changed = True
 
     if changed:
         await db.commit()
@@ -140,14 +140,8 @@ async def list_model_configs(
     )
     configs = result.scalars().all()
 
-    # 获取管理员的默认提示词
-    from app.models.user import User
-    admin_result = await db.execute(
-        select(ModelConfig).join(User, ModelConfig.user_id == User.id).where(User.is_admin == True)
-    )
-    admin_map = {c.config_key: c.prompt or "" for c in admin_result.scalars().all()}
-
-    return [{**_to_dict(c), "adminPrompt": admin_map.get(c.config_key, "")} for c in configs]
+    # 普通模型配置接口不返回系统提示词；管理员通过专用权限接口读取。
+    return [{**_to_dict(c), "adminPrompt": ""} for c in configs]
 
 
 # ─── 管理员提示词管理（必须在 {config_id} 路由之前，避免路径冲突）───
@@ -166,19 +160,19 @@ async def get_admin_prompts(
     user: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """管理员获取所有节点的默认提示词"""
-    from app.models.user import User
-    result = await db.execute(
-        select(ModelConfig)
-        .join(User, ModelConfig.user_id == User.id)
-        .where(User.is_admin == True)
-        .order_by(ModelConfig.display_order)
-    )
-    configs = result.scalars().all()
-    return [
-        {"configKey": c.config_key, "name": c.name, "prompt": c.prompt or ""}
-        for c in configs
-    ]
+    """管理员获取所有节点当前已发布的提示词。"""
+    items = []
+    for config in DEFAULT_CONFIGS:
+        versions = await list_prompt_versions(db, config["config_key"])
+        published = next((item for item in versions if item.status == "published"), None)
+        items.append({
+            "configKey": config["config_key"],
+            "name": config["name"],
+            "prompt": published.content if published else await get_published_prompt(db, config["config_key"]),
+            "version": published.version if published else None,
+            "status": published.status if published else "legacy",
+        })
+    return items
 
 
 @router.put("/model-configs/admin-prompts")
@@ -187,27 +181,133 @@ async def update_admin_prompts(
     user: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """管理员批量更新所有节点的默认提示词"""
-    from app.models.user import User
+    """兼容现有界面：发生变化的提示词直接创建并发布一个新版本。"""
     admin_id = user["sub"]
 
     for item in data.prompts:
         if not item.prompt or not item.prompt.strip():
             raise HTTPException(status_code=400, detail=f"「{item.configKey}」的提示词不能为空")
 
-    prompt_map = {item.configKey: item.prompt for item in data.prompts}
-
-    result = await db.execute(
-        select(ModelConfig).where(ModelConfig.user_id == admin_id)
-    )
     updated = 0
-    for config in result.scalars().all():
-        if config.config_key in prompt_map:
-            config.prompt = prompt_map[config.config_key]
-            updated += 1
+    valid_keys = {item["config_key"] for item in DEFAULT_CONFIGS}
+    for item in data.prompts:
+        if item.configKey not in valid_keys:
+            raise HTTPException(status_code=400, detail=f"未知提示词节点：{item.configKey}")
+        versions = await list_prompt_versions(db, item.configKey)
+        published = next((version for version in versions if version.status == "published"), None)
+        if published and published.content.strip() == item.prompt.strip():
+            continue
+        await create_prompt_version(db, item.configKey, item.prompt, admin_id, publish=True)
+        updated += 1
 
     await db.commit()
     return {"ok": True, "updated": updated}
+
+
+class PromptContentInput(BaseModel):
+    prompt: str
+
+
+class PromptTestInput(PromptContentInput):
+    sampleInput: str | None = None
+
+
+def _prompt_version_dict(item: PromptVersion) -> dict:
+    return {
+        "id": item.id,
+        "configKey": item.config_key,
+        "version": item.version,
+        "prompt": item.content,
+        "status": item.status,
+        "createdBy": item.created_by,
+        "createdAt": item.created_at.isoformat() if item.created_at else None,
+        "publishedAt": item.published_at.isoformat() if item.published_at else None,
+    }
+
+
+@router.get("/model-configs/admin-prompts/{config_key}/versions")
+async def get_prompt_versions(
+    config_key: str,
+    user: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    return [_prompt_version_dict(item) for item in await list_prompt_versions(db, config_key)]
+
+
+@router.post("/model-configs/admin-prompts/{config_key}/draft")
+async def create_prompt_draft(
+    config_key: str,
+    data: PromptContentInput,
+    user: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        version = await create_prompt_version(db, config_key, data.prompt, user["sub"])
+        await db.commit()
+        return {"ok": True, "version": _prompt_version_dict(version)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/model-configs/admin-prompts/{config_key}/publish/{version_id}")
+async def publish_prompt(
+    config_key: str,
+    version_id: str,
+    user: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    version = await publish_prompt_version(db, config_key, version_id)
+    if not version:
+        raise HTTPException(status_code=404, detail="提示词版本不存在")
+    await db.commit()
+    return {"ok": True, "version": _prompt_version_dict(version)}
+
+
+@router.post("/model-configs/admin-prompts/{config_key}/rollback/{version_id}")
+async def rollback_prompt(
+    config_key: str,
+    version_id: str,
+    user: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(PromptVersion).where(
+            PromptVersion.id == version_id,
+            PromptVersion.config_key == config_key,
+        )
+    )
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="提示词版本不存在")
+    version = await create_prompt_version(db, config_key, target.content, user["sub"], publish=True)
+    await db.commit()
+    return {"ok": True, "version": _prompt_version_dict(version)}
+
+
+@router.post("/model-configs/admin-prompts/{config_key}/test")
+async def test_prompt(
+    config_key: str,
+    data: PromptTestInput,
+    user: dict = Depends(require_admin),
+):
+    task_type = next(
+        (item["name"] for item in DEFAULT_CONFIGS if item["config_key"] == config_key),
+        None,
+    )
+    if not task_type:
+        raise HTTPException(status_code=404, detail="提示词节点不存在")
+    try:
+        service = AIService()
+        response = await service._call_llm(
+            data.sampleInput or PROMPT_TEST_INPUTS[config_key],
+            task_type,
+            user["sub"],
+            system_prompt_override=data.prompt,
+        )
+        items = validate_ai_output(task_type, service._parse_json_response(response))
+        return {"ok": True, "count": len(items), "preview": items[:2]}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"提示词测试失败：{str(exc)}") from exc
 
 
 @router.get("/model-configs/{config_id}")
@@ -290,6 +390,8 @@ async def update_model_configs(
     existing = {c.id: c for c in result.scalars().all()}
 
     for cfg in data.configs:
+        if "prompt" in cfg.model_fields_set:
+            raise HTTPException(status_code=403, detail="提示词只能由管理员在提示词管理中配置")
         if cfg.id in existing:
             m = existing[cfg.id]
             m.name = cfg.name
@@ -303,7 +405,6 @@ async def update_model_configs(
             m.endpoint = cfg.endpoint
             m.description = cfg.description
             m.enabled = cfg.enabled
-            m.prompt = cfg.prompt or ""
 
     await db.commit()
     return {"ok": True, "count": len(data.configs)}

@@ -108,6 +108,7 @@ export type AITaskType =
   | "测试点生成"
   | "用例生成"
   | "脚本生成"
+  | "执行脚本"
   | "文档生成";
 
 export interface AppNotification {

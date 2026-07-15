@@ -107,6 +107,9 @@ export function TestDesignPage() {
               { key: "testType", label: "测试类型", render: (row) => row.testType || "功能测试" },
               { key: "feature", label: "测试点", render: (row) => row.feature },
               { key: "title", label: "用例标题", align: "left", render: (row) => row.title },
+              { key: "targetPlatform", label: "测试端", align: "center", render: (row) => row.targetPlatform },
+              { key: "testUrl", label: "测试地址", align: "left", render: (row) => row.testUrl || "未配置" },
+              { key: "requiredRole", label: "角色", align: "center", render: (row) => row.requiredRole || "无" },
               {
                 key: "priority",
                 label: "优先级",

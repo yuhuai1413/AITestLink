@@ -10,6 +10,7 @@ import {
   scriptsApi,
 } from "../api/client";
 import type { ApiProject, ApiFile, ApiRequirement, ApiTestPoint, ApiTestCase, ApiAITask, ApiScript } from "../api/client";
+import type { ProjectCreate, ProjectUpdate } from "../contracts/project";
 import type { Project, FileAsset, Requirement, TestPoint, TestCase, AITask, AutomationScript } from "../shared/types/platform";
 
 /** Sync frontend store with backend API (non-blocking). Pass enabled=false to skip (e.g. before login). */
@@ -40,12 +41,13 @@ export function useAPISync(enabled = true) {
       if (!projects || !Array.isArray(projects)) return;
 
       // Batch-load related data by project in parallel
-      const [allFiles, allReqs, allTps, allTcs, allScripts] = await Promise.all([
+      const [allFiles, allReqs, allTps, allTcs, allScripts, allTasks] = await Promise.all([
         safe(() => loadByProject(projects, (id) => filesApi.list(id))),
         safe(() => loadByProject(projects, (id) => requirementsApi.list(id))),
         safe(() => loadByProject(projects, (id) => testPointsApi.list(id))),
         safe(() => loadByProject(projects, (id) => testCasesApi.list(id))),
         safe(() => loadByProject(projects, (id) => scriptsApi.list(id))),
+        safe(() => loadByProject(projects, (id) => aiApi.listTasks(id))),
       ]);
 
       projects.forEach((p) => dispatch({ type: "ADD_PROJECT", payload: apiToProject(p) }));
@@ -54,20 +56,31 @@ export function useAPISync(enabled = true) {
       (allTps ?? []).forEach((tp) => dispatch({ type: "ADD_TEST_POINT", payload: apiToTestPoint(tp) }));
       (allTcs ?? []).forEach((tc) => dispatch({ type: "ADD_TEST_CASE", payload: apiToTestCase(tc) }));
       (allScripts ?? []).forEach((s) => dispatch({ type: "ADD_SCRIPT", payload: apiToScript(s) }));
+
+      // 同步正在执行的 AI 任务状态
+      (allTasks ?? []).forEach((tasks) => {
+        if (Array.isArray(tasks)) {
+          tasks.forEach((task: ApiAITask) => {
+            if (task.status === "执行中") {
+              dispatch({ type: "START_ACTIVE_AI_TASK", payload: `${task.projectId}:${task.type}` });
+            }
+          });
+        }
+      });
     }
 
     loadAll();
   }, [dispatch, enabled]);
 
   return {
-    createProject: useCallback(async (data: Record<string, unknown>) => {
-      const apiProject = await projectsApi.create(data as Record<string, unknown>);
+    createProject: useCallback(async (data: ProjectCreate) => {
+      const apiProject = await projectsApi.create(data);
       dispatch({ type: "ADD_PROJECT", payload: apiToProject(apiProject) });
       return apiProject;
     }, [dispatch]),
 
-    updateProject: useCallback(async (id: string, data: Record<string, unknown>) => {
-      const apiProject = await projectsApi.update(id, data as Record<string, unknown>);
+    updateProject: useCallback(async (id: string, data: ProjectUpdate) => {
+      const apiProject = await projectsApi.update(id, data);
       dispatch({ type: "UPDATE_PROJECT", payload: apiToProject(apiProject) });
     }, [dispatch]),
 
@@ -186,22 +199,14 @@ async function pollAITask(taskId: string, projectId: string, dispatch: React.Dis
 
 // ─── API → Store type converters ───
 
-const STATUS_MAP: Record<string, Project["status"]> = {
-  "待测试": "设计中",
-  "测试中": "执行中",
-  "已测试": "已完成",
-};
-
 function apiToProject(p: ApiProject): Project {
   return {
-    id: p.id, name: p.name, version: p.version,
+    id: p.id, name: p.name,
     testType: p.testType as Project["testType"],
     testStatus: p.testStatus,
     docStatus: p.docStatus,
-    status: STATUS_MAP[p.testStatus] ?? "设计中",
     description: p.description, caseCount: p.caseCount, passRate: p.passRate,
     priority: p.priority as Project["priority"],
-    riskLevel: p.priority as Project["riskLevel"],
     createdAt: p.createdAt, updatedAt: p.updatedAt,
   };
 }
@@ -217,10 +222,12 @@ function apiToFile(f: ApiFile): FileAsset {
 
 function apiToRequirement(r: ApiRequirement): Requirement {
   return {
-    id: r.id, projectId: r.projectId, module: r.module, feature: r.feature,
+    id: r.id, reqId: r.reqId || "", projectId: r.projectId, module: r.module, feature: r.feature,
     source: r.source, risk: r.risk as Requirement["risk"],
     rule: r.rule, question: r.question, confirmed: r.confirmed,
-    reviewStatus: (r as any).reviewStatus ?? "待评审",
+    reviewStatus: r.reviewStatus ?? "待评审",
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
   };
 }
 
@@ -231,7 +238,7 @@ function apiToTestPoint(tp: ApiTestPoint): TestPoint {
     title: tp.title, description: tp.description,
     priority: tp.priority as TestPoint["priority"],
     automatable: tp.automatable, reviewStatus: tp.reviewStatus as TestPoint["reviewStatus"],
-    createdAt: tp.createdAt,
+    createdAt: tp.createdAt, updatedAt: tp.updatedAt,
   };
 }
 
@@ -242,8 +249,12 @@ function apiToTestCase(tc: ApiTestCase): TestCase {
     feature: tc.feature, title: tc.title, priority: tc.priority as TestCase["priority"],
     precondition: tc.precondition, steps: tc.steps, testData: tc.testData,
     expectedResult: tc.expectedResult, automation: tc.automation as TestCase["automation"],
+    environmentId: tc.environmentId, targetPlatform: tc.targetPlatform,
+    testUrl: tc.testUrl, requiredRole: tc.requiredRole,
     reviewStatus: tc.reviewStatus as TestCase["reviewStatus"],
-    remark: tc.remark, createdAt: tc.createdAt, updatedAt: tc.updatedAt,
+    remark: tc.remark, testType: tc.testType, actualResult: tc.actualResult,
+    passed: tc.passed, tester: tc.tester, testDate: tc.testDate,
+    createdAt: tc.createdAt, updatedAt: tc.updatedAt,
   };
 }
 
@@ -258,11 +269,13 @@ function apiToAITask(t: ApiAITask): AITask {
 
 function apiToScript(s: ApiScript): AutomationScript {
   return {
-    id: s.id, projectId: s.projectId, testCaseId: s.testCaseId ?? undefined,
+    id: s.id, scriptCode: s.scriptCode, projectId: s.projectId, testCaseId: s.testCaseId,
     scriptType: s.scriptType as AutomationScript["scriptType"],
     framework: s.framework as AutomationScript["framework"],
     language: s.language, code: s.code,
     status: s.status as AutomationScript["status"],
+    reviewStatus: s.reviewStatus,
+    executedAt: s.executedAt,
     generatedByAi: s.generatedByAi,
     createdAt: s.createdAt, updatedAt: s.updatedAt,
   };

@@ -1,5 +1,7 @@
 // Document Types
 
+export type RiskLevel = "高" | "中" | "低";
+
 export interface FileAsset {
   id: string;
   projectId: string;
@@ -14,11 +16,12 @@ export interface FileAsset {
 
 export interface Requirement {
   id: string;
+  reqId: string;
   projectId: string;
   module: string;
   feature: string;
   source: string;
-  risk: string;
+  risk: RiskLevel;
   rule: string;
   question: string;
   confirmed: boolean;

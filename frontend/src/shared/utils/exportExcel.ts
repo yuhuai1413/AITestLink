@@ -2,12 +2,15 @@ import type { TestCase } from "../types/platform";
 
 export function exportManualTestCasesToExcel(
   testCases: TestCase[],
-  projectName: string
+  projectName = "全部项目",
+  type: "manual" | "all" = "manual"
 ) {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const timeStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}`;
-  const fileName = `${projectName}-手动测试用例-${timeStr}.xls`;
+  const fileName = type === "all"
+    ? `${projectName}-全部测试用例-${timeStr}.xls`
+    : `${projectName}-手动测试用例-${timeStr}.xls`;
 
   const columns: { key: string; label: string; width: number }[] = [
     { key: "module", label: "模块", width: 80 },
@@ -16,6 +19,9 @@ export function exportManualTestCasesToExcel(
     { key: "title", label: "用例标题", width: 200 },
     { key: "priority", label: "优先级", width: 50 },
     { key: "testType", label: "测试类型", width: 60 },
+    { key: "targetPlatform", label: "测试端", width: 55 },
+    { key: "testUrl", label: "测试地址", width: 220 },
+    { key: "requiredRole", label: "所需角色", width: 80 },
     { key: "steps", label: "测试步骤", width: 300 },
     { key: "expectedResult", label: "预期结果", width: 240 },
     { key: "actualResult", label: "实测结果", width: 240 },
@@ -37,16 +43,19 @@ export function exportManualTestCasesToExcel(
       title: escapeHtml(tc.title),
       priority: escapeHtml(tc.priority),
       testType: escapeHtml(tc.testType || "功能测试"),
+      targetPlatform: escapeHtml(tc.targetPlatform || "PC"),
+      testUrl: escapeHtml(tc.testUrl || "未配置"),
+      requiredRole: escapeHtml(tc.requiredRole || "无"),
       steps: escapeHtml(tc.steps),
       expectedResult: escapeHtml(tc.expectedResult),
       actualResult: escapeHtml(tc.actualResult || ""),
       passed,
       reviewStatus: escapeHtml(tc.reviewStatus || "待评审"),
-      automation: tc.automation === "适合" ? "是" : "否",
+      automation: tc.automation === "是" ? "是" : "否",
     };
   };
 
-  const SHORT_KEYS = new Set(["module", "caseCode", "priority", "testType", "passed", "reviewStatus", "automation"]);
+  const SHORT_KEYS = new Set(["module", "caseCode", "priority", "testType", "targetPlatform", "requiredRole", "passed", "reviewStatus", "automation"]);
 
   const headerCells = columns
     .map(

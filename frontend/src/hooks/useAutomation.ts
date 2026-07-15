@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { scriptsApi } from "../api/automation.api";
-import type { Script, ExecutionResult } from "../contracts/automation";
+import type { ExecuteScriptRequest, Script, ExecutionResult } from "../contracts/automation";
 
 export interface UseAutomationReturn {
   scripts: Script[];
@@ -9,7 +9,7 @@ export interface UseAutomationReturn {
   generateScripts: () => Promise<{ ok: boolean; count: number; scripts: Script[] }>;
   updateScript: (id: string, data: Partial<Script>) => Promise<Script>;
   deleteScript: (id: string) => Promise<void>;
-  executeScript: (id: string) => Promise<ExecutionResult>;
+  executeScript: (id: string, data: ExecuteScriptRequest) => Promise<ExecutionResult>;
   refresh: () => Promise<void>;
 }
 
@@ -61,8 +61,8 @@ export function useAutomation(projectId: string | undefined): UseAutomationRetur
     setScripts((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
-  const executeScript = useCallback(async (id: string): Promise<ExecutionResult> => {
-    const result = await scriptsApi.execute(id);
+  const executeScript = useCallback(async (id: string, data: ExecuteScriptRequest): Promise<ExecutionResult> => {
+    const result = await scriptsApi.execute(id, data);
     await fetchScripts(); // Refresh to get updated status
     return result;
   }, [fetchScripts]);

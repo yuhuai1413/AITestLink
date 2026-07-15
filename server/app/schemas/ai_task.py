@@ -1,8 +1,9 @@
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class AITaskResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
     projectId: str
     type: str
@@ -11,6 +12,3 @@ class AITaskResponse(BaseModel):
     errorMessage: Optional[str]
     createdAt: str
     finishedAt: Optional[str]
-
-    class Config:
-        from_attributes = True

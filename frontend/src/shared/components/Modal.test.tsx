@@ -52,16 +52,16 @@ describe("Modal", () => {
         <p>Content</p>
       </Modal>,
     );
-    const dialog = document.querySelector("dialog");
+    const dialog = document.querySelector(".modal-dialog");
     expect(dialog).toHaveStyle({ width: "700px" });
   });
 
-  it("renders dialog element", () => {
+  it("does not render dialog when closed", () => {
     render(
       <Modal open={false} onClose={() => {}} title="Title">
         <p>Content</p>
       </Modal>,
     );
-    expect(document.querySelector("dialog")).toBeInTheDocument();
+    expect(document.querySelector(".modal-dialog")).not.toBeInTheDocument();
   });
 });

@@ -10,7 +10,7 @@ AITestLink/
 │   ├── src/           ← 源代码
 │   ├── package.json
 │   └── ...
-├── server/            ← FastAPI + PostgreSQL 后端
+├── server/            ← FastAPI + SQLAlchemy 异步后端
 │   ├── app/           ← Python 源代码
 │   ├── requirements.txt
 │   └── ...
@@ -34,14 +34,12 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # 配置数据库和 LLM API Key
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8001
 ```
 
 ### 数据库
-```bash
-# PostgreSQL
-createdb aitestlink
-```
+
+开发环境默认使用 SQLite；生产环境可通过 `DATABASE_URL` 切换 PostgreSQL。
 
 ## 技术栈
 
@@ -65,4 +63,13 @@ createdb aitestlink
 
 ## API 文档
 
-后端启动后访问 http://localhost:8000/docs 查看 Swagger API 文档。
+后端启动后访问 http://localhost:8001/docs 查看 Swagger API 文档。
+
+## 测试
+
+```bash
+cd frontend && pnpm run build && pnpm test
+cd server && pip install -r requirements-dev.txt && python -m pytest -q
+```
+
+> 自动化脚本执行必须部署隔离的 Playwright/pytest Worker。未配置执行器时，系统会明确拒绝执行请求，不会伪造成功结果。

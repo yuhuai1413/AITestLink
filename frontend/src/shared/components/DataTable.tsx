@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 export interface Column<T> {
   key: string;
-  label: string;
+  label: ReactNode;
   render: (row: T) => ReactNode;
   align?: "left" | "center" | "right";
   width?: string;
@@ -34,7 +34,7 @@ export function DataTable<T>({ columns, rows, getRowKey }: DataTableProps<T>) {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={getRowKey(row)}>
+            <tr key={getRowKey(row)} data-row-key={getRowKey(row)}>
               {columns.map((column) => (
                 <td
                   key={column.key}

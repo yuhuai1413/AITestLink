@@ -36,11 +36,12 @@ describe("API Client", () => {
         json: () => Promise.resolve(mockData),
       }));
 
-      const result = await projectsApi.create({ name: "New" });
+      const payload = { name: "New", testType: "首轮全量测试" as const };
+      const result = await projectsApi.create(payload);
       expect(result).toEqual(mockData);
       expect(fetch).toHaveBeenCalledWith("/api/projects", expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ name: "New" }),
+        body: JSON.stringify(payload),
       }));
     });
 
@@ -64,7 +65,7 @@ describe("API Client", () => {
         text: () => Promise.resolve("Not Found"),
       }));
 
-      await expect(projectsApi.get("nonexistent")).rejects.toThrow("API Error 404");
+      await expect(projectsApi.get("nonexistent")).rejects.toThrow("Not Found");
     });
   });
 
@@ -86,7 +87,7 @@ describe("API Client", () => {
         json: () => Promise.resolve(mockData),
       }));
 
-      await testPointsApi.create("proj-1", { title: "Test" });
+      await testPointsApi.create("proj-1", { module: "登录", type: "正常流程", title: "Test" });
       expect(fetch).toHaveBeenCalledWith(
         "/api/projects/proj-1/test-points",
         expect.objectContaining({ method: "POST" }),
@@ -118,9 +119,9 @@ describe("API Client", () => {
       const result = await filesApi.upload("proj-1", file);
 
       expect(result).toEqual(mockData);
-      const callArgs = vi.mocked(fetch).mock.calls[0];
-      expect(callArgs[1].method).toBe("POST");
-      expect(callArgs[1].body).toBeInstanceOf(FormData);
+      const callArgs = vi.mocked(fetch).mock.calls[0]!;
+      expect(callArgs[1]?.method).toBe("POST");
+      expect(callArgs[1]?.body).toBeInstanceOf(FormData);
     });
   });
 

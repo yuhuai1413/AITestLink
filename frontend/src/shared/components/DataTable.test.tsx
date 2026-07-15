@@ -52,8 +52,8 @@ describe("DataTable", () => {
     render(<DataTable columns={columns} rows={rows} getRowKey={(r) => r.id} />);
     const tr1 = screen.getByText("项目A").closest("tr");
     const tr2 = screen.getByText("项目B").closest("tr");
-    expect(tr1?.getAttribute("key")).toBe("1");
-    expect(tr2?.getAttribute("key")).toBe("2");
+    expect(tr1).toHaveAttribute("data-row-key", "1");
+    expect(tr2).toHaveAttribute("data-row-key", "2");
   });
 
   it("applies column width when specified", () => {

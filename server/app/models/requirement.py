@@ -10,6 +10,7 @@ class Requirement(Base):
     __tablename__ = "requirements"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    req_id = Column(String(20), default="")  # AI 生成的需求编号，如 REQ_001
     project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     module = Column(String(255), nullable=False)
     feature = Column(String(255), nullable=False)

@@ -9,6 +9,9 @@ import { toast } from "sonner";
 import { getMeWithAdmin } from "../auth/api/auth";
 import { TOKEN_KEY } from "../../shared/config/storage";
 import { useUnsavedChanges } from "../../shared/hooks/useUnsavedChanges";
+import { MultiSelectDropdown } from "./components/MultiSelectDropdown";
+import { AdminPromptModal, BatchEditModal } from "./components/ModelConfigModals";
+import { providerModels } from "./modelConfig.constants";
 
 const nodeColors: Record<string, string> = {
   "需求解析": "green",
@@ -19,203 +22,6 @@ const nodeColors: Record<string, string> = {
   "文档生成": "purple",
 };
 
-const providerModels: Record<string, { models: string[]; endpoint: string }> = {
-  "百度-千帆大模型平台": {
-    models: ["ernie-4.0-8k", "ernie-3.5-flash-8k", "ernie-4.0-128k", "ernie-4.5-vl"],
-    endpoint: "https://qianfan.baidubce.com/v2",
-  },
-  "阿里-Dashscope通义千问": {
-    models: ["qwen3.6-max", "qwen3.6-plus", "qwen3.5-flash", "qwen-vl-max"],
-    endpoint: "https://dashscope.aliyuncs.com/api/v1",
-  },
-  "字节跳动-火山方舟豆包": {
-    models: ["doubao-1.5-pro-32k", "doubao-pro-128k", "doubao-lite-4k", "doubao-vl-pro"],
-    endpoint: "https://ark.cn-beijing.volces.com/api/v3",
-  },
-  "小米-MiMo大模型平台": {
-    models: ["mimo-v2.5-pro", "mimo-v2.5", "mimo-v2.5-omni"],
-    endpoint: "https://token-plan-cn.xiaomimimo.com/v1",
-  },
-  "腾讯-云TI混元": {
-    models: ["hunyuan-t1", "hunyuan-standard", "hunyuan-long-128k"],
-    endpoint: "https://cloud.tencentstudios.tencentcloudapi.com",
-  },
-  "智谱AI-清言开放平台": {
-    models: ["glm-5.1", "glm-4-flash", "glm-vl"],
-    endpoint: "https://open.bigmodel.cn/api/paas/v4",
-  },
-  "深度求索-DeepSeek开放平台": {
-    models: ["deepseek-chat", "deepseek-r1"],
-    endpoint: "https://api.deepseek.com/v1",
-  },
-  "月之暗面-Moonshot开放平台": {
-    models: ["kimi-k2.6"],
-    endpoint: "https://api.moonshot.cn/v1",
-  },
-  "百川智能-百川大模型平台": {
-    models: ["baichuan4-ultra", "baichuan4-turbo"],
-    endpoint: "https://api.baichuan-ai.com/v1",
-  },
-  "科大讯飞-星火认知大模型平台": {
-    models: ["spark-4.0-ultra"],
-    endpoint: "https://spark-api.xf-yun.com/v1",
-  },
-};
-
-// 多选下拉框组件
-// lockedValues: 不可取消的值（单个编辑时锁定该配置固有的节点）
-function MultiSelectDropdown({
-  options,
-  value,
-  onChange,
-  lockedValues = [],
-  placeholder = "请选择",
-}: {
-  options: { label: string; value: string; color: string }[];
-  value: string[];
-  onChange: (value: string[]) => void;
-  lockedValues?: string[];
-  placeholder?: string;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-        setIsFocused(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const toggleOption = (val: string) => {
-    if (value.includes(val)) {
-      // 锁定的值不可取消
-      if (lockedValues.includes(val)) return;
-      onChange(value.filter((v) => v !== val));
-    } else {
-      onChange([...value, val]);
-    }
-  };
-
-  const selectedLabels = options.filter((o) => value.includes(o.value));
-
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    minHeight: 38,
-    border: `1px solid ${isFocused ? "var(--blue)" : "var(--line)"}`,
-    borderRadius: "var(--radius-l4)",
-    background: "var(--surface)",
-    cursor: "pointer",
-    padding: "0 32px 0 12px",
-    fontSize: 14,
-    outline: isFocused ? "2px solid var(--blue)" : "none",
-    outlineOffset: isFocused ? "-1px" : "auto",
-    transition: "border-color 0.15s, outline 0.15s",
-  };
-
-  const dropdownStyle: React.CSSProperties = {
-    position: "absolute",
-    top: "100%",
-    left: 0,
-    right: 0,
-    marginTop: 4,
-    background: "var(--surface)",
-    border: "1px solid var(--line)",
-    borderRadius: "var(--radius-l4)",
-    boxShadow: "0 10px 40px rgba(15, 23, 42, 0.12)",
-    zIndex: 1000,
-    maxHeight: 220,
-    overflowY: "auto",
-    padding: "4px 0",
-  };
-
-  return (
-    <div ref={dropdownRef} style={{ position: "relative" }}>
-      <div
-        onClick={() => { setIsOpen(!isOpen); setIsFocused(!isOpen); }}
-        style={inputStyle}
-      >
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, minHeight: 38, alignItems: "center" }}>
-          {selectedLabels.length === 0 ? (
-            <span style={{ color: "var(--muted)", fontSize: 14 }}>{placeholder}</span>
-          ) : (
-            selectedLabels.map((item) => {
-              const isLocked = lockedValues.includes(item.value);
-              return (
-                <StatusPill key={item.value} tone={item.color as any} className="multi-select-tag">
-                  {item.label}
-                  {!isLocked && (
-                    <span
-                      onClick={(e) => { e.stopPropagation(); toggleOption(item.value); }}
-                      style={{ marginLeft: 4, cursor: "pointer", display: "flex", alignItems: "center", opacity: 0.7 }}
-                      onMouseEnter={(e) => { e.currentTarget.style.opacity = "1"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.7"; }}
-                    >
-                      <X size={12} />
-                    </span>
-                  )}
-                </StatusPill>
-              );
-            })
-          )}
-        </div>
-        <ChevronDown
-          size={16}
-          style={{
-            position: "absolute",
-            right: 10,
-            top: "50%",
-            transform: "translateY(-50%)",
-            color: "var(--muted)",
-            pointerEvents: "none",
-            transition: "transform 0.15s",
-          }}
-        />
-      </div>
-      {isOpen && (
-        <div style={dropdownStyle} onMouseDown={(e) => e.stopPropagation()}>
-          {options.map((opt, index) => {
-            const isLocked = lockedValues.includes(opt.value);
-            const isSelected = value.includes(opt.value);
-            return (
-              <div
-                key={opt.value}
-                onClick={() => toggleOption(opt.value)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "8px 12px",
-                  cursor: isLocked ? "default" : "pointer",
-                  opacity: isLocked ? 0.7 : 1,
-                  background: isSelected ? "var(--blue-soft)" : "transparent",
-                  transition: "background 0.1s",
-                  borderBottom: index < options.length - 1 ? "1px solid var(--line)" : "none",
-                }}
-                onMouseEnter={(e) => { if (!isLocked && !isSelected) e.currentTarget.style.background = "var(--surface-soft)"; }}
-                onMouseLeave={(e) => { if (!isLocked) e.currentTarget.style.background = isSelected ? "var(--blue-soft)" : "transparent"; }}
-              >
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  readOnly
-                  tabIndex={-1}
-                  style={{ cursor: isLocked ? "default" : "pointer", width: 15, height: 15, accentColor: "var(--blue)" }}
-                />
-                <StatusPill tone={opt.color as any}>{opt.label}</StatusPill>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function maskKey(key: string): string {
   if (!key) return "****未配置";
@@ -244,7 +50,9 @@ export function ModelConfigPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const configDirty = useUnsavedChanges();
   const [showAdminPromptModal, setShowAdminPromptModal] = useState(false);
-  const [adminPrompts, setAdminPrompts] = useState<{ configKey: string; name: string; prompt: string }[]>([]);
+  const [adminPrompts, setAdminPrompts] = useState<{ configKey: string; name: string; prompt: string; version?: number | null; status?: string }[]>([]);
+  const [promptVersions, setPromptVersions] = useState<Array<{ id: string; version: number; prompt: string; status: string; createdAt?: string | null }>>([]);
+  const [promptTesting, setPromptTesting] = useState(false);
   const [adminPromptsLoading, setAdminPromptsLoading] = useState(false);
   const [editingPromptConfig, setEditingPromptConfig] = useState<ApiModelConfig | null>(null);
 
@@ -287,6 +95,17 @@ export function ModelConfigPage() {
     }
   };
 
+  const loadPromptVersions = async (configKey: string) => {
+    try {
+      const res = await fetch(`/api/model-configs/admin-prompts/${configKey}/versions`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` },
+      });
+      if (res.ok) setPromptVersions(await res.json());
+    } catch (e) {
+      console.error("Failed to load prompt versions:", e);
+    }
+  };
+
   const saveAdminPrompts = async () => {
     // 校验当前编辑的节点提示词不能为空
     const currentPrompt = adminPrompts.find((p) => p.configKey === editingPromptConfig?.configKey);
@@ -301,18 +120,61 @@ export function ModelConfigPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}`,
         },
-        body: JSON.stringify({ prompts: adminPrompts }),
+        body: JSON.stringify({ prompts: [currentPrompt] }),
       });
       if (res.ok) {
-        toast.success("管理员提示词已保存");
+        toast.success("提示词新版本已发布");
         setShowAdminPromptModal(false);
         setEditingPromptConfig(null);
         loadConfigs();
       } else {
-        toast.error("保存失败");
+        const data = await res.json().catch(() => null);
+        toast.error(data?.detail || "发布失败");
       }
     } catch (e) {
       toast.error("保存失败");
+    }
+  };
+
+  const testAdminPrompt = async () => {
+    if (!editingPromptConfig) return;
+    const prompt = adminPrompts.find((item) => item.configKey === editingPromptConfig.configKey)?.prompt || "";
+    if (!prompt.trim()) {
+      toast.error("提示词不能为空");
+      return;
+    }
+    setPromptTesting(true);
+    try {
+      const res = await fetch(`/api/model-configs/admin-prompts/${editingPromptConfig.configKey}/test`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}`,
+        },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await res.json();
+      if (res.ok) toast.success(`提示词测试通过，共生成 ${data.count} 条合规数据`);
+      else toast.error(data.detail || "提示词测试失败");
+    } catch {
+      toast.error("提示词测试失败");
+    } finally {
+      setPromptTesting(false);
+    }
+  };
+
+  const rollbackAdminPrompt = async (versionId: string) => {
+    if (!editingPromptConfig) return;
+    try {
+      const res = await fetch(`/api/model-configs/admin-prompts/${editingPromptConfig.configKey}/rollback/${versionId}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` },
+      });
+      if (!res.ok) throw new Error("rollback failed");
+      toast.success("已回滚并发布为新版本");
+      await Promise.all([loadAdminPrompts(), loadPromptVersions(editingPromptConfig.configKey)]);
+    } catch {
+      toast.error("回滚失败");
     }
   };
 
@@ -391,10 +253,6 @@ export function ModelConfigPage() {
 
   const handleSaveEdit = async () => {
     if (editingConfig) {
-      if (!editingConfig.prompt?.trim()) {
-        toast.error("提示词不能为空");
-        return;
-      }
       const newConfigs = configs.map((c) => {
         if (c.id === editingConfig.id) {
           return { ...editingConfig };
@@ -576,6 +434,7 @@ export function ModelConfigPage() {
                       setEditingPromptConfig(row);
                       setShowAdminPromptModal(true);
                       loadAdminPrompts();
+                      loadPromptVersions(row.configKey);
                     }}>
                       配置提示词
                     </button>
@@ -595,11 +454,6 @@ export function ModelConfigPage() {
         width={640}
         footer={<>
           <button className="ghost-button" type="button" onClick={() => configDirty.requestClose(() => { setEditingConfig(null); setShowApiKey(false); })}>取消</button>
-          <button className="ghost-button" type="button" onClick={() => {
-            const adminPrompt = editingConfig?.adminPrompt || "";
-            setEditingConfig((prev) => prev ? { ...prev, prompt: adminPrompt } : prev);
-            toast.success("已重置为管理员默认提示词");
-          }}>重置提示词</button>
           <button className="primary-button" type="button" onClick={handleSaveEdit}><Save size={16} /> 保存</button>
         </>}
       >
@@ -667,26 +521,6 @@ export function ModelConfigPage() {
                 </label>
               </label>
             </div>
-            <div className="form-row">
-              <label className="form-label">
-                系统提示词
-                {!isAdmin && editingConfig.adminPrompt && (
-                  <span style={{ fontSize: 12, fontWeight: 400, color: "var(--muted)", marginLeft: 8 }}>
-                    {editingConfig.prompt === editingConfig.adminPrompt ? "当前使用管理员默认提示词" : "已自定义提示词"}
-                  </span>
-                )}
-                <textarea
-                  className="form-textarea"
-                  value={editingConfig.prompt || ""}
-                  onChange={(e) => { setEditingConfig({ ...editingConfig, prompt: e.target.value }); configDirty.markDirty(); }}
-                  placeholder="请输入系统提示词..."
-                  rows={12}
-                  required
-                  style={{ fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.6 }}
-                />
-              </label>
-            </div>
-
           </form>
         )}
       </Modal>
@@ -712,175 +546,13 @@ export function ModelConfigPage() {
             p.configKey === editingPromptConfig?.configKey ? { ...p, prompt } : p
           ));
         }}
+        currentVersion={adminPrompts.find((p) => p.configKey === editingPromptConfig?.configKey)?.version}
+        versions={promptVersions}
+        testing={promptTesting}
+        onTest={testAdminPrompt}
+        onRollback={rollbackAdminPrompt}
       />
       {configDirty.confirmDialog}
     </div>
-  );
-}
-
-// 批量编辑弹窗组件
-function BatchEditModal({
-  open,
-  onClose,
-  onSave,
-  selectedCount,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSave: (provider: string, modelName: string, apiKey: string, endpoint: string) => void;
-  selectedCount: number;
-}) {
-  const [provider, setProvider] = useState("");
-  const [modelName, setModelName] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [endpoint, setEndpoint] = useState("");
-  const [showKey, setShowKey] = useState(false);
-
-  // 根据 API Key 自动判断 Base URL
-  const detectBaseUrl = (key: string): string => {
-    if (!key) return "";
-    key = key.trim();
-    // 小米 MiMo Token Plan 模式
-    if (key.startsWith("tp-")) return "https://token-plan-cn.xiaomimimo.com/v1";
-    // 小米 MiMo API Keys 模式
-    if (key.startsWith("sk-")) return "https://api.xiaomimimo.com/v1";
-    return "";
-  };
-
-  const handleApiKeyChange = (value: string) => {
-    setApiKey(value);
-    // 如果 Endpoint 为空或是小米的默认值，自动填充
-    if (!endpoint || endpoint.includes("xiaomimimo")) {
-      const detected = detectBaseUrl(value);
-      if (detected) setEndpoint(detected);
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave(provider, modelName, apiKey, endpoint);
-    // 重置
-    setProvider("");
-    setModelName("");
-    setApiKey("");
-    setEndpoint("");
-    setShowKey(false);
-  };
-
-  return (
-    <Modal open={open} onClose={onClose} title={`批量编辑（${selectedCount} 项）`} width={640}
-      footer={<>
-        <button className="ghost-button" type="button" onClick={onClose}>取消</button>
-        <button className="primary-button" type="button" onClick={handleSubmit}><Save size={16} /> 确认保存</button>
-      </>}
-    >
-      <form className="form-stack" onSubmit={handleSubmit}>
-        <div style={{ padding: "12px 16px", background: "var(--blue-soft)", borderRadius: 8, fontSize: 13, color: "var(--text)", marginBottom: 8 }}>
-          将为选中的 <strong>{selectedCount}</strong> 个配置统一设置以下信息
-        </div>
-        <div className="form-row">
-          <label className="form-label">
-            供应商
-            <select className="form-select" value={provider} onChange={(e) => setProvider(e.target.value)} required>
-              <option value="">请选择供应商</option>
-              {Object.keys(providerModels).map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="form-row">
-          <label className="form-label">
-            模型名称
-            <select className="form-select" value={modelName} onChange={(e) => setModelName(e.target.value)} required>
-              <option value="">请选择模型</option>
-              {(providerModels[provider]?.models || []).map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="form-row">
-          <label className="form-label">
-            API Key
-            <div className="input-with-icon">
-              <input className="form-input" type={showKey ? "text" : "password"} value={apiKey} onChange={(e) => handleApiKeyChange(e.target.value)} placeholder="请输入 API Key（sk- 开头为 API Keys 模式，tp- 开头为 Token Plan 模式）" required style={{ paddingRight: 36 }} />
-              <button type="button" className="icon-button" style={{ position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)", width: 28, height: 28 }} onClick={() => setShowKey(!showKey)}>
-                {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-          </label>
-        </div>
-        <div className="form-row">
-          <label className="form-label">
-            Base URL
-            <input className="form-input" type="text" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="请输入 API 地址，如 https://api.openai.com/v1" required />
-          </label>
-        </div>
-
-      </form>
-    </Modal>
-  );
-}
-
-// 管理员提示词配置弹窗组件（单个节点）
-function AdminPromptModal({
-  open,
-  onClose,
-  configName,
-  prompt,
-  loading,
-  onSave,
-  onPromptChange,
-}: {
-  open: boolean;
-  onClose: () => void;
-  configName: string;
-  prompt: string;
-  loading: boolean;
-  onSave: () => void;
-  onPromptChange: (prompt: string) => void;
-}) {
-  const promptDirty = useUnsavedChanges();
-
-  return (
-    <Modal
-      open={open}
-      onClose={() => promptDirty.requestClose(onClose)}
-      title={`配置提示词 - ${configName}`}
-      width={720}
-      height="80vh"
-      flushTop
-      bodyOverflow="hidden"
-      footer={<>
-        <button className="ghost-button" type="button" onClick={() => promptDirty.requestClose(onClose)}>取消</button>
-        <button className="primary-button" type="button" onClick={() => { promptDirty.markClean(); onSave(); }} disabled={loading}>
-          {loading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-          保存
-        </button>
-      </>}
-    >
-      {loading ? (
-        <div style={{ textAlign: "center", padding: 40 }}>
-          <Loader2 size={24} className="animate-spin" />
-          <p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p>
-        </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>
-          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0, flexShrink: 0 }}>
-            配置「{configName}」节点的全局默认提示词。普通用户打开编辑时将看到此处配置的提示词，用户可自行修改。
-          </p>
-          <textarea
-            className="form-textarea"
-            value={prompt}
-            onChange={(e) => { onPromptChange(e.target.value); promptDirty.markDirty(); }}
-            placeholder={`请输入${configName}的默认提示词...`}
-            required
-            style={{ fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.6, flex: 1, overflow: "auto", padding: "12px" }}
-          />
-        </div>
-      )}
-      {promptDirty.confirmDialog}
-    </Modal>
   );
 }

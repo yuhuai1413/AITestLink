@@ -13,7 +13,7 @@ import { useState, useCallback } from "react";
  *   // 页面底部渲染:
  *   {confirmDialog}
  */
-export function useUnsavedChanges() {
+export function useUnsavedChanges(resourceName = "内容") {
   const [isDirty, setIsDirty] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [pendingClose, setPendingClose] = useState<(() => void) | null>(null);
@@ -55,7 +55,7 @@ export function useUnsavedChanges() {
           </div>
           <div className="confirm-dialog__text">
             <h3>未保存的更改</h3>
-            <p>当前有未保存的更改，确定要关闭吗？关闭后更改将丢失。</p>
+            <p>当前{resourceName}有未保存的更改，确定要关闭吗？关闭后更改将丢失。</p>
           </div>
         </div>
         <div className="confirm-dialog__actions">

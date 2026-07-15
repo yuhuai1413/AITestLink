@@ -147,7 +147,7 @@ export function DashboardPage() {
     const cases = state.testCases;
     const totalCases = cases.length;
     const passed = cases.filter((c) => c.reviewStatus === "已通过").length;
-    const automatable = cases.filter((c) => c.automation === "适合").length;
+    const automatable = cases.filter((c) => c.automation === "是").length;
     return {
       projectCount: state.projects.length,
       requirementCount: state.requirements.length,
@@ -177,7 +177,7 @@ export function DashboardPage() {
   const AUTO_COLORS = { "已自动化": C.blue, "未自动化": C.slate };
   const autoDistributionData = useMemo<ChartDataItem[]>(() => {
     const cases = state.testCases;
-    const auto = cases.filter((c) => c.automation === "适合").length;
+    const auto = cases.filter((c) => c.automation === "是").length;
     const total = cases.length;
     return [
       { name: "已自动化", value: auto, fill: AUTO_COLORS["已自动化"] },

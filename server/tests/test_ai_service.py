@@ -84,7 +84,8 @@ class TestAIServiceLLMCall:
         mock_get_config.return_value = {
             "api_key": "test-key",
             "endpoint": "https://api.test.com/v1",
-            "model": "test-model"
+            "model": "test-model",
+            "prompt": "You are a software testing assistant."
         }
         service = AIService()
 
@@ -100,7 +101,7 @@ class TestAIServiceLLMCall:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.services.ai_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("app.services.llm_client.httpx.AsyncClient", return_value=mock_client):
             result = _run_async(service._call_llm("user prompt", "需求解析", "user-1"))
 
         assert result == "test response"
@@ -108,7 +109,7 @@ class TestAIServiceLLMCall:
 
         call_args = mock_client.post.call_args
         # The endpoint is the full URL (including /chat/completions if needed)
-        assert call_args[0][0] == "https://api.test.com/v1"
+        assert call_args[0][0] == "https://api.test.com/v1/chat/completions"
         assert call_args[1]["json"]["temperature"] == 0.3
         assert call_args[1]["json"]["max_tokens"] == 16000  # default max_tokens
         assert len(call_args[1]["json"]["messages"]) == 2
@@ -118,7 +119,8 @@ class TestAIServiceLLMCall:
         mock_get_config.return_value = {
             "api_key": "test-key",
             "endpoint": "https://api.test.com/v1",
-            "model": "test-model"
+            "model": "test-model",
+            "prompt": "You are a software testing assistant."
         }
         service = AIService()
 
@@ -134,7 +136,7 @@ class TestAIServiceLLMCall:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.services.ai_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("app.services.llm_client.httpx.AsyncClient", return_value=mock_client):
             result = _run_async(service.parse_requirements("需求文档内容", "user-1"))
 
         assert isinstance(result, list)
@@ -145,14 +147,15 @@ class TestAIServiceLLMCall:
         mock_get_config.return_value = {
             "api_key": "test-key",
             "endpoint": "https://api.test.com/v1",
-            "model": "test-model"
+            "model": "test-model",
+            "prompt": "You are a software testing assistant."
         }
         service = AIService()
 
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "choices": [{"message": {"content": '[{"module": "M", "type": "正常流程", "title": "T", "description": "D", "priority": "P1", "automatable": false}]'}}]
+            "choices": [{"message": {"content": '[{"requirementId": "req-1", "module": "M", "type": "正常流程", "title": "T", "description": "D", "priority": "P1", "automatable": false}]'}}]
         }
         mock_response.raise_for_status = MagicMock()
 
@@ -161,7 +164,7 @@ class TestAIServiceLLMCall:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.services.ai_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("app.services.llm_client.httpx.AsyncClient", return_value=mock_client):
             result = _run_async(service.generate_test_points("需求文本", "user-1"))
 
         assert isinstance(result, list)
@@ -172,14 +175,15 @@ class TestAIServiceLLMCall:
         mock_get_config.return_value = {
             "api_key": "test-key",
             "endpoint": "https://api.test.com/v1",
-            "model": "test-model"
+            "model": "test-model",
+            "prompt": "You are a software testing assistant."
         }
         service = AIService()
 
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "choices": [{"message": {"content": '[{"caseCode": "TC_001", "module": "M", "title": "T", "priority": "P1", "steps": "1. Step", "expectedResult": "R"}]'}}]
+            "choices": [{"message": {"content": '[{"testPointId": "tp-1", "module": "M", "title": "T", "priority": "P1", "steps": "步骤1: 操作", "expectedResult": "步骤1: 应成功", "environmentId": "env-1", "targetPlatform": "PC", "testUrl": "https://test.example.com", "requiredRole": "无"}]'}}]
         }
         mock_response.raise_for_status = MagicMock()
 
@@ -188,11 +192,11 @@ class TestAIServiceLLMCall:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.services.ai_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("app.services.llm_client.httpx.AsyncClient", return_value=mock_client):
             result = _run_async(service.generate_test_cases("测试点文本", "user-1"))
 
         assert isinstance(result, list)
-        assert result[0]["caseCode"] == "TC_001"
+        assert result[0]["testPointId"] == "tp-1"
 
     @patch("app.services.ai_service._get_config_for_task")
     def test_llm_timeout_raises_error(self, mock_get_config):
@@ -200,7 +204,8 @@ class TestAIServiceLLMCall:
         mock_get_config.return_value = {
             "api_key": "test-key",
             "endpoint": "https://api.test.com/v1",
-            "model": "test-model"
+            "model": "test-model",
+            "prompt": "You are a software testing assistant."
         }
         service = AIService()
 
@@ -209,7 +214,7 @@ class TestAIServiceLLMCall:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.services.ai_service.httpx.AsyncClient", return_value=mock_client):
+        with patch("app.services.llm_client.httpx.AsyncClient", return_value=mock_client):
             with pytest.raises(httpx.TimeoutException):
                 _run_async(service._call_llm("usr", "需求解析", "user-1"))
 
@@ -218,7 +223,8 @@ class TestAIServiceLLMCall:
         mock_get_config.return_value = {
             "api_key": "test-key",
             "endpoint": "https://api.test.com/v1",
-            "model": "test-model"
+            "model": "test-model",
+            "prompt": "You are a software testing assistant."
         }
         service = AIService()
 
@@ -234,7 +240,7 @@ class TestAIServiceLLMCall:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.services.ai_service.httpx.AsyncClient", return_value=mock_client):
-            result = _run_async(service.parse_requirements("content", "user-1"))
-            # parse_requirements returns empty list on invalid JSON
-            assert result == []
+        with patch("app.services.llm_client.httpx.AsyncClient", return_value=mock_client):
+            # 非 JSON 或结构不合法的结果必须终止，不能进入写库流程。
+            with pytest.raises(ValueError, match="未返回任何数据"):
+                _run_async(service.parse_requirements("content", "user-1"))

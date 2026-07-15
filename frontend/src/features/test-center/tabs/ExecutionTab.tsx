@@ -22,8 +22,11 @@ export function ExecutionTab({ projectId }: Props) {
         { key: "caseCode", label: "用例编号", render: (tc) => tc.caseCode },
         { key: "testType", label: "测试类型", render: (tc) => tc.testType || "功能测试" },
         { key: "title", label: "用例标题", render: (tc) => tc.title },
+        { key: "targetPlatform", label: "测试端", render: (tc) => tc.targetPlatform },
+        { key: "testUrl", label: "测试地址", render: (tc) => tc.testUrl || "未配置" },
+        { key: "requiredRole", label: "角色", render: (tc) => tc.requiredRole || "无" },
         { key: "priority", label: "优先级", render: (tc) => <StatusPill tone={tc.priority === "P0" ? "red" : tc.priority === "P1" ? "amber" : "blue"}>{tc.priority}</StatusPill> },
-        { key: "automation", label: "自动化", render: (tc) => <StatusPill tone={tc.automation === "适合" ? "green" : tc.automation === "不适合" ? "red" : "amber"}>{tc.automation}</StatusPill> },
+        { key: "automation", label: "自动化", render: (tc) => <StatusPill tone={tc.automation === "是" ? "green" : "slate"}>{tc.automation === "是" ? "是" : "否"}</StatusPill> },
         { key: "reviewStatus", label: "评审", render: (tc) => <StatusPill tone={tc.reviewStatus === "已通过" ? "green" : tc.reviewStatus === "需修改" ? "red" : "amber"}>{tc.reviewStatus}</StatusPill> },
       ]}
     />

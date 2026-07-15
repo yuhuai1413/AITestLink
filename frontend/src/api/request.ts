@@ -32,7 +32,6 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
       }
       throw new Error(msg);
     }
-    if (res.status === 404) return null as T;
     const errText = await res.text();
     let detail = errText;
     try { const j = JSON.parse(errText); detail = j.detail || errText; } catch {}

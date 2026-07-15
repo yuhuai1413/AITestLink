@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Annotated, Optional
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +16,6 @@ class TestPointUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     priority: Optional[str] = None
-    review_status: Optional[str] = Field(default=None, alias="reviewStatus")
+    review_status: Annotated[Optional[str], Field(alias="reviewStatus")] = None
 
     model_config = {"populate_by_name": True}

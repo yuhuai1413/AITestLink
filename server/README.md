@@ -7,7 +7,7 @@
 cd server
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt  # 开发环境；生产环境使用 requirements.txt
 ```
 
 ### 2. 配置环境变量
@@ -19,14 +19,14 @@ cp .env.example .env
 ### 3. 启动服务
 ```bash
 # 数据库自动创建（SQLite）
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
 ### 5. 前端对接
-前端 API 地址默认为 `http://localhost:8000/api`，在 `src/api/client.ts` 中配置。
+前端开发服务器通过 Vite 将 `/api` 代理到 `http://localhost:8001`。
 
 ## API 文档
-启动后访问 http://localhost:8000/docs 查看 Swagger 文档。
+启动后访问 http://localhost:8001/docs 查看 Swagger 文档。
 
 ## 技术栈
 - FastAPI — Web 框架

@@ -18,6 +18,7 @@ export {
   docGenApi,
 } from "./system.api";
 export { notificationsApi } from "./notification.api";
+export { environmentApi } from "./environment.api";
 
 // Re-export types with original names (Api prefix) for backward compatibility
 export type { Project as ApiProject } from "../contracts/project";
@@ -31,3 +32,4 @@ export type { DocConfig as ApiDocConfig } from "../contracts/system";
 export type { StatusLog as ApiStatusLog } from "../contracts/system";
 export type { AITask as ApiAITask } from "../contracts/system";
 export type { DocGenStatus as ApiDocGenStatus } from "../contracts/system";
+export type { EnvironmentConfig as ApiEnvironmentConfig, TestAccount as ApiTestAccount } from "./environment.api";

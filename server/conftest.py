@@ -21,6 +21,8 @@ from app.models.test_point import TestPoint
 from app.models.test_case import TestCase
 from app.models.file_asset import FileAsset
 from app.models.ai_task import AITask
+from app.models.automation_script import AutomationScript
+from app.models.environment_config import EnvironmentConfig, TestAccount
 from app.models.user import User
 from app.routers.auth import create_token
 
@@ -250,12 +252,43 @@ def api_test_point(async_engine, api_project, api_requirement, event_loop):
 
 
 @pytest.fixture
-def api_test_case(async_engine, api_project, api_test_point, api_requirement, event_loop):
+def api_environment(async_engine, api_project, event_loop):
+    environment = EnvironmentConfig(
+        id="api-env-001", project_id=api_project.id, name="测试环境",
+        web_url="https://pc.example.test", app_url="app://test-build",
+        timeout="30", retry_count="1", is_default=True,
+    )
+    return _create_async_obj(event_loop, async_engine, environment)
+
+
+@pytest.fixture
+def api_test_account(async_engine, api_environment, event_loop):
+    account = TestAccount(
+        id="api-account-001", environment_id=api_environment.id,
+        name="管理员", username="admin", password="enc:dummy", role="管理员",
+    )
+    return _create_async_obj(event_loop, async_engine, account)
+
+
+@pytest.fixture
+def api_test_case(async_engine, api_project, api_test_point, api_requirement, api_environment, event_loop):
     tc = TestCase(
         id="api-tc-001", project_id=api_project.id,
         test_point_id=api_test_point.id,
         requirement_id=api_requirement.id,
         case_code="TC_LOGIN_001", module="用户管理", feature="登录功能",
         title="验证登录", priority="P0",
+        environment_id=api_environment.id, target_platform="PC",
+        test_url=api_environment.web_url, required_role="管理员",
     )
     return _create_async_obj(event_loop, async_engine, tc)
+
+
+@pytest.fixture
+def api_script(async_engine, api_project, api_test_case, event_loop):
+    script = AutomationScript(
+        id="api-script-001", project_id=api_project.id,
+        test_case_id=api_test_case.id, script_code="SC_LOGIN_001",
+        script_type="UI", framework="Playwright", language="Python", code="pass",
+    )
+    return _create_async_obj(event_loop, async_engine, script)
