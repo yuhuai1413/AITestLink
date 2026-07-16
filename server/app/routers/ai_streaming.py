@@ -25,7 +25,12 @@ from app.services.ai_input_builder import (
     validate_reference_values,
     validate_references,
 )
-from app.services.ai_task_support import friendly_error as _friendly_error, normalize_automation as _normalize_automation
+from app.services.ai_task_support import (
+    friendly_error as _friendly_error,
+    module_counter as _module_counter,
+    normalize_automation as _normalize_automation,
+    to_eng_abbr as _to_eng_abbr,
+)
 from app.services.environment_service import EnvironmentService
 from app.schemas.ai_output import validate_ai_output
 from app.utils import verify_project_owner
@@ -72,9 +77,10 @@ async def _stream_generate_test_points(task_id: str, project_id: str, user_id: s
 
             from sqlalchemy import delete
             await db.execute(delete(TestPoint).where(TestPoint.project_id == project_id))
-            for pt in all_items:
+            for (point_code, _), pt in zip(_module_counter(all_items, "TP"), all_items):
                 db.add(TestPoint(
                     id=str(uuid.uuid4()),
+                    point_code=point_code,
                     project_id=project_id,
                     requirement_id=pt["requirementId"],
                     module=pt["module"],

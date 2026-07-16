@@ -34,7 +34,7 @@ requirementId、module、type、title、description、priority、automatable。
     "generate-test-cases": """你是测试用例设计助手。输入是测试点 JSON 数组，请生成可执行并可追溯的测试用例。
 
 关联规则：
-1. 每项输出的 testPointId 必须原样复制自对应输入，禁止新建、修改或猜测 ID。
+1. 每项输出的 testPointId 必须原样复制自对应输入，禁止新建、修改或猜测 ID；testPointCode 仅用于理解和追溯，不要输出为 testPointId。
 2. 每个输入测试点至少生成一条用例。若需求同时适用于 PC 和 APP，且 testEnvironment 同时配置了两个地址，应分别生成 PC、APP 用例；单个测试点最多四条。
 3. module 使用输入测试点的 module；feature 使用 requirementFeature；priority 不得改变。
 4. environmentId 必须复制 testEnvironment.environmentId。根据测试目标选择 PC 或 APP，并把 targetPlatform 和对应 targets 中的 testUrl 原样写入；不得修改地址。
@@ -106,5 +106,5 @@ PROMPT_TEST_INPUTS: dict[str, str] = {
     "generate-docs": '模板要求：生成简短测试说明。项目数据：需求 requirementId=req-test-1；测试点 testPointId=tp-test-1；用例 testCaseId=tc-test-1。没有执行结果。',
 }
 
-PROMPT_TEST_INPUTS["generate-test-cases"] = '[{"testPointId":"tp-test-1","requirementId":"req-test-1","requirementCode":"REQ_001","requirementFeature":"账号登录","requirementRule":"正确凭据登录成功","module":"用户管理","type":"正常流程","title":"正确凭据登录成功","description":"输入有效账号密码并登录，验证进入首页","priority":"P0","automatable":true,"testEnvironment":{"environmentId":"env-test-1","environmentName":"测试环境","targets":[{"platform":"PC","url":"https://test.example.com"},{"platform":"APP","url":"app://test-build"}],"availableRoles":["管理员"],"timeoutSeconds":30,"retryCount":1}}]'
+PROMPT_TEST_INPUTS["generate-test-cases"] = '[{"testPointId":"tp-test-1","testPointCode":"TP_LOGIN_001","requirementId":"req-test-1","requirementCode":"REQ_001","requirementFeature":"账号登录","requirementRule":"正确凭据登录成功","module":"用户管理","type":"正常流程","title":"正确凭据登录成功","description":"输入有效账号密码并登录，验证进入首页","priority":"P0","automatable":true,"testEnvironment":{"environmentId":"env-test-1","environmentName":"测试环境","targets":[{"platform":"PC","url":"https://test.example.com"},{"platform":"APP","url":"app://test-build"}],"availableRoles":["管理员"],"timeoutSeconds":30,"retryCount":1}}]'
 PROMPT_TEST_INPUTS["generate-scripts"] = '[{"testCaseId":"tc-test-1","caseCode":"TC_LOGIN_001","requirementId":"req-test-1","testPointId":"tp-test-1","module":"用户管理","feature":"账号登录","title":"正确凭据登录成功","priority":"P0","precondition":"在 PC 端 https://test.example.com 使用管理员角色","steps":"步骤1: 打开登录页；步骤2: 输入环境变量中的账号密码；步骤3: 点击登录并查看是否进入首页","testData":{"usernameEnv":"TEST_USERNAME","passwordEnv":"TEST_PASSWORD"},"expectedResult":"步骤3: 页面应进入首页","testType":"功能测试","environmentId":"env-test-1","targetPlatform":"PC","testUrl":"https://test.example.com","requiredRole":"管理员"}]'

@@ -57,6 +57,12 @@ async def _migrate_sqlite_schema(conn):
             )
         """))
 
+    account_columns = {
+        row[1] for row in (await conn.execute(text("PRAGMA table_info(test_accounts)"))).all()
+    }
+    if "department" not in account_columns:
+        await conn.execute(text("ALTER TABLE test_accounts ADD COLUMN department VARCHAR(100) DEFAULT ''"))
+
     case_columns = {
         row[1] for row in (await conn.execute(text("PRAGMA table_info(test_cases)"))).all()
     }
@@ -69,6 +75,35 @@ async def _migrate_sqlite_schema(conn):
     for name, sql_type in additions.items():
         if name not in case_columns:
             await conn.execute(text(f"ALTER TABLE test_cases ADD COLUMN {name} {sql_type}"))
+
+    point_columns = {
+        row[1] for row in (await conn.execute(text("PRAGMA table_info(test_points)"))).all()
+    }
+    if "point_code" not in point_columns:
+        await conn.execute(text("ALTER TABLE test_points ADD COLUMN point_code VARCHAR(50) DEFAULT ''"))
+    await conn.execute(text("""
+        WITH numbered AS (
+            SELECT id, ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY created_at, id) AS rn
+            FROM test_points
+            WHERE point_code IS NULL OR point_code = ''
+        )
+        UPDATE test_points
+        SET point_code = 'TP_LEGACY_' || printf('%03d', (SELECT rn FROM numbered WHERE numbered.id = test_points.id))
+        WHERE id IN (SELECT id FROM numbered)
+    """))
+
+    model_config_columns = {
+        row[1] for row in (await conn.execute(text("PRAGMA table_info(model_configs)"))).all()
+    }
+    model_config_additions = {
+        "connection_status": "VARCHAR(20) DEFAULT 'untested'",
+        "last_tested_at": "DATETIME",
+        "last_test_message": "TEXT DEFAULT ''",
+        "last_test_latency_ms": "INTEGER",
+    }
+    for name, sql_type in model_config_additions.items():
+        if name not in model_config_columns:
+            await conn.execute(text(f"ALTER TABLE model_configs ADD COLUMN {name} {sql_type}"))
 
 
 async def close_db():

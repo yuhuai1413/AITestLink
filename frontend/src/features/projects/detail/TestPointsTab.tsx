@@ -111,7 +111,7 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
         {initialLoading && filtered.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : filtered.length === 0 ? <div className="empty-state"><p>暂无测试点</p></div> : (
           <DataTable rows={filtered} getRowKey={(r) => r.id} columns={[
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
-            { key: "id", label: "编号", render: (r) => r.id },
+            { key: "pointCode", label: "测试点编号", render: (r) => r.pointCode || <span style={{ color: "var(--muted)" }}>-</span> },
             { key: "module", label: "模块", render: (r) => r.module },
             { key: "type", label: "类型", render: (r) => r.type },
             { key: "title", label: "测试点", align: "left", render: (r) => r.title },
@@ -134,7 +134,7 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
       <Modal open={!!viewTP} onClose={() => setViewTP(null)} title="测试点详情" width={640}>
         {viewTP && (
           <div className="detail-grid">
-            <div className="detail-row"><span className="detail-label">编号</span><span>{viewTP.id}</span></div>
+            <div className="detail-row"><span className="detail-label">测试点编号</span><span>{viewTP.pointCode || "-"}</span></div>
             <div className="detail-row"><span className="detail-label">模块</span><span>{viewTP.module}</span></div>
             <div className="detail-row"><span className="detail-label">类型</span><span>{viewTP.type}</span></div>
             <div className="detail-row detail-row--full"><span className="detail-label">测试点</span><span>{viewTP.title}</span></div>
@@ -156,7 +156,7 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
       >
         {editTP && (
           <div className="detail-grid">
-            <div className="detail-row"><span className="detail-label">编号</span><span>{editTP.id}</span></div>
+            <div className="detail-row"><span className="detail-label">测试点编号</span><span>{editTP.pointCode || "-"}</span></div>
             <div className="detail-row"><span className="detail-label">模块</span><span>{editTP.module}</span></div>
             <div className="detail-row"><span className="detail-label">类型</span><span>{editTP.type}</span></div>
             <div className="detail-row"><span className="detail-label">优先级</span><StatusPill tone={priorityTone(editTP.priority)}>{editTP.priority}</StatusPill></div>

@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Eye, EyeOff, Pencil, TestTube, Loader2, Check, X, Save, Trash2, ChevronDown, RotateCcw, Settings } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Eye, EyeOff, Loader2, Save, RotateCcw } from "lucide-react";
 import { Modal } from "../../shared/components/Modal";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { DataTable } from "../../shared/components/DataTable";
@@ -29,12 +29,36 @@ function maskKey(key: string): string {
   return "****" + key.slice(-6);
 }
 
+const connectionTone: Record<ApiModelConfig["connectionStatus"], "green" | "red" | "amber" | "slate" | "blue"> = {
+  normal: "green",
+  abnormal: "red",
+  testing: "blue",
+  untested: "slate",
+};
+
+const connectionText: Record<ApiModelConfig["connectionStatus"], string> = {
+  normal: "正常",
+  abnormal: "异常",
+  testing: "检测中",
+  untested: "未测试",
+};
+
+function formatTestTime(value: string | null | undefined): string {
+  if (!value) return "";
+  try {
+    const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value) ? value : `${value}Z`;
+    return new Date(normalized).toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" });
+  } catch {
+    return value;
+  }
+}
+
 export function ModelConfigPage() {
   const [configs, setConfigs] = useState<ApiModelConfig[]>([]);
   const [editingConfig, setEditingConfig] = useState<ApiModelConfig | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<Record<string, "success" | "error" | null>>({});
+  const [autoTestingIds, setAutoTestingIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [nodeFilter, setNodeFilter] = useState("all");
@@ -205,13 +229,76 @@ export function ModelConfigPage() {
     });
   };
 
-  const saveConfigs = async (newConfigs: ApiModelConfig[]) => {
+  const applyTestResult = (id: string, result: { ok: boolean; status: ApiModelConfig["connectionStatus"]; message: string; latencyMs?: number | null; lastTestedAt?: string | null }) => {
+    setConfigs((prev) => prev.map((item) => item.id === id ? {
+      ...item,
+      connectionStatus: result.status,
+      lastTestMessage: result.message,
+      lastTestLatencyMs: result.latencyMs ?? null,
+      lastTestedAt: result.lastTestedAt ?? new Date().toISOString(),
+    } : item));
+  };
+
+  const runConnectionTest = useCallback(async (configId: string, options?: { silent?: boolean }) => {
+    setTestingId((current) => current || configId);
+    setAutoTestingIds((prev) => new Set(prev).add(configId));
+    setConfigs((prev) => prev.map((item) => item.id === configId ? { ...item, connectionStatus: "testing" } : item));
+    try {
+      const result = await modelConfigApi.test(configId);
+      applyTestResult(configId, result);
+      if (!options?.silent) {
+        result.ok ? toast.success(result.message || "连通正常") : toast.error(result.message || "测试失败");
+      }
+      return result.ok;
+    } catch (error: any) {
+      const message = error.message || "测试失败";
+      setConfigs((prev) => prev.map((item) => item.id === configId ? {
+        ...item,
+        connectionStatus: "abnormal",
+        lastTestMessage: message,
+        lastTestedAt: new Date().toISOString(),
+      } : item));
+      if (!options?.silent) toast.error(message);
+      return false;
+    } finally {
+      setTestingId((current) => current === configId ? null : current);
+      setAutoTestingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(configId);
+        return next;
+      });
+    }
+  }, []);
+
+  const runConnectionTests = useCallback(async (configIds: string[]) => {
+    const queue = [...new Set(configIds)];
+    const workers = Array.from({ length: Math.min(2, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const id = queue.shift();
+        if (id) await runConnectionTest(id, { silent: true });
+      }
+    });
+    await Promise.all(workers);
+    await loadConfigs();
+  }, [runConnectionTest]);
+
+  const enabledTestIds = (configList: ApiModelConfig[], candidateIds: string[]) => {
+    const candidates = new Set(candidateIds);
+    return configList.filter((config) => candidates.has(config.id) && config.enabled).map((config) => config.id);
+  };
+
+  const saveConfigs = async (newConfigs: ApiModelConfig[], testIds: string[] = []) => {
     setSaving(true);
     try {
       const result = await modelConfigApi.update(newConfigs);
       if (result.ok) {
         setConfigs(newConfigs);
         toast.success("保存成功");
+        const idsToTest = enabledTestIds(newConfigs, testIds);
+        if (idsToTest.length > 0) {
+          toast.info("已开始自动检测连接状态");
+          void runConnectionTests(idsToTest);
+        }
       }
     } catch (error) {
       console.error("Failed to save configs:", error);
@@ -222,33 +309,16 @@ export function ModelConfigPage() {
   };
 
   const testConnection = useCallback(async (config: ApiModelConfig) => {
-    setTestingId(config.id);
-    setTestResults(prev => ({ ...prev, [config.id]: null }));
-
-    try {
-      const result = await modelConfigApi.test(config.id);
-      if (result && result.ok) {
-        setTestResults(prev => ({ ...prev, [config.id]: "success" }));
-        toast.success(result.message || "连通正常");
-      } else {
-        setTestResults(prev => ({ ...prev, [config.id]: "error" }));
-        toast.error(result?.message || "测试失败");
-      }
-    } catch (error: any) {
-      console.error("Test connection error:", error);
-      setTestResults(prev => ({ ...prev, [config.id]: "error" }));
-      toast.error(error.message || "测试失败");
-    } finally {
-      setTestingId(null);
-      setTimeout(() => {
-        setTestResults(prev => ({ ...prev, [config.id]: null }));
-      }, 3000);
+    if (!config.enabled) {
+      toast.warning("配置已禁用，启用后再测试连接");
+      return;
     }
-  }, []);
+    await runConnectionTest(config.id);
+  }, [runConnectionTest]);
 
   const updateConfig = async (id: string, field: keyof ApiModelConfig, value: string | boolean) => {
     const newConfigs = configs.map((c) => (c.id === id ? { ...c, [field]: value } : c));
-    await saveConfigs(newConfigs);
+    await saveConfigs(newConfigs, [id]);
   };
 
   const handleSaveEdit = async () => {
@@ -259,8 +329,7 @@ export function ModelConfigPage() {
         }
         return c;
       });
-      await saveConfigs(newConfigs);
-      await loadConfigs();
+      await saveConfigs(newConfigs, [editingConfig.id]);
       configDirty.markClean();
       setEditingConfig(null);
       setShowApiKey(false);
@@ -275,8 +344,7 @@ export function ModelConfigPage() {
       }
       return c;
     });
-    await saveConfigs(newConfigs);
-    await loadConfigs();
+    await saveConfigs(newConfigs, Array.from(selectedIds));
     setSelectedIds(new Set());
     setBatchEditing(false);
   };
@@ -366,7 +434,7 @@ export function ModelConfigPage() {
                 );
               },
             },
-            { key: "description", label: "说明", align: "left", width: "20%", render: (row) => <span style={{ fontSize: 13 }}>{row.description}</span> },
+            { key: "description", label: "说明", align: "left", width: "16%", render: (row) => <span style={{ fontSize: 13 }}>{row.description}</span> },
             { key: "provider", label: "供应商", width: "8%", render: (row) => <span className="provider-tag">{row.provider ? row.provider.split("-")[0] : "-"}</span> },
             { key: "modelName", label: "模型", width: "10%", render: (row) => row.modelName || "-" },
             {
@@ -378,7 +446,7 @@ export function ModelConfigPage() {
             {
               key: "endpoint",
               label: "Base URL",
-              width: "20%",
+              width: "14%",
               render: (row) => {
                 const ep = row.endpoint;
                 if (!ep) return <span className="text-muted" style={{ fontSize: 12 }}>-</span>;
@@ -392,7 +460,7 @@ export function ModelConfigPage() {
             },
             {
               key: "enabled",
-              label: "状态",
+              label: "启用",
               width: "6%",
               align: "center",
               render: (row) => (
@@ -401,6 +469,41 @@ export function ModelConfigPage() {
                   <span className="toggle-switch__slider" />
                 </label>
               ),
+            },
+            {
+              key: "connectionStatus",
+              label: "连接状态",
+              width: "96px",
+              align: "center",
+              render: (row) => {
+                const isTesting = row.connectionStatus === "testing" || autoTestingIds.has(row.id);
+                const message = row.lastTestMessage || "暂无测试记录";
+                return (
+                  <span title={message}>
+                    <StatusPill tone={connectionTone[isTesting ? "testing" : row.connectionStatus]} className="model-config-status-pill">
+                      {isTesting ? <><Loader2 size={12} className="animate-spin" /> 检测中</> : connectionText[row.connectionStatus]}
+                    </StatusPill>
+                  </span>
+                );
+              },
+            },
+            {
+              key: "lastTestedAt",
+              label: "测试时间",
+              width: "10%",
+              align: "center",
+              render: (row) => {
+                const time = formatTestTime(row.lastTestedAt);
+                const latency = row.lastTestLatencyMs ? `耗时 ${row.lastTestLatencyMs}ms` : "";
+                const message = row.lastTestMessage || "暂无测试记录";
+                return time ? (
+                  <span title={`${message}${latency ? `\n${latency}` : ""}`} style={{ color: "var(--muted)", fontSize: 12, whiteSpace: "nowrap" }}>
+                    {time}
+                  </span>
+                ) : (
+                  <span title={message} style={{ color: "var(--muted)", fontSize: 12 }}>-</span>
+                );
+              },
             },
             {
               key: "actions",
@@ -417,17 +520,13 @@ export function ModelConfigPage() {
                     编辑
                   </button>
                   <button
-                    className="text-button test-button"
+                    className="text-button"
                     type="button"
                     onClick={() => testConnection(row)}
-                    disabled={testingId === row.id}
+                    disabled={!row.enabled || testingId === row.id || autoTestingIds.has(row.id)}
+                    title={!row.enabled ? "配置已禁用，启用后再测试" : undefined}
                   >
-                    {testingId === row.id ? (
-                      <span className="test-loading">
-                        <Loader2 size={14} className="animate-spin" />
-                        测试中
-                      </span>
-                    ) : '测试'}
+                    测试
                   </button>
                   {isAdmin && (
                     <button className="text-button" type="button" onClick={() => {
@@ -499,6 +598,7 @@ export function ModelConfigPage() {
                       }
                     }
                     setEditingConfig(newConfig);
+                    configDirty.markDirty();
                   }} placeholder="请输入 API Key（sk- 开头为 API Keys 模式，tp- 开头为 Token Plan 模式）" required style={{ paddingRight: 36 }} />
                   <button type="button" className="icon-button" style={{ position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)", width: 28, height: 28 }} onClick={() => setShowApiKey(!showApiKey)}>
                     {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}

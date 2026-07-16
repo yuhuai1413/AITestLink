@@ -42,6 +42,10 @@ export interface ModelConfig {
   endpoint: string;
   description: string;
   enabled: boolean;
+  connectionStatus: "untested" | "testing" | "normal" | "abnormal";
+  lastTestedAt: string | null;
+  lastTestMessage: string;
+  lastTestLatencyMs: number | null;
   prompt: string;
   adminPrompt: string;
 }
@@ -94,6 +98,9 @@ export interface ConfigCheckResult {
   configured: boolean;
   configId?: string;
   name: string;
+  connectionStatus?: "untested" | "testing" | "normal" | "abnormal";
+  lastTestedAt?: string | null;
+  lastTestMessage?: string;
   message: string;
 }
 

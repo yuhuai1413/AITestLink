@@ -186,7 +186,7 @@ export function DashboardPage() {
   }, [state.testCases]);
 
   const recentProjects = useMemo(() =>
-    [...state.projects].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 4),
+    [...state.projects].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 10),
   [state.projects]);
 
   const cards: { icon: LucideIcon; label: string; value: string | number; sub: string; color: string }[] = [

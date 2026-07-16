@@ -77,6 +77,7 @@ class EnvironmentService:
                             "environmentId": acc.environment_id,
                             "name": acc.name,
                             "username": acc.username,
+                            "department": acc.department or "",
                             "password": "",
                             "hasPassword": bool(acc.password),
                             "role": acc.role or "",
@@ -296,6 +297,7 @@ class EnvironmentService:
                 environment_id=data.environmentId,
                 name=data.name,
                 username=data.username,
+                department=data.department,
                 password=f"enc:{encrypt_value(data.password)}",
                 role=data.role,
                 notes=data.notes,
@@ -309,6 +311,7 @@ class EnvironmentService:
                 "environmentId": account.environment_id,
                 "name": account.name,
                 "username": account.username,
+                "department": account.department or "",
                 "password": "",
                 "hasPassword": True,
                 "role": account.role or "",
@@ -338,6 +341,8 @@ class EnvironmentService:
                 account.name = data.name
             if data.username is not None:
                 account.username = data.username
+            if data.department is not None:
+                account.department = data.department
             if data.password:
                 account.password = f"enc:{encrypt_value(data.password)}"
             if data.role is not None:
@@ -353,6 +358,7 @@ class EnvironmentService:
                 "environmentId": account.environment_id,
                 "name": account.name,
                 "username": account.username,
+                "department": account.department or "",
                 "password": "",
                 "hasPassword": bool(account.password),
                 "role": account.role or "",

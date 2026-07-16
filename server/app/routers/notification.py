@@ -112,3 +112,17 @@ async def clear_notifications(user: dict = Depends(get_current_user)):
         )
         await db.commit()
         return {"ok": True}
+
+
+@router.delete("/notifications/{notification_id}")
+async def delete_notification(notification_id: str, user: dict = Depends(get_current_user)):
+    async with async_session() as db:
+        from sqlalchemy import delete
+        await db.execute(
+            delete(Notification).where(
+                Notification.id == notification_id,
+                Notification.user_id == user["sub"],
+            )
+        )
+        await db.commit()
+        return {"ok": True}

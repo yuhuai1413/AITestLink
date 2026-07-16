@@ -31,6 +31,7 @@ def _requirement(identifier: str = "req-1") -> SimpleNamespace:
 def _point(identifier: str = "tp-1", requirement_id: str | None = "req-1") -> SimpleNamespace:
     return SimpleNamespace(
         id=identifier,
+        point_code="TP_LOGIN_001",
         requirement_id=requirement_id,
         module="登录",
         type="正常流程",
@@ -78,6 +79,7 @@ def test_each_ai_stage_receives_persisted_upstream_ids():
 
     assert requirement_input["requirementId"] == requirement.id
     assert point_input["testPointId"] == point.id
+    assert point_input["testPointCode"] == point.point_code
     assert point_input["requirementId"] == requirement.id
     assert case_input["testCaseId"] == case.id
     assert case_input["testPointId"] == point.id

@@ -45,7 +45,7 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
 
   const batchDelete = async () => {
     for (const id of selectedIds) {
-      const script = scripts.find((s) => s.testCaseId === id);
+      const script = scripts.find((s) => s.id === id);
       if (script) { try { await scriptsApi.delete(script.id); dispatch({ type: "DELETE_SCRIPT", payload: script.id }); } catch {} }
     }
     toast.success(`已删除 ${selectedIds.size} 个脚本`);
@@ -145,7 +145,7 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
               { key: "scriptCode", label: "脚本编号", render: (r) => r.scriptCode || <span style={{ color: "var(--muted)" }}>-</span> },
               { key: "testCase", label: "关联用例", align: "left", render: (r) => {
                 const tc = testCases.find((t) => t.id === r.testCaseId);
-                return tc ? <span title={tc.title} style={{ maxWidth: 200, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tc.title}</span> : <span style={{ color: "var(--muted)" }}>-</span>;
+                return tc ? <span title={`${tc.caseCode} ${tc.title}`} style={{ maxWidth: 240, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tc.caseCode} · {tc.title}</span> : <span style={{ color: "var(--muted)" }}>-</span>;
               }},
               { key: "testType", label: "测试类型", align: "center", render: (r) => {
                 const tc = testCases.find((t) => t.id === r.testCaseId);
@@ -208,31 +208,36 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
         title={`编辑脚本 - ${editScript?.framework || ""}`}
         width={800}
         height="80vh"
+        flushTop
+        bodyOverflow="hidden"
         footer={<>
           <button className="ghost-button" type="button" onClick={() => scriptDirty.requestClose(() => setEditScript(null))}>取消</button>
           <button className="primary-button" type="button" onClick={handleSaveEdit}>保存</button>
         </>}
       >
         {editScript && (
-          <textarea
-            value={editCode}
-            onChange={(e) => { setEditCode(e.target.value); scriptDirty.markDirty(); }}
-            style={{
-              width: "100%",
-              height: "100%",
-              minHeight: 400,
-              background: "#1e1e2e",
-              color: "#cdd6f4",
-              padding: 16,
-              borderRadius: 8,
-              fontSize: 13,
-              lineHeight: 1.6,
-              border: "none",
-              resize: "vertical",
-              fontFamily: "monospace",
-              boxSizing: "border-box",
-            }}
-          />
+          <div style={{ height: "100%", minHeight: 0, display: "flex" }}>
+            <textarea
+              value={editCode}
+              onChange={(e) => { setEditCode(e.target.value); scriptDirty.markDirty(); }}
+              style={{
+                width: "100%",
+                flex: 1,
+                minHeight: 0,
+                background: "#1e1e2e",
+                color: "#cdd6f4",
+                padding: 16,
+                borderRadius: 0,
+                fontSize: 13,
+                lineHeight: 1.6,
+                border: "none",
+                outline: "none",
+                resize: "none",
+                fontFamily: "monospace",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
         )}
       </Modal>
 

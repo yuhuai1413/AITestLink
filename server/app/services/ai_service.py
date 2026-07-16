@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime, timezone
 from typing import AsyncGenerator
 
 import httpx
@@ -104,14 +105,56 @@ async def check_config_for_task(task_type: str, user_id: str) -> dict:
                         "message": f"「{config.name}」已禁用，请在模型配置页面启用后重试",
                     }
                 is_configured = bool(config.provider and config.model_name and config.api_key and config.endpoint)
+                connection_status = config.connection_status or "untested"
+                if is_configured and connection_status == "abnormal":
+                    return {
+                        "configured": False,
+                        "configId": config.id,
+                        "name": config.name,
+                        "connectionStatus": connection_status,
+                        "lastTestedAt": _utc_iso(config.last_tested_at),
+                        "lastTestMessage": config.last_test_message or "",
+                        "message": f"「{config.name}」连接状态异常，请在模型配置页面修复或重新测试",
+                    }
                 return {
                     "configured": is_configured,
                     "configId": config.id,
                     "name": config.name,
+                    "connectionStatus": connection_status,
+                    "lastTestedAt": _utc_iso(config.last_tested_at),
+                    "lastTestMessage": config.last_test_message or "",
                     "message": "已配置" if is_configured else f"请先在模型配置页面设置「{config.name}」的模型数据",
                 }
 
     return {"configured": False, "name": task_type, "message": "配置不存在"}
+
+
+def _utc_iso(value: datetime | None) -> str | None:
+    if not value:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+async def _mark_config_status(task_type: str, user_id: str, status: str, message: str = "") -> None:
+    config_key = TASK_CONFIG_MAP.get(task_type)
+    if not config_key or not user_id:
+        return
+    async with async_session() as db:
+        result = await db.execute(
+            select(ModelConfig).where(
+                ModelConfig.config_key == config_key,
+                ModelConfig.user_id == user_id,
+            )
+        )
+        config = result.scalar_one_or_none()
+        if not config:
+            return
+        config.connection_status = status
+        config.last_tested_at = datetime.now(timezone.utc)
+        config.last_test_message = message[:1000] if message else ""
+        await db.commit()
 
 
 class AIService:
@@ -130,16 +173,22 @@ class AIService:
         if not final_system_prompt:
             raise ValueError(f"「{task_type}」的管理员提示词未发布，请联系管理员配置")
 
-        return await self.llm_client.complete(
-            endpoint=config["endpoint"],
-            api_key=config["api_key"],
-            model=config["model"],
-            system_prompt=final_system_prompt,
-            user_prompt=user_prompt,
-            task_type=task_type,
-            max_tokens=max_tokens,
-            response_schema=output_json_schema(task_type),
-        )
+        try:
+            content = await self.llm_client.complete(
+                endpoint=config["endpoint"],
+                api_key=config["api_key"],
+                model=config["model"],
+                system_prompt=final_system_prompt,
+                user_prompt=user_prompt,
+                task_type=task_type,
+                max_tokens=max_tokens,
+                response_schema=output_json_schema(task_type),
+            )
+            await _mark_config_status(task_type, user_id, "normal", "最近一次任务调用成功")
+            return content
+        except Exception as exc:
+            await _mark_config_status(task_type, user_id, "abnormal", str(exc))
+            raise
 
     def _parse_json_response(self, text: str) -> list | dict:
         """Extract JSON from LLM response, handling various output formats."""
@@ -351,42 +400,47 @@ class AIService:
                 payload["response_format"] = structured_format
 
         async with httpx.AsyncClient(timeout=600) as client:
-            for attempt in range(2):
-                async with client.stream(
-                    "POST",
-                    ensure_chat_endpoint(config['endpoint']),
-                    headers=headers,
-                    json=payload,
-                ) as response:
-                    logger.info(f"_call_llm_stream: task={task_type}, status={response.status_code}")
-                    if structured_format and attempt == 0 and response.status_code in {400, 404, 422}:
-                        await response.aread()
-                        payload.pop("response_format", None)
-                        logger.warning("流式 JSON Schema 不受供应商支持，自动降级重试：task=%s", task_type)
-                        continue
-                    if response.status_code != 200:
-                        body = await response.aread()
-                        logger.error(f"_call_llm_stream failed: task={task_type}, status={response.status_code}, body={body[:500]}")
-                        response.raise_for_status()
+            try:
+                for attempt in range(2):
+                    async with client.stream(
+                        "POST",
+                        ensure_chat_endpoint(config['endpoint']),
+                        headers=headers,
+                        json=payload,
+                    ) as response:
+                        logger.info(f"_call_llm_stream: task={task_type}, status={response.status_code}")
+                        if structured_format and attempt == 0 and response.status_code in {400, 404, 422}:
+                            await response.aread()
+                            payload.pop("response_format", None)
+                            logger.warning("流式 JSON Schema 不受供应商支持，自动降级重试：task=%s", task_type)
+                            continue
+                        if response.status_code != 200:
+                            body = await response.aread()
+                            logger.error(f"_call_llm_stream failed: task={task_type}, status={response.status_code}, body={body[:500]}")
+                            response.raise_for_status()
 
-                    async for line in response.aiter_lines():
-                        if not line or not line.startswith("data: "):
-                            continue
-                        data_str = line[6:]
-                        if data_str.strip() == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data_str)
-                            choices = chunk.get("choices", [])
-                            if not choices:
+                        async for line in response.aiter_lines():
+                            if not line or not line.startswith("data: "):
                                 continue
-                            delta = choices[0].get("delta", {})
-                            content = delta.get("content")
-                            if content:
-                                yield content
-                        except json.JSONDecodeError:
-                            continue
-                    return
+                            data_str = line[6:]
+                            if data_str.strip() == "[DONE]":
+                                break
+                            try:
+                                chunk = json.loads(data_str)
+                                choices = chunk.get("choices", [])
+                                if not choices:
+                                    continue
+                                delta = choices[0].get("delta", {})
+                                content = delta.get("content")
+                                if content:
+                                    yield content
+                            except json.JSONDecodeError:
+                                continue
+                        await _mark_config_status(task_type, user_id, "normal", "最近一次任务调用成功")
+                        return
+            except Exception as exc:
+                await _mark_config_status(task_type, user_id, "abnormal", str(exc))
+                raise
 
     async def generate_stream(self, user_prompt: str, task_type: str, user_id: str = "", batch_size: int = 5, max_tokens: int = 16000, system_prompt_override: str = "") -> AsyncGenerator[list[dict], None]:
         """流式接收 LLM 响应，接收完后解析 JSON 分批 yield。"""

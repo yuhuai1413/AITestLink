@@ -19,6 +19,7 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
   const { scripts, testCases, refreshScripts, loading, initialLoading } = useProjectData(projectId);
   const { dispatch } = useStore();
   const [viewScript, setViewScript] = useState<AutomationScript | null>(null);
+  const [resultTab, setResultTab] = useState<"info" | "code" | "result">("info");
   const [runningId, setRunningId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [runningAll, setRunningAll] = useState(false);
@@ -60,7 +61,12 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
   const getTestCaseTitle = (testCaseId: string | null | undefined) => {
     if (!testCaseId) return "-";
     const tc = testCases.find((t) => t.id === testCaseId);
-    return tc ? tc.title : "-";
+    return tc ? `${tc.caseCode} · ${tc.title}` : "-";
+  };
+
+  const openResultDetail = (script: AutomationScript) => {
+    setResultTab("result");
+    setViewScript(script);
   };
 
   // 未配置隔离执行器时不伪造执行步骤、耗时或截图。
@@ -123,7 +129,7 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
                 <button className="text-button" type="button" onClick={() => handleRun(r)} disabled={!executionAvailable || runningId === r.id} title="尚未配置隔离执行器">
                   {runningId === r.id ? "执行中" : "执行"}
                 </button>
-                <button className="text-button" type="button" onClick={() => setViewScript(r)}>查看</button>
+                <button className="text-button" type="button" onClick={() => openResultDetail(r)}>查看</button>
               </div>
             )},
           ]} />
@@ -131,71 +137,118 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
       </section>
 
       {/* 执行结果查看弹窗 */}
-      <Modal open={!!viewScript} onClose={() => setViewScript(null)} title={`执行结果 - ${viewScript?.framework || ""}`} width={800} height="85vh">
+      <Modal open={!!viewScript} onClose={() => setViewScript(null)} title="执行结果详情" width={860} height="85vh">
         {viewScript && (() => {
           const results = getMockResults(viewScript);
           const tc = testCases.find((t) => t.id === viewScript.testCaseId);
+          const tabs: { key: typeof resultTab; label: string }[] = [
+            { key: "result", label: "执行结果" },
+            { key: "info", label: "脚本信息" },
+            { key: "code", label: "脚本代码" },
+          ];
           return (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16, height: "100%", overflow: "auto" }}>
-              {/* 基本信息 */}
-              <div className="detail-grid">
-                <div className="detail-row"><span className="detail-label">脚本编号</span><span>{viewScript.scriptCode || "-"}</span></div>
-                <div className="detail-row"><span className="detail-label">脚本类型</span><span>{viewScript.scriptType}</span></div>
-                <div className="detail-row"><span className="detail-label">测试类型</span><span>{tc?.testType || "功能测试"}</span></div>
-                <div className="detail-row"><span className="detail-label">测试端</span><span>{tc?.targetPlatform || "-"}</span></div>
-                <div className="detail-row detail-row--full"><span className="detail-label">测试地址</span><span style={{ overflowWrap: "anywhere" }}>{tc?.testUrl || "未配置"}</span></div>
-                <div className="detail-row"><span className="detail-label">所需角色</span><span>{tc?.requiredRole || "无"}</span></div>
-                <div className="detail-row"><span className="detail-label">执行状态</span><StatusPill tone={viewScript.status === "成功" ? "green" : viewScript.status === "失败" ? "red" : "slate"}>{viewScript.status}</StatusPill></div>
-                <div className="detail-row"><span className="detail-label">执行时间</span><span>{viewScript.executedAt ? formatTime(viewScript.executedAt) : "未执行"}</span></div>
-                <div className="detail-row"><span className="detail-label">执行耗时</span><span>{results.duration}</span></div>
-                <div className="detail-row"><span className="detail-label">步骤统计</span><span><span style={{ color: "var(--green)" }}>{results.steps.filter((s) => s.status === "通过").length}</span> / {results.steps.length}</span></div>
-              </div>
-
-              {/* 执行步骤 */}
-              <div>
-                <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600 }}>执行步骤</h4>
-                <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-                  {results.steps.map((step, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderBottom: i < results.steps.length - 1 ? "1px solid var(--border)" : "none", gap: 10 }}>
-                      <StatusPill tone={step.status === "通过" ? "green" : "red"}>{step.status}</StatusPill>
-                      <span style={{ flex: 1, fontSize: 13 }}>{step.name}</span>
-                      <span style={{ fontSize: 12, color: "var(--muted)" }}>{step.time}</span>
-                    </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, height: "100%", minHeight: 0 }}>
+              <div style={{ display: "flex", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
+                <div style={{ display: "flex", width: "100%" }}>
+                  {tabs.map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setResultTab(tab.key)}
+                      style={{
+                        position: "relative",
+                        flex: 1,
+                        height: 38,
+                        padding: "0 14px",
+                        border: "none",
+                        borderBottom: resultTab === tab.key ? "2px solid var(--blue)" : "2px solid transparent",
+                        background: "transparent",
+                        cursor: "pointer",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: resultTab === tab.key ? "var(--blue)" : "var(--muted)",
+                        transition: "background 0.18s ease, color 0.18s ease, border-color 0.18s ease",
+                      }}
+                    >
+                      {tab.label}
+                    </button>
                   ))}
                 </div>
               </div>
 
-              {/* 执行截图 */}
-              <div>
-                <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600 }}>执行截图</h4>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8 }}>
-                  {results.screenshots.map((desc, i) => (
-                    <div key={i} style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
-                      <div style={{ height: 100, background: "var(--bg-secondary)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 12 }}>
-                        截图 {i + 1}
-                      </div>
-                      <div style={{ padding: "6px 10px", fontSize: 12, color: "var(--muted)" }}>{desc}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+                {resultTab === "info" && (
+                  <div className="detail-grid">
+                    <div className="detail-row"><span className="detail-label">脚本编号</span><span>{viewScript.scriptCode || "-"}</span></div>
+                    <div className="detail-row"><span className="detail-label">关联用例</span><span>{getTestCaseTitle(viewScript.testCaseId)}</span></div>
+                    <div className="detail-row"><span className="detail-label">框架</span><span>{viewScript.framework}</span></div>
+                    <div className="detail-row"><span className="detail-label">语言</span><span>{viewScript.language}</span></div>
+                    <div className="detail-row"><span className="detail-label">脚本类型</span><span>{viewScript.scriptType}</span></div>
+                    <div className="detail-row"><span className="detail-label">测试类型</span><span>{tc?.testType || "功能测试"}</span></div>
+                    <div className="detail-row"><span className="detail-label">测试端</span><span>{tc?.targetPlatform || "-"}</span></div>
+                    <div className="detail-row"><span className="detail-label">所需角色</span><span>{tc?.requiredRole || "无"}</span></div>
+                    <div className="detail-row detail-row--full"><span className="detail-label">测试地址</span><span style={{ overflowWrap: "anywhere" }}>{tc?.testUrl || "未配置"}</span></div>
+                  </div>
+                )}
 
-              {/* 错误日志 */}
-              {results.errors.length > 0 && (
-                <div>
-                  <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600, color: "red" }}>错误日志</h4>
-                  <pre style={{ background: "#1e1e2e", color: "#f38ba8", padding: 12, borderRadius: 8, fontSize: 12, lineHeight: 1.6, margin: 0, overflow: "auto", maxHeight: 120 }}>
-                    {results.errors.join("\n")}
+                {resultTab === "code" && (
+                  <pre style={{ background: "#1e1e2e", color: "#cdd6f4", padding: 14, borderRadius: 10, fontSize: 12, lineHeight: 1.6, margin: 0, overflow: "auto", height: "100%", minHeight: 360 }}>
+                    {viewScript.code || "// 暂无代码"}
                   </pre>
-                </div>
-              )}
+                )}
 
-              {/* 脚本代码 */}
-              <div style={{ flex: 1, minHeight: 0 }}>
-                <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600 }}>脚本代码</h4>
-                <pre style={{ background: "#1e1e2e", color: "#cdd6f4", padding: 12, borderRadius: 8, fontSize: 12, lineHeight: 1.6, margin: 0, overflow: "auto", height: "100%", minHeight: 150 }}>
-                  {viewScript.code || "// 暂无代码"}
-                </pre>
+                {resultTab === "result" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <div className="detail-grid">
+                      <div className="detail-row"><span className="detail-label">执行状态</span><StatusPill tone={viewScript.status === "成功" ? "green" : viewScript.status === "失败" ? "red" : viewScript.status === "执行中" ? "blue" : "slate"}>{viewScript.status}</StatusPill></div>
+                      <div className="detail-row"><span className="detail-label">执行时间</span><span>{viewScript.executedAt ? formatTime(viewScript.executedAt) : "未执行"}</span></div>
+                      <div className="detail-row"><span className="detail-label">执行耗时</span><span>{results.duration}</span></div>
+                      <div className="detail-row"><span className="detail-label">步骤统计</span><span><span style={{ color: "var(--green)" }}>{results.steps.filter((s) => s.status === "通过").length}</span> / {results.steps.length}</span></div>
+                    </div>
+
+                    <div>
+                      <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600 }}>执行步骤</h4>
+                      {results.steps.length === 0 ? (
+                        <div className="empty-state" style={{ minHeight: 90 }}><p>暂无真实执行步骤</p></div>
+                      ) : (
+                        <div style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
+                          {results.steps.map((step, i) => (
+                            <div key={i} style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderBottom: i < results.steps.length - 1 ? "1px solid var(--line)" : "none", gap: 10 }}>
+                              <StatusPill tone={step.status === "通过" ? "green" : "red"}>{step.status}</StatusPill>
+                              <span style={{ flex: 1, fontSize: 13 }}>{step.name}</span>
+                              <span style={{ fontSize: 12, color: "var(--muted)" }}>{step.time}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600 }}>执行截图</h4>
+                      {results.screenshots.length === 0 ? (
+                        <div className="empty-state" style={{ minHeight: 90 }}><p>暂无执行截图</p></div>
+                      ) : (
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8 }}>
+                          {results.screenshots.map((desc, i) => (
+                            <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
+                              <div style={{ height: 100, background: "var(--surface-soft)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", fontSize: 12 }}>截图 {i + 1}</div>
+                              <div style={{ padding: "6px 10px", fontSize: 12, color: "var(--muted)" }}>{desc}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {results.errors.length > 0 && (
+                      <div>
+                        <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600, color: "var(--red)" }}>错误日志</h4>
+                        <pre style={{ background: "#1e1e2e", color: "#f38ba8", padding: 12, borderRadius: 8, fontSize: 12, lineHeight: 1.6, margin: 0, overflow: "auto", maxHeight: 160 }}>
+                          {results.errors.join("\n")}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           );

@@ -39,7 +39,7 @@ class ModelConfigService(BaseService):
                 from datetime import timezone
                 if value.tzinfo is None:
                     value = value.replace(tzinfo=timezone.utc)
-                value = value.isoformat()
+                value = value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
             # 转换为 camelCase
             camel = "".join(
@@ -47,6 +47,9 @@ class ModelConfigService(BaseService):
                 for i, word in enumerate(column.name.split("_"))
             )
             result[camel] = value
+
+        result.setdefault("connectionStatus", "untested")
+        result.setdefault("lastTestMessage", "")
 
         return result
 
@@ -159,6 +162,9 @@ class ModelConfigService(BaseService):
                     "configured": is_configured,
                     "configId": config.id,
                     "name": config.name,
+                    "connectionStatus": config.connection_status or "untested",
+                    "lastTestedAt": config.last_tested_at.isoformat() if config.last_tested_at else None,
+                    "lastTestMessage": config.last_test_message or "",
                     "message": "已配置" if is_configured else f"请先在模型配置页面设置「{config.name}」的模型数据",
                 }
 

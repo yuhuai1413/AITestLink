@@ -42,6 +42,21 @@
   max-width: 250px;
 }
 
+.environment-accounts-table .data-table-wrap {
+  overflow-x: hidden;
+}
+
+.environment-accounts-table .data-table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.environment-accounts-table .data-table th,
+.environment-accounts-table .data-table td {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
 
 .align-left {
   text-align: left;

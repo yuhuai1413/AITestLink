@@ -46,6 +46,33 @@ describe("Modal", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("calls onClose when the overlay click starts on the overlay", () => {
+    const onClose = vi.fn();
+    render(
+      <Modal open={true} onClose={onClose} title="Title">
+        <p>Content</p>
+      </Modal>,
+    );
+    const overlay = document.querySelector(".modal-overlay") as HTMLElement;
+    fireEvent.mouseDown(overlay);
+    fireEvent.click(overlay);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not close when a drag starts inside the dialog and ends on the overlay", () => {
+    const onClose = vi.fn();
+    render(
+      <Modal open={true} onClose={onClose} title="Title">
+        <input aria-label="Name" defaultValue="Content" />
+      </Modal>,
+    );
+    const input = screen.getByLabelText("Name");
+    const overlay = document.querySelector(".modal-overlay") as HTMLElement;
+    fireEvent.mouseDown(input);
+    fireEvent.click(overlay);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("applies custom width", () => {
     render(
       <Modal open={true} onClose={() => {}} title="Title" width={700}>

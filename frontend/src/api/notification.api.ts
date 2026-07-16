@@ -50,4 +50,7 @@ export const notificationsApi = {
 
   clear: () =>
     request<{ ok: boolean }>("/notifications", { method: "DELETE" }),
+
+  delete: (id: string) =>
+    request<{ ok: boolean }>(`/notifications/${id}`, { method: "DELETE" }),
 };

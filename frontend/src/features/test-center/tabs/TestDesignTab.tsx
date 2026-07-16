@@ -19,6 +19,7 @@ export function TestDesignTab({ projectId }: Props) {
       rows={items}
       getRowKey={(tp) => tp.id}
       columns={[
+        { key: "pointCode", label: "测试点编号", render: (tp) => tp.pointCode || <span style={{ color: "var(--muted)" }}>-</span> },
         { key: "module", label: "模块", render: (tp) => tp.module },
         { key: "type", label: "类型", render: (tp) => tp.type },
         { key: "title", label: "测试点", render: (tp) => tp.title },

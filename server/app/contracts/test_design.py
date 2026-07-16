@@ -28,6 +28,7 @@ class TestPointUpdate(BaseModel):
 
 class TestPointResponse(BaseModel):
     id: str
+    point_code: str = Field(default="", alias="pointCode")
     project_id: str = Field(alias="projectId")
     requirement_id: str | None = Field(default=None, alias="requirementId")
     module: str
@@ -45,6 +46,7 @@ class TestPointResponse(BaseModel):
 
 class GeneratedTestPoint(BaseModel):
     """AI 生成的测试点"""
+    requirement_id: str = Field(alias="requirementId")
     module: str
     type: str
     title: str

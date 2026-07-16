@@ -1,4 +1,6 @@
 import json
+import time
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -46,6 +48,10 @@ class ModelConfigSchema(BaseModel):
     # 仅用于识别并拒绝旧客户端或绕过前端提交的提示词字段。
     # 提示词只能通过管理员专用接口维护。
     prompt: str | None = None
+    connectionStatus: str | None = None
+    lastTestedAt: str | None = None
+    lastTestMessage: str | None = None
+    lastTestLatencyMs: int | None = None
 
 
 class ModelConfigUpdate(BaseModel):
@@ -79,8 +85,108 @@ def _to_dict(m) -> dict:
         "endpoint": m.endpoint,
         "description": m.description,
         "enabled": m.enabled,
+        "connectionStatus": m.connection_status or "untested",
+        "lastTestedAt": _utc_iso(m.last_tested_at),
+        "lastTestMessage": m.last_test_message or "",
+        "lastTestLatencyMs": m.last_test_latency_ms,
         # 普通模型配置接口不再暴露用户配置行中的历史提示词副本。
         "prompt": "",
+    }
+
+
+def _utc_iso(value: datetime | None) -> str | None:
+    if not value:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _classify_test_failure(status_code: int | None, message: str) -> str:
+    if status_code in (401, 403):
+        return "API Key 无效或无权限"
+    if status_code == 404:
+        return "模型服务地址或模型不存在"
+    if status_code == 429:
+        return "模型服务限流或额度不足"
+    if status_code and status_code >= 500:
+        return "模型服务暂时不可用"
+    lower = message.lower()
+    if "timeout" in lower or "timed out" in lower:
+        return "连接超时"
+    if "connect" in lower or "connection" in lower:
+        return "无法连接到模型服务"
+    return message[:200] or "连接测试失败"
+
+
+async def _test_and_update_config(config: ModelConfig, db: AsyncSession) -> dict:
+    started = time.perf_counter()
+    config.connection_status = "testing"
+    await db.commit()
+
+    if not config.provider or not config.api_key or not config.endpoint or not config.model_name:
+        config.connection_status = "abnormal"
+        config.last_tested_at = datetime.now(timezone.utc)
+        config.last_test_message = "请先配置供应商、模型、API Key 和 Endpoint"
+        config.last_test_latency_ms = int((time.perf_counter() - started) * 1000)
+        await db.commit()
+        return {
+            "ok": False,
+            "status": config.connection_status,
+            "message": config.last_test_message,
+            "latencyMs": config.last_test_latency_ms,
+        }
+
+    api_key = decrypt_value(config.api_key) if config.api_key else ""
+    test_url = ensure_chat_endpoint(config.endpoint)
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": config.model_name,
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(test_url, json=payload, headers=headers)
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        if resp.status_code < 400:
+            config.connection_status = "normal"
+            config.last_tested_at = datetime.now(timezone.utc)
+            config.last_test_message = f"连通正常（{config.provider}）"
+            config.last_test_latency_ms = latency_ms
+            await db.commit()
+            return {
+                "ok": True,
+                "status": config.connection_status,
+                "message": config.last_test_message,
+                "latencyMs": latency_ms,
+                "lastTestedAt": _utc_iso(config.last_tested_at),
+            }
+        detail = ""
+        try:
+            detail = resp.json().get("error", {}).get("message", "")
+        except Exception:
+            detail = resp.text[:200]
+        message = _classify_test_failure(resp.status_code, detail)
+    except Exception as exc:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        message = _classify_test_failure(None, str(exc))
+
+    config.connection_status = "abnormal"
+    config.last_tested_at = datetime.now(timezone.utc)
+    config.last_test_message = message
+    config.last_test_latency_ms = latency_ms
+    await db.commit()
+    return {
+        "ok": False,
+        "status": config.connection_status,
+        "message": message,
+        "latencyMs": latency_ms,
+        "lastTestedAt": _utc_iso(config.last_tested_at),
     }
 
 
@@ -345,36 +451,7 @@ async def test_model_config(
     if not config:
         raise HTTPException(status_code=404, detail="配置不存在")
 
-    if not config.provider or not config.api_key or not config.endpoint:
-        return {"ok": False, "message": "请先配置供应商、API Key 和 Endpoint"}
-
-    api_key = decrypt_value(config.api_key) if config.api_key else ""
-    endpoint = config.endpoint
-
-    try:
-        import httpx
-        test_url = ensure_chat_endpoint(endpoint)
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": config.model_name,
-            "messages": [{"role": "user", "content": "hi"}],
-        }
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(test_url, json=payload, headers=headers)
-        if resp.status_code < 400:
-            return {"ok": True, "message": f"连通正常（{config.provider}）"}
-        else:
-            detail = ""
-            try:
-                detail = resp.json().get("error", {}).get("message", "")
-            except Exception:
-                detail = resp.text[:200]
-            return {"ok": False, "message": f"请求失败（HTTP {resp.status_code}）{detail}"}
-    except Exception as e:
-        return {"ok": False, "message": f"测试失败：{str(e)[:200]}"}
+    return await _test_and_update_config(config, db)
 
 
 @router.put("/model-configs")
@@ -394,6 +471,13 @@ async def update_model_configs(
             raise HTTPException(status_code=403, detail="提示词只能由管理员在提示词管理中配置")
         if cfg.id in existing:
             m = existing[cfg.id]
+            connection_changed = any([
+                m.provider != cfg.provider,
+                m.model_name != cfg.modelName,
+                (decrypt_value(m.api_key) if m.api_key else "") != (cfg.apiKey or ""),
+                m.endpoint != cfg.endpoint,
+                m.enabled != cfg.enabled,
+            ])
             m.name = cfg.name
             if isinstance(cfg.aiNode, list):
                 m.ai_node = json.dumps(cfg.aiNode, ensure_ascii=False)
@@ -405,6 +489,11 @@ async def update_model_configs(
             m.endpoint = cfg.endpoint
             m.description = cfg.description
             m.enabled = cfg.enabled
+            if connection_changed:
+                m.connection_status = "untested"
+                m.last_tested_at = None
+                m.last_test_message = "配置已变更，等待重新测试"
+                m.last_test_latency_ms = None
 
     await db.commit()
     return {"ok": True, "count": len(data.configs)}

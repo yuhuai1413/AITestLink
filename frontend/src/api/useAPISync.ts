@@ -233,7 +233,7 @@ function apiToRequirement(r: ApiRequirement): Requirement {
 
 function apiToTestPoint(tp: ApiTestPoint): TestPoint {
   return {
-    id: tp.id, projectId: tp.projectId, requirementId: tp.requirementId,
+    id: tp.id, pointCode: tp.pointCode || "", projectId: tp.projectId, requirementId: tp.requirementId,
     module: tp.module, type: tp.type as TestPoint["type"],
     title: tp.title, description: tp.description,
     priority: tp.priority as TestPoint["priority"],

@@ -10,6 +10,7 @@ import {
   FileText,
   ListChecks,
   FolderOpen,
+  Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -349,6 +350,19 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
                             <div className="notif-item__desc">{n.message}</div>
                             <div className="notif-item__time">{new Date(n.createdAt).toLocaleString("zh-CN")}</div>
                           </div>
+                          <button
+                            className="notif-item__clear"
+                            type="button"
+                            title="清除通知"
+                            aria-label="清除通知"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              dispatch({ type: "DELETE_NOTIFICATION", payload: n.id });
+                              notificationsApi.delete(n.id).catch(() => {});
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       ))
                     )}

@@ -62,9 +62,10 @@ class TestDesignService(BaseService):
 
         # 批量创建
         test_points = []
-        for item in generated:
+        for point_code, item in zip(self._generate_point_codes(generated), generated):
             tp = TestPoint(
                 id=str(uuid.uuid4()),
+                point_code=point_code,
                 project_id=project_id,
                 requirement_id=item["requirementId"],
                 module=item["module"],
@@ -401,3 +402,38 @@ class TestDesignService(BaseService):
             num = 1
 
         return f"TC_{prefix}_{num:03d}"
+
+    def _generate_point_codes(self, items: list[dict]) -> list[str]:
+        """生成测试点编号: TP_XXX_NNN。"""
+        counters: dict[str, int] = {}
+        codes: list[str] = []
+        for item in items:
+            prefix = self._module_prefix(str(item.get("module", "")))
+            counters[prefix] = counters.get(prefix, 0) + 1
+            codes.append(f"TP_{prefix}_{counters[prefix]:03d}")
+        return codes
+
+    async def _generate_point_code(self, project_id: str, module: str) -> str:
+        """生成单个测试点编号，供人工新增场景使用。"""
+        prefix = self._module_prefix(module)
+        result = await self.db.execute(
+            select(TestPoint.point_code).where(
+                TestPoint.project_id == project_id,
+                TestPoint.point_code.like(f"TP_{prefix}_%"),
+            ).order_by(TestPoint.point_code.desc()).limit(1)
+        )
+        last_code = result.scalar_one_or_none()
+        if last_code:
+            match = re.search(r'(\d+)$', last_code)
+            number = int(match.group(1)) + 1 if match else 1
+        else:
+            number = 1
+        return f"TP_{prefix}_{number:03d}"
+
+    @staticmethod
+    def _module_prefix(module: str) -> str:
+        module_map = {
+            "用户管理": "USER", "订单处理": "ORDER", "菜单": "MENU",
+            "客户管理": "CUST", "登录": "LOGIN", "系统": "SYS",
+        }
+        return module_map.get(module, re.sub(r'[^A-Z]', '', module.upper())[:4] or "GEN")

@@ -35,6 +35,7 @@ from app.services.ai_task_support import (
     module_counter as _module_counter,
     normalize_automation as _normalize_automation,
     read_file_content as _read_file_content,
+    to_eng_abbr as _to_eng_abbr,
     update_task_status as _update_task_status,
 )
 from app.services.environment_service import EnvironmentService
@@ -181,9 +182,10 @@ async def run_generate_test_points(task_id: str, project_id: str, user_id: str):
             from sqlalchemy import delete
             await db.execute(delete(TestPoint).where(TestPoint.project_id == project_id))
 
-            for pt in points:
+            for (point_code, _), pt in zip(_module_counter(points, "TP"), points):
                 db.add(TestPoint(
                     id=str(uuid.uuid4()),
+                    point_code=point_code,
                     project_id=project_id,
                     requirement_id=pt["requirementId"],
                     module=pt["module"],

@@ -29,7 +29,7 @@ const sampleRequirement = {
 };
 
 const sampleTestPoint = {
-  id: "tp-1", projectId: "p-1", requirementId: null, module: "M", type: "正常流程" as const,
+  id: "tp-1", pointCode: "TP_M_001", projectId: "p-1", requirementId: null, module: "M", type: "正常流程" as const,
   title: "T", description: "", priority: "P1" as const,
   automatable: false, reviewStatus: "待评审" as const,
   createdAt: "2025-01-01", updatedAt: "2025-01-01",

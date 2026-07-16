@@ -86,7 +86,6 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
       } else {
         await docGenApi.updateStatus(projectId, id, "待生成");
         setStatusMap((prev) => ({ ...prev, [id]: { status: "待生成", generatedAt: null } }));
-        if (result.error) toast.error(result.error);
       }
     } catch (err) {
       await docGenApi.updateStatus(projectId, id, "待生成").catch(() => {});

@@ -53,7 +53,7 @@ export const modelConfigApi = {
       }),
     }),
   test: (id: string) =>
-    request<{ ok: boolean; message: string; detail?: string }>(`/model-configs/${id}/test`, {
+    request<{ ok: boolean; status: ModelConfig["connectionStatus"]; message: string; latencyMs?: number | null; lastTestedAt?: string | null; detail?: string }>(`/model-configs/${id}/test`, {
       method: "POST",
     }),
 };

@@ -130,3 +130,35 @@
   color: var(--text-muted, #94a3b8);
   margin-top: 3px;
 }
+
+.notif-item__clear {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+.notif-item:hover .notif-item__clear,
+.notif-item__clear:focus-visible {
+  opacity: 1;
+}
+
+.notif-item__clear:hover {
+  color: var(--red, #dc2626);
+  background: #fee2e2;
+}
+
+@media (hover: none) {
+  .notif-item__clear {
+    opacity: 1;
+  }
+}

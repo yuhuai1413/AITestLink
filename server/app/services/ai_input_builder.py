@@ -52,6 +52,7 @@ def test_point_batches(
         requirement = requirements_by_id.get(point.requirement_id)
         record = {
             "testPointId": point.id,
+            "testPointCode": getattr(point, "point_code", "") or "",
             "requirementId": point.requirement_id or "",
             "requirementCode": requirement.req_id if requirement else "",
             "requirementFeature": requirement.feature if requirement else "",

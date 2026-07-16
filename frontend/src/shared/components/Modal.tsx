@@ -15,6 +15,7 @@ interface ModalProps {
 
 export function Modal({ open, onClose, title, children, footer, width = 520, height, flushTop, bodyOverflow }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const overlayPointerStartedRef = useRef(false);
 
   // ESC key support
   useEffect(() => {
@@ -38,14 +39,20 @@ export function Modal({ open, onClose, title, children, footer, width = 520, hei
 
   if (!open) return null;
 
+  const handleOverlayMouseDown = (e: React.MouseEvent) => {
+    overlayPointerStartedRef.current = e.target === overlayRef.current;
+  };
+
   const handleOverlayClick = (e: React.MouseEvent) => {
-    if (e.target === overlayRef.current) onClose();
+    if (overlayPointerStartedRef.current && e.target === overlayRef.current) onClose();
+    overlayPointerStartedRef.current = false;
   };
 
   return (
     <div
       ref={overlayRef}
       className="modal-overlay"
+      onMouseDown={handleOverlayMouseDown}
       onClick={handleOverlayClick}
     >
       <div

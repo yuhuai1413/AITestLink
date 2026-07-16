@@ -103,12 +103,13 @@ function RestorePath() {
 export function App() {
   const [authed, setAuthed] = useState(isLoggedIn());
   const { dispatch, state } = useStore();
+  const navigate = useNavigate();
   useAPISync(authed);
 
   // 初始化全局 AI 任务管理器
   useEffect(() => {
-    initManager(dispatch, () => state.projects.map((p) => ({ id: p.id, name: p.name })));
-  }, [dispatch, state.projects]);
+    initManager(dispatch, () => state.projects.map((p) => ({ id: p.id, name: p.name })), () => navigate("/model-config"));
+  }, [dispatch, navigate, state.projects]);
 
   // 从后端加载通知列表
   useEffect(() => {

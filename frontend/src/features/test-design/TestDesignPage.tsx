@@ -56,7 +56,7 @@ export function TestDesignPage() {
             rows={state.testPoints}
             getRowKey={(row) => row.id}
             columns={[
-              { key: "id", label: "编号", render: (row) => row.id },
+              { key: "pointCode", label: "测试点编号", render: (row) => row.pointCode || <span style={{ color: "var(--muted)" }}>-</span> },
               { key: "module", label: "模块", render: (row) => row.module },
               { key: "type", label: "类型", render: (row) => row.type },
               { key: "title", label: "测试点", align: "left", render: (row) => row.title },

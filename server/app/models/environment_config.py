@@ -32,6 +32,7 @@ class TestAccount(Base):
     environment_id = Column(String(36), ForeignKey("environment_configs.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)  # 账号名称：管理员/普通用户/审核员
     username = Column(String(200), nullable=False)  # 用户名/邮箱
+    department = Column(String(100), default="")  # 所属部门
     password = Column(String(200), nullable=False)  # 密码
     role = Column(String(50), default="")  # 角色/权限
     notes = Column(Text, default="")  # 备注

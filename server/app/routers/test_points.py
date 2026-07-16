@@ -38,6 +38,7 @@ async def create_test_point(
     import uuid
     tp = TestPoint(
         id=str(uuid.uuid4()),
+        point_code=await service._generate_point_code(project_id, data.module),
         project_id=project_id,
         module=data.module,
         type=data.type,

@@ -75,6 +75,7 @@ type Action =
   | { type: "ADD_NOTIFICATION"; payload: AppNotification }
   | { type: "SET_NOTIFICATIONS"; payload: AppNotification[] }
   | { type: "MARK_NOTIFICATION_READ"; payload: string }
+  | { type: "DELETE_NOTIFICATION"; payload: string }
   | { type: "MARK_ALL_NOTIFICATIONS_READ" }
   | { type: "CLEAR_NOTIFICATIONS" }
   | { type: "CLEAR_REQUIREMENTS"; payload: string }
@@ -290,6 +291,12 @@ export function reducer(state: AppState, action: Action): AppState {
         notifications: state.notifications.map((n) =>
           n.id === action.payload ? { ...n, read: true } : n,
         ),
+      };
+
+    case "DELETE_NOTIFICATION":
+      return {
+        ...state,
+        notifications: state.notifications.filter((n) => n.id !== action.payload),
       };
 
     case "MARK_ALL_NOTIFICATIONS_READ":

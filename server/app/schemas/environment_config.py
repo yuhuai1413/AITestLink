@@ -28,6 +28,7 @@ class TestAccountCreate(BaseModel):
     environmentId: str
     name: str
     username: str
+    department: str = ""
     password: str
     role: str = ""
     notes: str = ""
@@ -36,6 +37,7 @@ class TestAccountCreate(BaseModel):
 class TestAccountUpdate(BaseModel):
     name: Optional[str] = None
     username: Optional[str] = None
+    department: Optional[str] = None
     password: Optional[str] = None
     role: Optional[str] = None
     notes: Optional[str] = None
@@ -64,6 +66,7 @@ class TestAccountResponse(BaseModel):
     environmentId: str
     name: str
     username: str
+    department: str
     password: str
     hasPassword: bool = False
     role: str

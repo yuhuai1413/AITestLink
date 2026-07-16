@@ -45,6 +45,7 @@ export function EnvironmentPage({ projectId }: Props) {
   const [accountForm, setAccountForm] = useState({
     name: "",
     username: "",
+    department: "",
     password: "",
     role: "",
     notes: "",
@@ -100,7 +101,7 @@ export function EnvironmentPage({ projectId }: Props) {
   // 测试账号操作
   const handleSaveAccount = async () => {
     if (!accountForm.name.trim() || !accountForm.username.trim() || (!editingAccount && !accountForm.password.trim())) {
-      toast.warning(editingAccount ? "请填写账号名称和用户名" : "请填写账号名称、用户名和密码");
+      toast.warning(editingAccount ? "请填写用户名和账号" : "请填写用户名、账号和密码");
       return;
     }
     try {
@@ -128,7 +129,7 @@ export function EnvironmentPage({ projectId }: Props) {
     setDeleteTarget(null);
   };
 
-  const resetAccountForm = () => setAccountForm({ name: "", username: "", password: "", role: "", notes: "" });
+  const resetAccountForm = () => setAccountForm({ name: "", username: "", department: "", password: "", role: "", notes: "" });
   const accountManagerEnvironment = environments.find((environment) => environment.id === accountManagerEnvId) ?? null;
 
   const openCreateAccount = (environmentId: string) => {
@@ -139,7 +140,7 @@ export function EnvironmentPage({ projectId }: Props) {
   };
 
   const openEditAccount = (account: TestAccount) => {
-    setAccountForm({ name: account.name, username: account.username, password: "", role: account.role, notes: account.notes });
+    setAccountForm({ name: account.name, username: account.username, department: account.department || "", password: "", role: account.role, notes: account.notes });
     setEditingAccount(account);
     setCurrentEnvId(account.environmentId);
     setShowAccountModal(true);
@@ -268,15 +269,20 @@ export function EnvironmentPage({ projectId }: Props) {
       >
         <div className="form-stack">
           <div className="form-row">
-            <label className="form-label">
-              <span className="form-label-text">账号名称 <span className="form-required" aria-hidden="true">*</span></span>
-              <input className="form-input" required aria-required="true" value={accountForm.name} onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} placeholder="如：管理员、普通用户" />
+            <label className="form-label">部门
+              <input className="form-input" value={accountForm.department} onChange={(e) => setAccountForm({ ...accountForm, department: e.target.value })} placeholder="如：质量部、研发一组" />
             </label>
           </div>
           <div className="form-row">
             <label className="form-label">
               <span className="form-label-text">用户名 <span className="form-required" aria-hidden="true">*</span></span>
-              <input className="form-input" required aria-required="true" value={accountForm.username} onChange={(e) => setAccountForm({ ...accountForm, username: e.target.value })} placeholder="用户名或邮箱" />
+              <input className="form-input" required aria-required="true" value={accountForm.name} onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} placeholder="姓名、简称代号等" />
+            </label>
+          </div>
+          <div className="form-row">
+            <label className="form-label">
+              <span className="form-label-text">账号 <span className="form-required" aria-hidden="true">*</span></span>
+              <input className="form-input" required aria-required="true" value={accountForm.username} onChange={(e) => setAccountForm({ ...accountForm, username: e.target.value })} placeholder="登录账号、手机号或邮箱" />
             </label>
           </div>
           <div className="form-row">

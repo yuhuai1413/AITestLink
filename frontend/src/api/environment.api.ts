@@ -21,6 +21,7 @@ export interface TestAccount {
   environmentId: string;
   name: string;
   username: string;
+  department: string;
   password: string;
   hasPassword: boolean;
   role: string;
@@ -44,6 +45,7 @@ export interface TestAccountCreate {
   environmentId: string;
   name: string;
   username: string;
+  department?: string;
   password: string;
   role?: string;
   notes?: string;

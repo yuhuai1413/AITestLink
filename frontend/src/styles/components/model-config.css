@@ -103,6 +103,16 @@
   color: var(--muted);
 }
 
+.model-config-status-pill {
+  width: 64px;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.model-config-status-pill svg {
+  flex: 0 0 auto;
+}
+
 .toggle-label {
   display: flex;
   align-items: center;

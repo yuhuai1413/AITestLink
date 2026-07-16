@@ -96,6 +96,7 @@ export type ReviewStatus = "待评审" | "评审中" | "已通过" | "需修改"
 
 export interface TestPoint {
   id: string;
+  pointCode: string;
   projectId: string;
   requirementId: string | null;
   module: string;

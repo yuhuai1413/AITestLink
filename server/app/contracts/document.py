@@ -33,6 +33,7 @@ class RequirementUpdate(BaseModel):
 
 class RequirementResponse(BaseModel):
     id: str
+    req_id: str = Field(default="", alias="reqId")
     project_id: str = Field(alias="projectId")
     module: str
     feature: str

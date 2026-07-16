@@ -7,6 +7,7 @@ export type AutomationFlag = "是" | "否";
 
 export interface TestPoint {
   id: string;
+  pointCode: string;
   projectId: string;
   requirementId: string | null;
   module: string;

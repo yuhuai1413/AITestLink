@@ -108,7 +108,7 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
         ) : (
           <DataTable rows={requirements} getRowKey={(r) => r.id} columns={[
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
-            { key: "reqId", label: "需求编号", width: "12%", render: (r) => r.reqId || r.id },
+            { key: "reqId", label: "需求编号", width: "12%", render: (r) => r.reqId || <span style={{ color: "var(--muted)" }}>-</span> },
             { key: "module", label: "模块", width: "10%", render: (r) => r.module },
             { key: "feature", label: "功能点", width: "10%", align: "left", render: (r) => r.feature },
             { key: "source", label: "来源", width: "10%", render: (r) => r.source },
@@ -133,7 +133,7 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
       <Modal open={!!viewReq} onClose={() => setViewReq(null)} title="需求详情" width={640}>
         {viewReq && (
           <div className="detail-grid">
-            <div className="detail-row"><span className="detail-label">需求编号</span><span>{viewReq.reqId || viewReq.id}</span></div>
+            <div className="detail-row"><span className="detail-label">需求编号</span><span>{viewReq.reqId || "-"}</span></div>
             <div className="detail-row"><span className="detail-label">模块</span><span>{viewReq.module}</span></div>
             <div className="detail-row"><span className="detail-label">功能点</span><span>{viewReq.feature}</span></div>
             <div className="detail-row"><span className="detail-label">来源</span><span>{viewReq.source}</span></div>
@@ -163,7 +163,7 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
       >
         {editReq && (
           <div className="detail-grid">
-            <div className="detail-row"><span className="detail-label">需求编号</span><span>{editReq.reqId || editReq.id}</span></div>
+            <div className="detail-row"><span className="detail-label">需求编号</span><span>{editReq.reqId || "-"}</span></div>
             <div className="detail-row"><span className="detail-label">模块</span><span>{editReq.module}</span></div>
             <div className="detail-row"><span className="detail-label">功能点</span><span>{editReq.feature}</span></div>
             <div className="detail-row"><span className="detail-label">来源</span><span>{editReq.source}</span></div>

@@ -93,6 +93,10 @@ class ModelConfigResponse(BaseModel):
     endpoint: str
     description: str
     enabled: bool
+    connection_status: str = Field(default="untested", alias="connectionStatus")
+    last_tested_at: datetime | None = Field(default=None, alias="lastTestedAt")
+    last_test_message: str = Field(default="", alias="lastTestMessage")
+    last_test_latency_ms: int | None = Field(default=None, alias="lastTestLatencyMs")
     display_order: int = Field(alias="displayOrder")
     prompt: str = ""
     created_at: datetime
