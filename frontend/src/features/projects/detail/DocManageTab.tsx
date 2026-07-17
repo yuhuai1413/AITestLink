@@ -16,7 +16,7 @@ export function DocManageTab({ projectId }: { projectId: string }) {
       <section className="work-panel">
         {files.length === 0 ? <div className="empty-state"><p>暂无文档</p></div> : (
           <DataTable rows={files} getRowKey={(r) => r.id} columns={[
-            { key: "name", label: "文件名", align: "left", render: (r) => <strong>{r.name}</strong> },
+            { key: "name", label: "文件名", align: "left", lineClamp: 2, render: (r) => <strong>{r.name}</strong> },
             { key: "type", label: "类型", render: (r) => r.fileType },
             { key: "size", label: "大小", render: (r) => r.size },
             { key: "parseStatus", label: "解析状态", align: "center", render: (r) => <StatusPill tone={r.parseStatus === "已完成" ? "green" : r.parseStatus === "解析中" ? "blue" : "slate"}>{r.parseStatus}</StatusPill> },
@@ -27,4 +27,3 @@ export function DocManageTab({ projectId }: { projectId: string }) {
     </div>
   );
 }
-

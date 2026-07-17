@@ -13,12 +13,15 @@ class EnvironmentConfig(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)  # 环境名称：测试环境/预发环境/生产环境
+    environment_type = Column(String(20), default="Web")  # Web / APP
     web_url = Column(String(500), default="")  # Web地址
     app_url = Column(String(500), default="")  # APP端测试地址
     other_urls = Column(Text, default="")  # 其他地址（JSON格式）
     is_default = Column(Boolean, default=False)  # 生成测试用例时默认使用
     timeout = Column(String(20), default="30")  # 超时时间（秒）
     retry_count = Column(String(10), default="3")  # 重试次数
+    captcha_required = Column(Boolean, default=True)  # 登录是否需要验证码
+    captcha_code = Column(String(50), default="")  # 固定验证码/占位验证码
     notes = Column(Text, default="")  # 备注
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

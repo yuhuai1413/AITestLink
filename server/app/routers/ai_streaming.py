@@ -32,6 +32,7 @@ from app.services.ai_task_support import (
     to_eng_abbr as _to_eng_abbr,
 )
 from app.services.environment_service import EnvironmentService
+from app.services.ui_recognition_service import UIRecognitionService
 from app.schemas.ai_output import validate_ai_output
 from app.utils import verify_project_owner
 
@@ -413,8 +414,9 @@ async def _stream_generate_scripts(project_id: str, user_id: str):
             validate_persisted_traceability(cases=test_cases)
             validate_case_runtime_fields(test_cases, for_automation=True)
 
+            ui_context = await UIRecognitionService(db).latest_context_by_project(project_id, user_id)
             all_items: list[dict] = []
-            for payload in test_case_batches(test_cases):
+            for payload in test_case_batches(test_cases, ui_context):
                 batch_items: list[dict] = []
                 async for batch in ai_service.generate_stream(payload, "脚本生成", user_id, batch_size=3):
                     if not batch:
@@ -440,7 +442,7 @@ async def _stream_generate_scripts(project_id: str, user_id: str):
                     framework=ai_script.get("framework", "Playwright"),
                     language=ai_script.get("language", "Python"),
                     code=ai_script["code"],
-                    status="待执行",
+                    status="未测试",
                     generated_by_ai=True,
                 ))
             await db.commit()

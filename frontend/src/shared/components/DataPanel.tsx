@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { MenuSelect } from "./MenuSelect";
 
 interface DataPanelProps {
   toolbar?: ReactNode;
@@ -51,16 +52,13 @@ export function DataPanel({
           <span className="pagination__info">
             共 {total} 条
           </span>
-          <select
-            className="pagination__size-select"
-            value={pageSize}
-            onChange={(e) => handlePageSizeChange(Number(e.target.value))}
-          >
-            <option value={10}>10条/页</option>
-            <option value={20}>20条/页</option>
-            <option value={50}>50条/页</option>
-            <option value={100}>100条/页</option>
-          </select>
+          <MenuSelect
+            className="pagination__menu-select"
+            size="compact"
+            value={String(pageSize)}
+            options={[10, 20, 50, 100].map((size) => ({ value: String(size), label: `${size}条/页` }))}
+            onChange={(value) => handlePageSizeChange(Number(value))}
+          />
           <div className="pagination__buttons">
             <button
               className="pagination__btn"

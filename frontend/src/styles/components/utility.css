@@ -12,6 +12,210 @@
   gap: 4px;
 }
 
+.environment-more-menu {
+  position: fixed;
+  z-index: 1000;
+  width: 168px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l2);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  animation: menuSlideIn 0.16s ease;
+}
+
+.environment-more-menu__item {
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+
+.environment-more-menu__item:hover {
+  background: var(--blue-soft);
+}
+
+.environment-more-menu__item:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+  background: transparent;
+}
+
+.menu-select {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.search-form__menu-select {
+  width: 160px;
+  flex-shrink: 0;
+}
+
+.filter-menu-select {
+  min-width: 160px;
+  flex-shrink: 0;
+}
+
+.pagination__menu-select {
+  width: 126px;
+  flex-shrink: 0;
+}
+
+.menu-select__trigger {
+  box-sizing: border-box;
+  width: 100%;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l2);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 14px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.menu-select--compact .menu-select__trigger {
+  height: 34px;
+  border-radius: var(--input-radius);
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.menu-select__trigger:hover:not(:disabled) {
+  border-color: rgba(91, 33, 182, 0.32);
+  background: var(--surface-soft);
+}
+
+.menu-select__trigger:focus-visible {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(91, 33, 182, 0.12);
+}
+
+.menu-select__trigger--open {
+  background: rgba(91, 33, 182, 0.035);
+}
+
+.menu-select__trigger:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+  background: var(--surface-soft);
+}
+
+.menu-select__chevron {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform 0.16s ease;
+}
+
+.menu-select__chevron--open {
+  transform: rotate(180deg);
+}
+
+.menu-select__menu {
+  box-sizing: border-box;
+  position: absolute;
+  z-index: 1000;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l2);
+  background: linear-gradient(180deg, rgba(91, 33, 182, 0.045), rgba(91, 33, 182, 0.025)), var(--surface);
+  box-shadow: var(--shadow);
+  animation: menuSlideIn 0.16s ease;
+  max-height: min(292px, calc(100vh - 160px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(91, 33, 182, 0.28) transparent;
+}
+
+.menu-select__menu::-webkit-scrollbar {
+  width: 6px;
+}
+
+.menu-select__menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.menu-select__menu::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(91, 33, 182, 0.22);
+}
+
+.menu-select__menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(91, 33, 182, 0.34);
+}
+
+.menu-select__item {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+
+.menu-select--compact .menu-select__item {
+  padding-right: 6px;
+  padding-left: 6px;
+}
+
+.menu-select__hover {
+  position: absolute;
+  z-index: 0;
+  left: 6px;
+  right: 6px;
+  top: 6px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--blue-soft);
+  opacity: 1;
+  pointer-events: none;
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.12s ease;
+  will-change: transform;
+}
+
+.menu-select__hover--hidden {
+  opacity: 0;
+}
+
+.menu-select__item--active {
+  background: transparent;
+  color: var(--blue);
+  font-weight: 700;
+}
+
 .table-link {
   text-align: left;
   padding: 0;

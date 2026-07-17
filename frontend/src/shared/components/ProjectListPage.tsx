@@ -7,6 +7,7 @@ import { useAPISync } from "../../api/useAPISync";
 import { projectsApi } from "../../api/client";
 import { DataTable } from "./DataTable";
 import { DataPanel } from "./DataPanel";
+import { MenuSelect } from "./MenuSelect";
 import { StatusPill } from "./StatusPill";
 import { CreateProjectModal } from "../../features/projects/CreateProjectModal";
 import { EditProjectModal } from "../../features/projects/EditProjectModal";
@@ -126,54 +127,51 @@ export function ProjectListPage({ mode }: ProjectListPageProps) {
       </div>
       <div className="search-form__field">
         <label className="search-form__label">测试类型</label>
-        <select
-          className="search-form__select"
+        <MenuSelect
+          className="search-form__menu-select"
+          size="compact"
           value={testTypeFilter}
-          onChange={(e) => { setTestTypeFilter(e.target.value); setPage(1); }}
-        >
-          <option value="all">全部类型</option>
-          <option value="首轮全量测试">首轮全量测试</option>
-          <option value="回归测试">回归测试</option>
-          <option value="增量测试">增量测试</option>
-          <option value="专项测试">专项测试</option>
-        </select>
+          options={[
+            { value: "all", label: "全部类型" },
+            { value: "首轮全量测试", label: "首轮全量测试" },
+            { value: "回归测试", label: "回归测试" },
+            { value: "增量测试", label: "增量测试" },
+            { value: "专项测试", label: "专项测试" },
+          ]}
+          onChange={(value) => { setTestTypeFilter(value); setPage(1); }}
+        />
       </div>
       <div className="search-form__field">
         <label className="search-form__label">{mode === "testCenter" ? "测试状态" : mode === "documentCenter" ? "文档状态" : "状态"}</label>
-        <select
-          className="search-form__select"
+        <MenuSelect
+          className="search-form__menu-select"
+          size="compact"
           value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-        >
-          <option value="all">全部状态</option>
-          {mode !== "documentCenter" && (
-            <optgroup label="测试状态">
-              <option value="待测试">待测试</option>
-              <option value="测试中">测试中</option>
-              <option value="已测试">已测试</option>
-            </optgroup>
-          )}
-          {mode !== "testCenter" && (
-            <optgroup label="文档状态">
-              <option value="待生成">待生成</option>
-              <option value="生成中">生成中</option>
-              <option value="已完成">已完成</option>
-            </optgroup>
-          )}
-        </select>
+          options={[
+            { value: "all", label: "全部状态" },
+            ...(mode !== "documentCenter" ? [
+              { value: "待测试", label: "待测试" },
+              { value: "测试中", label: "测试中" },
+              { value: "已测试", label: "已测试" },
+            ] : []),
+            ...(mode !== "testCenter" ? [
+              { value: "待生成", label: "待生成" },
+              { value: "生成中", label: "生成中" },
+              { value: "已完成", label: "已完成" },
+            ] : []),
+          ]}
+          onChange={(value) => { setStatusFilter(value); setPage(1); }}
+        />
       </div>
       <div className="search-form__field">
         <label className="search-form__label">优先级</label>
-        <select
-          className="search-form__select"
+        <MenuSelect
+          className="search-form__menu-select"
+          size="compact"
           value={priorityFilter}
-          onChange={(e) => { setPriorityFilter(e.target.value); setPage(1); }}
-        >
-          <option value="all">全部优先级</option>
-          <option value="高">高</option>
-          <option value="中">中</option>
-          <option value="低">低</option>
-        </select>
+          options={[{ value: "all", label: "全部优先级" }, { value: "高", label: "高" }, { value: "中", label: "中" }, { value: "低", label: "低" }]}
+          onChange={(value) => { setPriorityFilter(value); setPage(1); }}
+        />
       </div>
       <div className="search-form__actions">
         <button className="ghost-button toolbar-button toolbar-ghost-button" type="button" onClick={resetFilters}>
@@ -223,6 +221,7 @@ export function ProjectListPage({ mode }: ProjectListPageProps) {
                 key: "name",
                 label: "项目名称",
                 width: "16%",
+                lineClamp: 2,
                 render: (row) => <strong>{row.name}</strong>,
               },
               {

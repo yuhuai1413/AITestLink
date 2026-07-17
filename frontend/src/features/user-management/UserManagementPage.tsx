@@ -4,6 +4,7 @@ import { listUsers, deleteUser, updateUser, getMeWithAdmin, type UserItem } from
 import { DataTable } from "../../shared/components/DataTable";
 import { DataPanel } from "../../shared/components/DataPanel";
 import { ConfirmDialog } from "../../shared/components/ConfirmDialog";
+import { MenuSelect } from "../../shared/components/MenuSelect";
 import { Modal } from "../../shared/components/Modal";
 import { useUnsavedChanges } from "../../shared/hooks/useUnsavedChanges";
 
@@ -188,15 +189,13 @@ export function UserManagementPage() {
       </div>
       <div className="search-form__field">
         <label className="search-form__label">角色</label>
-        <select
-          className="search-form__select"
+        <MenuSelect
+          className="search-form__menu-select"
+          size="compact"
           value={roleTab}
-          onChange={(e) => { setRoleTab(e.target.value as "all" | "admin" | "user"); setPage(1); }}
-        >
-          <option value="all">全部角色</option>
-          <option value="admin">管理员</option>
-          <option value="user">普通用户</option>
-        </select>
+          options={[{ value: "all", label: "全部角色" }, { value: "admin", label: "管理员" }, { value: "user", label: "普通用户" }]}
+          onChange={(value) => { setRoleTab(value); setPage(1); }}
+        />
       </div>
       <div className="search-form__actions">
         <button className="ghost-button toolbar-button toolbar-ghost-button" type="button" onClick={resetFilters}>
@@ -336,14 +335,11 @@ export function UserManagementPage() {
           </div>
           <div className="form-label">
             <span>角色</span>
-            <select
-              className="form-select"
+            <MenuSelect
               value={editForm.is_admin ? "admin" : "user"}
-              onChange={(e) => { setEditForm({ ...editForm, is_admin: e.target.value === "admin" }); userDirty.markDirty(); }}
-            >
-              <option value="user">普通用户</option>
-              <option value="admin">管理员</option>
-            </select>
+              options={[{ value: "user", label: "普通用户" }, { value: "admin", label: "管理员" }]}
+              onChange={(value) => { setEditForm({ ...editForm, is_admin: value === "admin" }); userDirty.markDirty(); }}
+            />
           </div>
           <div className="form-label">
             <span>状态</span>

@@ -170,7 +170,7 @@ export interface AITask {
 
 export type ScriptType = "UI" | "API" | "混合";
 export type ScriptFramework = "Playwright" | "Selenium" | "pytest";
-export type ScriptStatus = "待执行" | "执行中" | "成功" | "失败";
+export type ScriptStatus = "未测试" | "通过" | "失败" | "待执行" | "执行中" | "成功";
 
 export interface AutomationScript {
   id: string;

@@ -13,6 +13,17 @@
       "enabled": true
     },
     {
+      "id": "system-recognition",
+      "name": "系统识别",
+      "aiNode": "系统识别",
+      "provider": "小米-MiMo大模型平台",
+      "modelName": "mimo-v2.5",
+      "apiKey": "",
+      "endpoint": "https://api.xiaomimimo.com/v1",
+      "description": "结合需求范围识别被测系统页面、元素、导航和定位策略",
+      "enabled": true
+    },
+    {
       "id": "generate-test-points",
       "name": "测试点生成",
       "aiNode": "测试设计",

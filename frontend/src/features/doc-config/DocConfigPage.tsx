@@ -6,6 +6,7 @@ import { Modal } from "../../shared/components/Modal";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { DataTable } from "../../shared/components/DataTable";
 import { DataPanel } from "../../shared/components/DataPanel";
+import { MenuSelect } from "../../shared/components/MenuSelect";
 import { docConfigApi, type ApiDocConfig } from "../../api/client";
 import { getMeWithAdmin } from "../auth/api/auth";
 import { TOKEN_KEY } from "../../shared/config/storage";
@@ -221,16 +222,13 @@ export function DocConfigPage() {
             </div>
             <div className="search-form__field">
               <label className="search-form__label">分类</label>
-              <select
-                className="search-form__select"
+              <MenuSelect
+                className="search-form__menu-select"
+                size="compact"
                 value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-              >
-                <option value="all">全部分类</option>
-                {categories.map((cat) => (
-                  <option key={cat.key} value={cat.key}>{cat.label}</option>
-                ))}
-              </select>
+                options={[{ value: "all", label: "全部分类" }, ...categories.map((cat) => ({ value: cat.key, label: cat.label }))]}
+                onChange={setFilterCategory}
+              />
             </div>
             <button className="ghost-button toolbar-button toolbar-ghost-button" type="button" onClick={resetFilters}>
               <RotateCcw size={14} />
@@ -248,6 +246,7 @@ export function DocConfigPage() {
               key: "name",
               label: "模板名称",
               width: "15%",
+              lineClamp: 2,
               render: (row) => <span style={{ fontSize: 14 }}>{row.name}</span>,
             },
             {
@@ -265,7 +264,8 @@ export function DocConfigPage() {
               key: "description",
               label: "说明",
               width: "20%",
-              align: "center",
+              align: "left",
+              lineClamp: 2,
               render: (row) => <span style={{ fontSize: 13 }}>{row.description || "-"}</span>,
             },
             {

@@ -42,6 +42,8 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
   const allSelected = scripts.length > 0 && scripts.every((s) => selectedIds.has(s.id));
   const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(scripts.map((s) => s.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const normalizeTestStatus = (status?: string | null) => status === "通过" ? "通过" : status === "失败" ? "失败" : "未测试";
+  const testStatusTone = (status?: string | null) => normalizeTestStatus(status) === "通过" ? "green" : normalizeTestStatus(status) === "失败" ? "red" : "slate";
 
   const batchDelete = async () => {
     for (const id of selectedIds) {
@@ -143,9 +145,9 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
             <DataTable rows={scripts} getRowKey={(r) => r.id} columns={[
               { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
               { key: "scriptCode", label: "脚本编号", render: (r) => r.scriptCode || <span style={{ color: "var(--muted)" }}>-</span> },
-              { key: "testCase", label: "关联用例", align: "left", render: (r) => {
+              { key: "testCase", label: "关联用例", align: "left", lineClamp: 2, render: (r) => {
                 const tc = testCases.find((t) => t.id === r.testCaseId);
-                return tc ? <span title={`${tc.caseCode} ${tc.title}`} style={{ maxWidth: 240, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tc.caseCode} · {tc.title}</span> : <span style={{ color: "var(--muted)" }}>-</span>;
+                return tc ? <span title={`${tc.caseCode} ${tc.title}`}>{tc.caseCode} · {tc.title}</span> : <span style={{ color: "var(--muted)" }}>-</span>;
               }},
               { key: "testType", label: "测试类型", align: "center", render: (r) => {
                 const tc = testCases.find((t) => t.id === r.testCaseId);
@@ -157,7 +159,7 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
               }},
               { key: "scriptType", label: "脚本类型", align: "center", render: (r) => r.scriptType },
               { key: "framework", label: "框架", align: "center", render: (r) => r.framework },
-              { key: "status", label: "状态", align: "center", render: (r) => <StatusPill tone={r.status === "成功" ? "green" : r.status === "失败" ? "red" : "blue"}>{r.status}</StatusPill> },
+              { key: "status", label: "测试状态", align: "center", render: (r) => <StatusPill tone={testStatusTone(r.status)}>{normalizeTestStatus(r.status)}</StatusPill> },
               { key: "review", label: "评审", align: "center", render: (r) => {
                 const rev = (r as any).reviewStatus || "待评审";
                 return <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={rev === "已通过" ? "green" : "slate"}>{rev}</StatusPill></button>;

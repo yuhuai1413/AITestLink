@@ -10,9 +10,8 @@ import { SectionHeader } from "../../../shared/components/SectionHeader";
 import { StatusPill } from "../../../shared/components/StatusPill";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { Modal } from "../../../shared/components/Modal";
+import { formatTestStepsForDisplay } from "../../../shared/utils/formatTestSteps";
 import { formatProjectTime as formatTime, priorityTone, reviewTone } from "./projectDetail.config";
-
-const truncateText = (text: string, maxLen = 50) => text.length > maxLen ? text.slice(0, maxLen) + "..." : text;
 
 // ═══════════════════════════════════════
 // 数据融合（上传手动结果 + 合并展示）
@@ -148,15 +147,15 @@ export function DocFusionTab({ projectId }: { projectId: string }) {
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "module", label: "模块", render: (r) => r.module },
             { key: "caseCode", label: "用例编号", render: (r) => r.caseCode },
-            { key: "feature", label: "测试点", align: "left", render: (r) => <span title={r.feature}>{truncateText(r.feature, 25)}</span> },
-            { key: "title", label: "用例标题", align: "left", render: (r) => <span title={r.title}>{truncateText(r.title, 30)}</span> },
+            { key: "feature", label: "测试点", align: "left", lineClamp: 2, render: (r) => <span title={r.feature}>{r.feature}</span> },
+            { key: "title", label: "用例标题", align: "left", lineClamp: 2, render: (r) => <span title={r.title}>{r.title}</span> },
             { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
             { key: "testType", label: "测试类型", align: "center", render: (r) => r.testType || "功能测试" },
-            { key: "steps", label: "测试步骤", align: "left", render: (r) => <span title={r.steps}>{truncateText(r.steps, 40)}</span> },
-            { key: "expectedResult", label: "预期结果", align: "left", render: (r) => <span title={r.expectedResult}>{truncateText(r.expectedResult, 35)}</span> },
-            { key: "actualResult", label: "实测结果", align: "left", render: (r) => {
+            { key: "steps", label: "测试步骤", align: "left", lineClamp: 2, render: (r) => <span className="test-steps-preview" title={r.steps}>{formatTestStepsForDisplay(r.steps)}</span> },
+            { key: "expectedResult", label: "预期结果", align: "left", lineClamp: 2, render: (r) => <span title={r.expectedResult}>{r.expectedResult}</span> },
+            { key: "actualResult", label: "实测结果", align: "left", lineClamp: 2, render: (r) => {
               const display = r.actualResult || manualResults[r.caseCode] || "-";
-              return <span style={{ fontSize: 12, maxWidth: 200, display: "inline-block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{display}</span>;
+              return <span style={{ fontSize: 12 }}>{display}</span>;
             }},
             { key: "passed", label: "是否通过", align: "center", render: (r) => {
               const actual = r.actualResult || manualResults[r.caseCode] || "";

@@ -97,7 +97,6 @@ export function EnvironmentAccountsModal({
                   ) : <StatusPill tone="slate">未配置</StatusPill> },
                   { key: "role", label: "角色/权限", width: "96px", align: "center", render: (account) => account.role || <span style={{ color: "var(--muted)" }}>-</span> },
                   { key: "createdAt", label: "创建时间", width: "132px", align: "center", render: (account) => formatTime(account.createdAt) },
-                  { key: "notes", label: "备注", width: "140px", align: "center", render: (account) => account.notes || <span style={{ color: "var(--muted)" }}>-</span> },
                   { key: "actions", label: "操作", width: "84px", sticky: "right", align: "center", render: (account) => (
                     <div className="inline-actions">
                       <button className="text-button" type="button" onClick={() => onEdit(account)}>编辑</button>

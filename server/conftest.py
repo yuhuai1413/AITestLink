@@ -255,8 +255,9 @@ def api_test_point(async_engine, api_project, api_requirement, event_loop):
 def api_environment(async_engine, api_project, event_loop):
     environment = EnvironmentConfig(
         id="api-env-001", project_id=api_project.id, name="测试环境",
-        web_url="https://pc.example.test", app_url="app://test-build",
+        environment_type="Web", web_url="https://pc.example.test", app_url="",
         timeout="30", retry_count="1", is_default=True,
+        captcha_required=False, captcha_code="0000",
     )
     return _create_async_obj(event_loop, async_engine, environment)
 
@@ -289,6 +290,8 @@ def api_script(async_engine, api_project, api_test_case, event_loop):
     script = AutomationScript(
         id="api-script-001", project_id=api_project.id,
         test_case_id=api_test_case.id, script_code="SC_LOGIN_001",
-        script_type="UI", framework="Playwright", language="Python", code="pass",
+        script_type="UI", framework="Playwright", language="Python",
+        code="assert '用户管理 登录功能' == '用户管理 登录功能'",
+        review_status="已通过",
     )
     return _create_async_obj(event_loop, async_engine, script)

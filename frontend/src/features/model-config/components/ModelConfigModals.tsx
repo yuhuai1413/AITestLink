@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from "react";
-import { Eye, EyeOff, Loader2, RotateCcw, Save, TestTube } from "lucide-react";
+import { Eye, EyeOff, Loader2, RotateCcw, Save, TestTube, Trash2 } from "lucide-react";
+import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
+import { MenuSelect } from "../../../shared/components/MenuSelect";
 import { Modal } from "../../../shared/components/Modal";
 import { useUnsavedChanges } from "../../../shared/hooks/useUnsavedChanges";
 import { providerModels } from "../modelConfig.constants";
@@ -67,23 +69,13 @@ export function BatchEditModal({
         <div className="form-row">
           <label className="form-label">
             供应商
-            <select className="form-select" value={provider} onChange={(e) => setProvider(e.target.value)} required>
-              <option value="">请选择供应商</option>
-              {Object.keys(providerModels).map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </select>
+            <MenuSelect value={provider} options={[{ value: "", label: "请选择供应商" }, ...Object.keys(providerModels).map((p) => ({ value: p, label: p }))]} onChange={setProvider} required />
           </label>
         </div>
         <div className="form-row">
           <label className="form-label">
             模型名称
-            <select className="form-select" value={modelName} onChange={(e) => setModelName(e.target.value)} required>
-              <option value="">请选择模型</option>
-              {(providerModels[provider]?.models || []).map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
+            <MenuSelect value={modelName} options={[{ value: "", label: "请选择模型" }, ...(providerModels[provider]?.models || []).map((m) => ({ value: m, label: m }))]} onChange={setModelName} required />
           </label>
         </div>
         <div className="form-row">
@@ -123,6 +115,7 @@ export function AdminPromptModal({
   testing,
   onTest,
   onRollback,
+  onDelete,
 }: {
   open: boolean;
   onClose: () => void;
@@ -136,8 +129,20 @@ export function AdminPromptModal({
   testing: boolean;
   onTest: () => void;
   onRollback: (versionId: string) => void;
+  onDelete: (versionId: string) => void;
 }) {
   const promptDirty = useUnsavedChanges();
+  const [previewVersionId, setPreviewVersionId] = useState<string | null>(null);
+  const [deleteVersion, setDeleteVersion] = useState<{ id: string; version: number } | null>(null);
+  const previewVersion = versions.find((item) => item.id === previewVersionId) || null;
+  const displayedPrompt = previewVersion?.prompt ?? prompt;
+
+  const confirmDeleteVersion = () => {
+    if (!deleteVersion) return;
+    if (previewVersionId === deleteVersion.id) setPreviewVersionId(null);
+    onDelete(deleteVersion.id);
+    setDeleteVersion(null);
+  };
 
   return (
     <Modal
@@ -149,12 +154,12 @@ export function AdminPromptModal({
       flushTop
       bodyOverflow="hidden"
       footer={<>
-        <button className="ghost-button" type="button" onClick={onTest} disabled={loading || testing} style={{ marginRight: "auto" }}>
+        <button className="ghost-button" type="button" onClick={onTest} disabled={loading || testing || Boolean(previewVersion)} style={{ marginRight: "auto" }}>
           {testing ? <Loader2 size={16} className="animate-spin" /> : <TestTube size={16} />}
           测试提示词
         </button>
         <button className="ghost-button" type="button" onClick={() => promptDirty.requestClose(onClose)}>取消</button>
-        <button className="primary-button" type="button" onClick={() => { promptDirty.markClean(); onSave(); }} disabled={loading}>
+        <button className="primary-button" type="button" onClick={() => { promptDirty.markClean(); onSave(); }} disabled={loading || Boolean(previewVersion)}>
           {loading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
           发布新版本
         </button>
@@ -166,7 +171,7 @@ export function AdminPromptModal({
           <p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", gap: 16, height: "100%", minHeight: 0 }}>
+        <div className="admin-prompt-modal__body">
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0, minHeight: 0 }}>
             <p style={{ fontSize: 13, color: "var(--muted)", margin: 0, flexShrink: 0 }}>
               配置「{configName}」节点的全局提示词。普通用户无法查看或修改，AI 运行时只读取当前已发布版本。
@@ -174,38 +179,75 @@ export function AdminPromptModal({
             </p>
             <textarea
               className="form-textarea"
-              value={prompt}
-              onChange={(e) => { onPromptChange(e.target.value); promptDirty.markDirty(); }}
+              value={displayedPrompt}
+              onChange={(e) => {
+                if (previewVersion) return;
+                onPromptChange(e.target.value);
+                promptDirty.markDirty();
+              }}
               placeholder={`请输入${configName}的系统提示词...`}
+              readOnly={Boolean(previewVersion)}
               required
               style={{ fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.6, flex: 1, minHeight: 0, overflow: "auto", padding: "12px" }}
             />
+            {previewVersion && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexShrink: 0, color: "var(--muted)", fontSize: 12 }}>
+                <span>正在查看 v{previewVersion.version} 历史版本，当前内容为只读。</span>
+                <button className="text-button" type="button" onClick={() => setPreviewVersionId(null)}>返回编辑当前版本</button>
+              </div>
+            )}
           </div>
           <aside className="work-panel" style={{ padding: 12, minHeight: 0, overflow: "auto" }}>
             <div style={{ fontWeight: 600, marginBottom: 10 }}>版本历史</div>
             {versions.length === 0 ? (
               <div style={{ color: "var(--muted)", fontSize: 13 }}>暂无版本记录</div>
             ) : versions.map((item) => (
-              <div key={item.id} style={{ borderBottom: "1px solid var(--border)", padding: "10px 0", display: "grid", gap: 6 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                  <span style={{ fontWeight: 600 }}>v{item.version}</span>
-                  <span style={{ fontSize: 12, color: item.status === "published" ? "var(--success)" : "var(--muted)" }}>
-                    {item.status === "published" ? "当前发布" : item.status === "draft" ? "草稿" : "历史版本"}
-                  </span>
+              <div key={item.id} className="admin-prompt-modal__version-item">
+                <div className="admin-prompt-modal__version-head">
+                  <div className="admin-prompt-modal__version-meta">
+                    <span style={{ fontWeight: 600 }}>v{item.version}</span>
+                    <span className={`admin-prompt-modal__version-status ${item.status === "published" ? "admin-prompt-modal__version-status--published" : ""}`}>
+                      {item.status === "published" ? "当前发布" : item.status === "draft" ? "草稿" : "历史版本"}
+                    </span>
+                  </div>
+                  <div className="admin-prompt-modal__version-actions">
+                    <button className="admin-prompt-modal__version-action" type="button" onClick={() => setPreviewVersionId(item.id)}>
+                      查看
+                    </button>
+                    {item.status !== "published" && (
+                      <>
+                        <button className="admin-prompt-modal__rollback" type="button" onClick={() => onRollback(item.id)}>
+                          <RotateCcw size={13} /> 回滚
+                        </button>
+                        <button
+                          className="admin-prompt-modal__version-delete"
+                          type="button"
+                          title="删除此历史版本"
+                          aria-label={`删除 v${item.version}`}
+                          onClick={() => setDeleteVersion({ id: item.id, version: item.version })}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div title={item.prompt} style={{ color: "var(--muted)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <div title={item.prompt} className="admin-prompt-modal__version-summary">
                   {item.prompt}
                 </div>
-                {item.status !== "published" && (
-                  <button className="text-button" type="button" onClick={() => onRollback(item.id)} style={{ justifySelf: "start" }}>
-                    <RotateCcw size={13} /> 回滚到此版本
-                  </button>
-                )}
               </div>
             ))}
           </aside>
         </div>
       )}
+      <ConfirmDialog
+        open={Boolean(deleteVersion)}
+        title="删除历史版本"
+        message={`确定要删除 v${deleteVersion?.version} 历史版本吗？删除后不可恢复。`}
+        confirmLabel="删除"
+        onConfirm={confirmDeleteVersion}
+        onCancel={() => setDeleteVersion(null)}
+      />
       {promptDirty.confirmDialog}
     </Modal>
   );

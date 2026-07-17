@@ -56,6 +56,71 @@ async def _migrate_sqlite_schema(conn):
                 SELECT MIN(id) FROM environment_configs GROUP BY project_id
             )
         """))
+    environment_additions = {
+        "environment_type": "VARCHAR(20) DEFAULT 'Web'",
+        "captcha_required": "BOOLEAN DEFAULT 1",
+        "captcha_code": "VARCHAR(50) DEFAULT ''",
+    }
+    for name, sql_type in environment_additions.items():
+        if name not in environment_columns:
+            await conn.execute(text(f"ALTER TABLE environment_configs ADD COLUMN {name} {sql_type}"))
+            environment_columns.add(name)
+    if "environment_type" in environment_columns:
+        await conn.execute(text("""
+            UPDATE environment_configs
+            SET environment_type = CASE
+                WHEN (COALESCE(web_url, '') = '' AND COALESCE(app_url, '') != '') THEN 'APP'
+                ELSE 'Web'
+            END
+            WHERE environment_type IS NULL OR environment_type = ''
+        """))
+        await conn.execute(text("""
+            INSERT INTO environment_configs (
+                id, project_id, name, environment_type, web_url, app_url, other_urls,
+                is_default, timeout, retry_count, captcha_required, captcha_code,
+                notes, created_at, updated_at
+            )
+            SELECT
+                lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' ||
+                    substr(lower(hex(randomblob(2))), 2) || '-' ||
+                    substr('89ab', abs(random()) % 4 + 1, 1) ||
+                    substr(lower(hex(randomblob(2))), 2) || '-' ||
+                    lower(hex(randomblob(6))),
+                source.project_id,
+                source.name || '-APP',
+                'APP',
+                '',
+                source.app_url,
+                source.other_urls,
+                CASE
+                    WHEN NOT EXISTS (
+                        SELECT 1 FROM environment_configs existing
+                        WHERE existing.project_id = source.project_id
+                          AND existing.environment_type = 'APP'
+                          AND COALESCE(existing.app_url, '') != ''
+                    ) THEN 1
+                    ELSE 0
+                END,
+                source.timeout,
+                source.retry_count,
+                0,
+                '',
+                source.notes,
+                source.created_at,
+                source.updated_at
+            FROM environment_configs source
+            WHERE source.environment_type = 'Web'
+              AND COALESCE(source.web_url, '') != ''
+              AND COALESCE(source.app_url, '') != ''
+              AND NOT EXISTS (
+                  SELECT 1 FROM environment_configs existing
+                  WHERE existing.project_id = source.project_id
+                    AND existing.environment_type = 'APP'
+                    AND existing.app_url = source.app_url
+              )
+        """))
+        await conn.execute(text("UPDATE environment_configs SET app_url = '' WHERE environment_type = 'Web' AND COALESCE(app_url, '') != ''"))
+        await conn.execute(text("UPDATE environment_configs SET web_url = '' WHERE environment_type = 'APP' AND COALESCE(web_url, '') != ''"))
 
     account_columns = {
         row[1] for row in (await conn.execute(text("PRAGMA table_info(test_accounts)"))).all()
@@ -104,6 +169,30 @@ async def _migrate_sqlite_schema(conn):
     for name, sql_type in model_config_additions.items():
         if name not in model_config_columns:
             await conn.execute(text(f"ALTER TABLE model_configs ADD COLUMN {name} {sql_type}"))
+
+    automation_tables = {
+        row[0] for row in (await conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))).all()
+    }
+    if "ui_snapshots" not in automation_tables:
+        await conn.execute(text("""
+            CREATE TABLE ui_snapshots (
+                id VARCHAR(36) PRIMARY KEY,
+                project_id VARCHAR(36) NOT NULL,
+                environment_id VARCHAR(36) NOT NULL,
+                account_id VARCHAR(36),
+                status VARCHAR(20) DEFAULT '成功',
+                summary TEXT DEFAULT '',
+                snapshot_json TEXT DEFAULT '{}',
+                error TEXT DEFAULT '',
+                created_at DATETIME,
+                updated_at DATETIME,
+                FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                FOREIGN KEY(environment_id) REFERENCES environment_configs(id) ON DELETE CASCADE,
+                FOREIGN KEY(account_id) REFERENCES test_accounts(id) ON DELETE SET NULL
+            )
+        """))
+    if "automation_scripts" in automation_tables:
+        await conn.execute(text("UPDATE automation_scripts SET status = '未测试' WHERE status IN ('待执行', '执行中', '成功')"))
 
 
 async def close_db():

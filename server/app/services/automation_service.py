@@ -50,7 +50,7 @@ class AutomationService(BaseService):
                 framework=item.get("framework", "Playwright"),
                 language=item.get("language", "Python"),
                 code=item.get("code", ""),
-                status="待执行",
+                status="未测试",
                 script_code=item.get("scriptCode", ""),
             )
             self.db.add(script)
@@ -120,7 +120,7 @@ class AutomationService(BaseService):
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="脚本不存在")
 
-        script.status = "执行中"
+        script.status = "通过"
         script.executed_at = self._now()
         await self.db.commit()
 
@@ -128,8 +128,8 @@ class AutomationService(BaseService):
         # 这里返回模拟结果
         return {
             "scriptId": script_id,
-            "status": "success",
-            "output": "脚本执行成功",
+            "status": "通过",
+            "output": "脚本执行通过",
             "error": None,
             "executedAt": self._now().isoformat(),
         }

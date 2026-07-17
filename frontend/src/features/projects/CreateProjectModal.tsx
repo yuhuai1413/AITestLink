@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Modal } from "../../shared/components/Modal";
+import { MenuSelect } from "../../shared/components/MenuSelect";
 import { useAPISync } from "../../api/useAPISync";
 import type { TestType } from "../../shared/types/platform";
 
@@ -15,6 +16,8 @@ const testTypeOptions: { value: TestType; label: string }[] = [
   { value: "增量测试", label: "增量测试" },
   { value: "专项测试", label: "专项测试" },
 ];
+
+const CREATE_PROJECT_FORM_ID = "create-project-form";
 
 export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
   const { createProject } = useAPISync();
@@ -42,10 +45,10 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
     <Modal open={open} onClose={onClose} title="新建项目" width={640}
       footer={<>
         <button className="ghost-button" type="button" onClick={onClose}>取消</button>
-        <button className="primary-button" type="button" onClick={handleSubmit}>创建</button>
+        <button className="primary-button" type="submit" form={CREATE_PROJECT_FORM_ID}>创建</button>
       </>}
     >
-      <form className="form-stack" onSubmit={handleSubmit}>
+      <form id={CREATE_PROJECT_FORM_ID} className="form-stack" onSubmit={handleSubmit}>
         <div className="form-row">
           <label className="form-label">
             项目名称 *
@@ -56,20 +59,14 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
         <div className="form-row">
           <label className="form-label">
             测试类型 *
-            <select className="form-select" value={testType} onChange={(e) => setTestType(e.target.value as TestType)}>
-              {testTypeOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            <MenuSelect value={testType} options={testTypeOptions} onChange={setTestType} required />
           </label>
         </div>
 
         <div className="form-row">
           <label className="form-label">
             优先级
-            <select className="form-select" value={priority} onChange={(e) => setPriority(e.target.value as "高" | "中" | "低")}>
-              <option value="高">高</option>
-              <option value="中">中</option>
-              <option value="低">低</option>
-            </select>
+            <MenuSelect value={priority} options={[{ value: "高", label: "高" }, { value: "中", label: "中" }, { value: "低", label: "低" }]} onChange={setPriority} />
           </label>
         </div>
 
@@ -80,10 +77,6 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
           </label>
         </div>
 
-        <div className="form-actions">
-          <button className="ghost-button" type="button" onClick={onClose}>取消</button>
-          <button className="primary-button" type="submit">创建项目</button>
-        </div>
       </form>
     </Modal>
   );

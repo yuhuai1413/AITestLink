@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Modal } from "../../shared/components/Modal";
+import { MenuSelect } from "../../shared/components/MenuSelect";
 import { useStore } from "../../app/store";
-import type { Priority, ReviewStatus, TestPoint, TestPointType } from "../../shared/types/platform";
+import type { Priority, ReviewStatus, TestPoint } from "../../shared/types/platform";
 
 interface TestPointEditModalProps {
   open: boolean;
@@ -64,20 +65,11 @@ export function TestPointEditModal({ open, testPoint, onClose }: TestPointEditMo
         <div className="form-row form-row--3">
           <label className="form-label">
             优先级
-            <select className="form-select" value={priority} onChange={(e) => setPriority(e.target.value as Priority)}>
-              <option value="P0">P0</option>
-              <option value="P1">P1</option>
-              <option value="P2">P2</option>
-              <option value="P3">P3</option>
-            </select>
+            <MenuSelect value={priority} options={[{ value: "P0", label: "P0" }, { value: "P1", label: "P1" }, { value: "P2", label: "P2" }, { value: "P3", label: "P3" }]} onChange={setPriority} />
           </label>
           <label className="form-label">
             评审状态
-            <select className="form-select" value={reviewStatus} onChange={(e) => setReviewStatus(e.target.value as ReviewStatus)}>
-              <option value="待评审">待评审</option>
-              <option value="已通过">已通过</option>
-              <option value="需修改">需修改</option>
-            </select>
+            <MenuSelect value={reviewStatus} options={[{ value: "待评审", label: "待评审" }, { value: "已通过", label: "已通过" }, { value: "需修改", label: "需修改" }]} onChange={setReviewStatus} />
           </label>
         </div>
 

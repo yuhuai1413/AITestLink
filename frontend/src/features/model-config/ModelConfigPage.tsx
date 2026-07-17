@@ -4,6 +4,7 @@ import { Modal } from "../../shared/components/Modal";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { DataTable } from "../../shared/components/DataTable";
 import { DataPanel } from "../../shared/components/DataPanel";
+import { MenuSelect } from "../../shared/components/MenuSelect";
 import { modelConfigApi, type ApiModelConfig } from "../../api/client";
 import { toast } from "sonner";
 import { getMeWithAdmin } from "../auth/api/auth";
@@ -15,6 +16,7 @@ import { providerModels } from "./modelConfig.constants";
 
 const nodeColors: Record<string, string> = {
   "需求解析": "green",
+  "系统识别": "purple",
   "生成测试点": "blue",
   "生成测试用例": "blue",
   "生成脚本": "amber",
@@ -202,6 +204,22 @@ export function ModelConfigPage() {
     }
   };
 
+  const deleteAdminPromptVersion = async (versionId: string) => {
+    if (!editingPromptConfig) return;
+    try {
+      const res = await fetch(`/api/model-configs/admin-prompts/${editingPromptConfig.configKey}/versions/${versionId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || "delete failed");
+      toast.success("已删除历史版本");
+      await loadPromptVersions(editingPromptConfig.configKey);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除失败");
+    }
+  };
+
   const filteredConfigs = useMemo(() => {
     return configs.filter((c) => {
       if (nodeFilter !== "all") {
@@ -368,29 +386,23 @@ export function ModelConfigPage() {
             <div className="search-form" style={{ flex: 1, margin: 0 }}>
               <div className="search-form__field">
                 <label className="search-form__label">AI 节点</label>
-                <select
-                  className="search-form__select"
+                <MenuSelect
+                  className="search-form__menu-select"
+                  size="compact"
                   value={nodeFilter}
-                  onChange={(e) => setNodeFilter(e.target.value)}
-                >
-                  <option value="all">全部</option>
-                  {Object.keys(nodeColors).map((n) => (
-                    <option key={n} value={n}>{n}</option>
-                  ))}
-                </select>
+                  options={[{ value: "all", label: "全部" }, ...Object.keys(nodeColors).map((n) => ({ value: n, label: n }))]}
+                  onChange={setNodeFilter}
+                />
               </div>
               <div className="search-form__field">
                 <label className="search-form__label">供应商</label>
-                <select
-                  className="search-form__select"
+                <MenuSelect
+                  className="search-form__menu-select"
+                  size="compact"
                   value={providerFilter}
-                  onChange={(e) => setProviderFilter(e.target.value)}
-                >
-                  <option value="all">全部供应商</option>
-                  {Object.keys(providerModels).map((p) => (
-                    <option key={p} value={p}>{p.split("-")[0]}</option>
-                  ))}
-                </select>
+                  options={[{ value: "all", label: "全部供应商" }, ...Object.keys(providerModels).map((p) => ({ value: p, label: p.split("-")[0] }))]}
+                  onChange={setProviderFilter}
+                />
               </div>
               <button className="ghost-button toolbar-button toolbar-ghost-button" type="button" onClick={resetFilters}>
                 <RotateCcw size={14} />
@@ -434,7 +446,7 @@ export function ModelConfigPage() {
                 );
               },
             },
-            { key: "description", label: "说明", align: "left", width: "16%", render: (row) => <span style={{ fontSize: 13 }}>{row.description}</span> },
+            { key: "description", label: "说明", align: "left", width: "16%", lineClamp: 2, render: (row) => <span style={{ fontSize: 13 }}>{row.description}</span> },
             { key: "provider", label: "供应商", width: "8%", render: (row) => <span className="provider-tag">{row.provider ? row.provider.split("-")[0] : "-"}</span> },
             { key: "modelName", label: "模型", width: "10%", render: (row) => row.modelName || "-" },
             {
@@ -447,13 +459,13 @@ export function ModelConfigPage() {
               key: "endpoint",
               label: "Base URL",
               width: "14%",
+              lineClamp: 2,
               render: (row) => {
                 const ep = row.endpoint;
                 if (!ep) return <span className="text-muted" style={{ fontSize: 12 }}>-</span>;
-                const display = ep.length > 35 ? ep.slice(0, 35) + "..." : ep;
                 return (
                   <span className="text-muted" style={{ fontSize: 12 }} title={ep}>
-                    {display}
+                    {ep}
                   </span>
                 );
               },
@@ -561,26 +573,17 @@ export function ModelConfigPage() {
             <div className="form-row">
               <label className="form-label">
                 供应商
-                <select className="form-select" value={editingConfig.provider} onChange={(e) => { setEditingConfig({ ...editingConfig, provider: e.target.value }); configDirty.markDirty(); }}>
-                  <option value="">请选择供应商</option>
-                  {Object.keys(providerModels).map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
+                <MenuSelect value={editingConfig.provider} options={[{ value: "", label: "请选择供应商" }, ...Object.keys(providerModels).map((p) => ({ value: p, label: p }))]} onChange={(value) => { setEditingConfig({ ...editingConfig, provider: value }); configDirty.markDirty(); }} />
               </label>
             </div>
             <div className="form-row">
               <label className="form-label">
                 模型名称
-                <select className="form-select" value={editingConfig.modelName} onChange={(e) => { setEditingConfig({ ...editingConfig, modelName: e.target.value }); configDirty.markDirty(); }}>
-                  <option value="">请选择模型</option>
-                  {(providerModels[editingConfig.provider]?.models || []).map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                  {editingConfig.modelName && !providerModels[editingConfig.provider]?.models?.includes(editingConfig.modelName) && (
-                    <option value={editingConfig.modelName}>{editingConfig.modelName}</option>
-                  )}
-                </select>
+                <MenuSelect value={editingConfig.modelName} options={[
+                  { value: "", label: "请选择模型" },
+                  ...(providerModels[editingConfig.provider]?.models || []).map((m) => ({ value: m, label: m })),
+                  ...(editingConfig.modelName && !providerModels[editingConfig.provider]?.models?.includes(editingConfig.modelName) ? [{ value: editingConfig.modelName, label: editingConfig.modelName }] : []),
+                ]} onChange={(value) => { setEditingConfig({ ...editingConfig, modelName: value }); configDirty.markDirty(); }} />
               </label>
             </div>
             <div className="form-row">
@@ -651,6 +654,7 @@ export function ModelConfigPage() {
         testing={promptTesting}
         onTest={testAdminPrompt}
         onRollback={rollbackAdminPrompt}
+        onDelete={deleteAdminPromptVersion}
       />
       {configDirty.confirmDialog}
     </div>

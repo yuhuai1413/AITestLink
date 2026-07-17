@@ -49,11 +49,24 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--input-border);
   border-radius: 9999px;
-  background: var(--surface);
+  background: var(--input-bg-soft);
   color: var(--muted);
   padding: 0 12px;
+  box-shadow: var(--input-shadow);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+}
+
+.search-box:hover {
+  border-color: var(--input-border-hover);
+  background: var(--surface);
+}
+
+.search-box:focus-within {
+  border-color: var(--input-border-focus);
+  background: var(--surface);
+  box-shadow: var(--input-shadow);
 }
 
 .search-box input {

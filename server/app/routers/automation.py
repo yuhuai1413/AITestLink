@@ -1,6 +1,7 @@
 import uuid
 import logging
 import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -18,16 +19,49 @@ from app.services.project_service import ProjectService
 from app.services.ai_service import AIService, check_config_for_task
 from app.services.ai_input_builder import test_case_batches, validate_case_runtime_fields, validate_persisted_traceability, validate_references
 from app.services.environment_service import EnvironmentService
+from app.services.script_runner import LocalScriptRunner
+from app.services.script_quality import validate_script_covers_test_case
+from app.services.ui_recognition_service import UIRecognitionService
 from app.utils import model_to_dict
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 ai_service = AIService()
+script_runner = LocalScriptRunner()
 
 
 class ExecuteScriptRequest(BaseModel):
     environmentId: str
     accountId: str | None = None
+    headed: bool = False
+    slowMo: int | None = None
+
+
+def _execution_result(run: ExecutionRun, script: AutomationScript) -> dict:
+    return {
+        "executionRunId": run.id,
+        "scriptId": script.id,
+        "status": run.status,
+        "output": run.output or "",
+        "error": run.error or None,
+        "executedAt": run.finished_at.isoformat() if run.finished_at else "",
+        "startedAt": run.started_at.isoformat() if run.started_at else None,
+        "finishedAt": run.finished_at.isoformat() if run.finished_at else None,
+        "durationSeconds": _duration_seconds(run),
+    }
+
+
+def _duration_seconds(run: ExecutionRun) -> float | None:
+    if not run.started_at or not run.finished_at:
+        return None
+    return round((run.finished_at - run.started_at).total_seconds(), 3)
+
+
+def _timeout_seconds(snapshot: dict) -> int:
+    try:
+        return int(snapshot.get("timeoutSeconds") or 30)
+    except (TypeError, ValueError):
+        return 30
 
 
 def _to_eng_abbr(module: str) -> str:
@@ -151,9 +185,13 @@ async def execute_script(
     db: AsyncSession = Depends(get_db),
 ):
     script, test_case = await _execution_subject(db, script_id, user["sub"])
+    if (script.review_status or "待评审") != "已通过":
+        raise HTTPException(status_code=400, detail="脚本未评审通过，不能执行")
     if test_case.environment_id and data.environmentId != test_case.environment_id:
         raise HTTPException(status_code=400, detail="所选环境与测试用例中记录的测试地址不一致")
     required_role = test_case.required_role or "无"
+    if required_role == "待配置":
+        raise HTTPException(status_code=400, detail="该用例的执行角色仍为待配置，请先重新生成或编辑测试用例")
     if required_role != "无" and not data.accountId:
         raise HTTPException(status_code=400, detail=f"该用例需要选择“{required_role}”角色账号")
     if data.accountId:
@@ -166,9 +204,19 @@ async def execute_script(
         if required_role != "无" and (account.role or account.name) != required_role:
             raise HTTPException(status_code=400, detail=f"所选账号不是“{required_role}”角色")
 
-    _, snapshot = await EnvironmentService(db).build_runtime_variables(
+    variables, snapshot = await EnvironmentService(db).build_runtime_variables(
         data.environmentId, user["sub"], data.accountId
     )
+    if variables.get("WEB_BASE_URL"):
+        variables.setdefault("TEST_BASE_URL", variables["WEB_BASE_URL"])
+        variables.setdefault("BASE_URL", variables["WEB_BASE_URL"])
+    elif variables.get("APP_BASE_URL"):
+        variables.setdefault("TEST_BASE_URL", variables["APP_BASE_URL"])
+        variables.setdefault("BASE_URL", variables["APP_BASE_URL"])
+    if (script.language or "").lower() not in {"python", "py"}:
+        raise HTTPException(status_code=400, detail="当前执行器只支持 Python 脚本")
+
+    now = datetime.now(timezone.utc)
     run = ExecutionRun(
         id=str(uuid.uuid4()),
         project_id=script.project_id,
@@ -176,16 +224,49 @@ async def execute_script(
         test_case_id=test_case.id,
         environment_id=data.environmentId,
         account_id=data.accountId,
-        status="未启动",
+        status="执行中",
         environment_snapshot=json.dumps(snapshot, ensure_ascii=False),
-        error="隔离执行 Worker 尚未配置",
+        started_at=now,
     )
+    script.status = "未测试"
     db.add(run)
     await db.commit()
-    raise HTTPException(
-        status_code=501,
-        detail={"message": "隔离执行 Worker 尚未配置，未运行脚本", "executionRunId": run.id},
-    )
+    coverage = validate_script_covers_test_case(script.code or "", test_case)
+    if script.generated_by_ai and not coverage.ok:
+        result_status = "失败"
+        output = ""
+        error = f"脚本覆盖校验失败：{coverage.error}"
+    else:
+        try:
+            result = await script_runner.run_python(
+                code=script.code or "",
+                variables=variables,
+                timeout_seconds=_timeout_seconds(snapshot),
+                headed=data.headed,
+                slow_mo_ms=data.slowMo or 0,
+            )
+        except Exception as exc:
+            logger.exception("Local script execution crashed")
+            result_status = "失败"
+            output = ""
+            error = f"执行器异常：{str(exc)[:500]}"
+        else:
+            result_status = result.status
+            output = result.output
+            error = result.error
+            if result_status == "通过":
+                output = output or f"脚本进程正常结束，并通过用例覆盖校验。{coverage.evidence}".strip()
+
+    run.status = result_status
+    run.output = output
+    run.error = error
+    run.finished_at = datetime.now(timezone.utc)
+    script.status = "通过" if result_status == "通过" else "失败"
+    script.executed_at = run.finished_at
+    await db.commit()
+    await db.refresh(run)
+    await db.refresh(script)
+    return _execution_result(run, script)
 
 
 @router.get("/scripts/{script_id}/executions")
@@ -233,8 +314,9 @@ async def generate_scripts(
         raise HTTPException(status_code=400, detail=config_check["message"])
 
     try:
+        ui_context = await UIRecognitionService(db).latest_context_by_project(project_id, user["sub"])
         ai_scripts = []
-        for payload in test_case_batches(test_cases):
+        for payload in test_case_batches(test_cases, ui_context):
             batch_scripts = await ai_service.generate_automation_scripts(payload, user["sub"])
             allowed_ids = {item["testCaseId"] for item in json.loads(payload)}
             validate_references(batch_scripts, "testCaseId", allowed_ids)
@@ -254,7 +336,7 @@ async def generate_scripts(
                 framework=ai_script.get("framework", "Playwright"),
                 language=ai_script.get("language", "Python"),
                 code=ai_script["code"],
-                status="待执行",
+                status="未测试",
                 generated_by_ai=True,
             )
             db.add(script)
@@ -286,7 +368,7 @@ def _generate_template_scripts(project_id: str, test_cases: list, db: AsyncSessi
             framework="Playwright",
             language="Python",
             code=code,
-            status="待执行",
+            status="未测试",
             generated_by_ai=False,
         )
         db.add(script)

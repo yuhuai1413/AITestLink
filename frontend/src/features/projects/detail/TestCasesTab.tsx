@@ -8,16 +8,16 @@ import { useConfigError } from "../../../shared/hooks/useConfigError";
 import { startGenerateTestCases } from "../../../shared/hooks/aiTaskManager";
 import { useUnsavedChanges } from "../../../shared/hooks/useUnsavedChanges";
 import { DataTable } from "../../../shared/components/DataTable";
+import { MenuSelect } from "../../../shared/components/MenuSelect";
 import { SectionHeader } from "../../../shared/components/SectionHeader";
 import { StatusPill } from "../../../shared/components/StatusPill";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { Modal } from "../../../shared/components/Modal";
 import { TestCaseDetailModal } from "../../test-design/TestCaseDetailModal";
 import { exportManualTestCasesToExcel } from "../../../shared/utils/exportExcel";
+import { formatTestStepsForDisplay } from "../../../shared/utils/formatTestSteps";
 import type { Priority, TestCase } from "../../../shared/types/platform";
 import { formatProjectTime as formatTime, priorityTone, reviewTone } from "./projectDetail.config";
-
-const truncateText = (text: string, maxLen = 50) => text.length > maxLen ? text.slice(0, maxLen) + "..." : text;
 
 // ═══════════════════════════════════════
 // 测试用例（AI 生成 + 评审）
@@ -126,7 +126,7 @@ export function TestCasesTab({ projectId }: { projectId: string }) {
             <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{testCases.length}</strong> 条用例</span>
           </div>
         </>} />
-      {modules.length > 0 && <div className="filter-bar"><span className="filter-label">模块筛选</span><select className="filter-select" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}><option value="all">全部模块</option>{modules.map((m) => <option key={m} value={m}>{m}</option>)}</select></div>}
+      {modules.length > 0 && <div className="filter-bar"><span className="filter-label">模块筛选</span><MenuSelect className="filter-menu-select" size="compact" value={moduleFilter} options={[{ value: "all", label: "全部模块" }, ...modules.map((m) => ({ value: m, label: m }))]} onChange={setModuleFilter} /></div>}
       <section className="work-panel">
         {initialLoading && filtered.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : filtered.length === 0 ? <div className="empty-state"><p>暂无测试用例</p></div> : (
           <DataTable rows={filtered} getRowKey={(r) => r.id} columns={[
@@ -134,14 +134,14 @@ export function TestCasesTab({ projectId }: { projectId: string }) {
             { key: "caseCode", label: "用例编号", render: (r) => r.caseCode },
             { key: "module", label: "模块", render: (r) => r.module },
             { key: "testType", label: "测试类型", render: (r) => r.testType || "功能测试" },
-            { key: "feature", label: "测试点", align: "left", render: (r) => <span title={r.feature}>{truncateText(r.feature, 25)}</span> },
-            { key: "title", label: "用例标题", align: "left", render: (r) => <span title={r.title}>{truncateText(r.title, 30)}</span> },
+            { key: "feature", label: "测试点", align: "left", lineClamp: 2, render: (r) => <span title={r.feature}>{r.feature}</span> },
+            { key: "title", label: "用例标题", align: "left", lineClamp: 2, render: (r) => <span title={r.title}>{r.title}</span> },
             { key: "targetPlatform", label: "测试端", width: "72px", align: "center", render: (r) => r.targetPlatform || "PC" },
-            { key: "testUrl", label: "测试地址", align: "left", render: (r) => <span title={r.testUrl}>{truncateText(r.testUrl || "未配置", 28)}</span> },
+            { key: "testUrl", label: "测试地址", align: "left", lineClamp: 2, render: (r) => <span title={r.testUrl}>{r.testUrl || "未配置"}</span> },
             { key: "requiredRole", label: "角色", width: "100px", align: "center", render: (r) => r.requiredRole || "无" },
             { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
-            { key: "steps", label: "测试步骤", align: "left", render: (r) => <span title={r.steps}>{truncateText(r.steps, 40)}</span> },
-            { key: "expectedResult", label: "预期结果", align: "left", render: (r) => <span title={r.expectedResult}>{truncateText(r.expectedResult, 35)}</span> },
+            { key: "steps", label: "测试步骤", align: "left", lineClamp: 2, render: (r) => <span className="test-steps-preview" title={r.steps}>{formatTestStepsForDisplay(r.steps)}</span> },
+            { key: "expectedResult", label: "预期结果", align: "left", lineClamp: 2, render: (r) => <span title={r.expectedResult}>{r.expectedResult}</span> },
             { key: "reviewStatus", label: "评审", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus}</StatusPill></button> },
             { key: "automation", label: "是否自动化", align: "center", render: (r) => <StatusPill tone={r.automation === "是" ? "green" : "slate"}>{r.automation === "是" ? "是" : "否"}</StatusPill> },
             { key: "createdAt", label: "生成时间", render: (r) => formatTime(r.createdAt) },

@@ -17,6 +17,7 @@ from app.services.ai_service import AIService
 from app.services.model_config_service import ModelConfigService
 from app.services.prompt_service import (
     create_prompt_version,
+    delete_prompt_version,
     get_published_prompt,
     list_prompt_versions,
     publish_prompt_version,
@@ -27,11 +28,12 @@ router = APIRouter()
 
 DEFAULT_CONFIGS = [
     {"config_key": "parse-requirements", "name": "需求解析", "ai_node": ["需求解析"], "description": "从需求文档中提取模块、功能点和业务规则", "display_order": 1},
-    {"config_key": "generate-test-points", "name": "测试点生成", "ai_node": ["生成测试点"], "description": "根据需求生成覆盖多种场景的测试点", "display_order": 2},
-    {"config_key": "generate-test-cases", "name": "用例生成", "ai_node": ["生成测试用例"], "description": "根据测试点生成详细测试用例", "display_order": 3},
-    {"config_key": "generate-scripts", "name": "脚本生成", "ai_node": ["生成脚本"], "description": "自动生成自动化测试脚本", "display_order": 4},
-    {"config_key": "execute-scripts", "name": "执行脚本", "ai_node": ["执行脚本"], "description": "执行自动化测试脚本", "display_order": 5},
-    {"config_key": "generate-docs", "name": "文档生成", "ai_node": ["文档生成"], "description": "自动生成测试文档", "display_order": 6},
+    {"config_key": "system-recognition", "name": "系统识别", "ai_node": ["系统识别"], "description": "结合需求范围识别被测系统页面、元素、导航和定位策略", "display_order": 2},
+    {"config_key": "generate-test-points", "name": "测试点生成", "ai_node": ["生成测试点"], "description": "根据需求生成覆盖多种场景的测试点", "display_order": 3},
+    {"config_key": "generate-test-cases", "name": "用例生成", "ai_node": ["生成测试用例"], "description": "根据测试点生成详细测试用例", "display_order": 4},
+    {"config_key": "generate-scripts", "name": "脚本生成", "ai_node": ["生成脚本"], "description": "自动生成自动化测试脚本", "display_order": 5},
+    {"config_key": "execute-scripts", "name": "执行脚本", "ai_node": ["执行脚本"], "description": "执行自动化测试脚本", "display_order": 6},
+    {"config_key": "generate-docs", "name": "文档生成", "ai_node": ["文档生成"], "description": "自动生成测试文档", "display_order": 7},
 ]
 
 
@@ -228,6 +230,9 @@ async def _ensure_user_configs(db: AsyncSession, user_id: str):
                 prompt="",
             ))
             changed = True
+        elif user_configs[config["config_key"]].display_order != config["display_order"]:
+            user_configs[config["config_key"]].display_order = config["display_order"]
+            changed = True
 
     if changed:
         await db.commit()
@@ -388,6 +393,23 @@ async def rollback_prompt(
     version = await create_prompt_version(db, config_key, target.content, user["sub"], publish=True)
     await db.commit()
     return {"ok": True, "version": _prompt_version_dict(version)}
+
+
+@router.delete("/model-configs/admin-prompts/{config_key}/versions/{version_id}")
+async def remove_prompt_version(
+    config_key: str,
+    version_id: str,
+    user: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        deleted = await delete_prompt_version(db, config_key, version_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail="提示词版本不存在")
+    await db.commit()
+    return {"ok": True}
 
 
 @router.post("/model-configs/admin-prompts/{config_key}/test")

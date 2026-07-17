@@ -24,6 +24,7 @@ def json_schema_response_format(task_type: str, schema: dict | None) -> dict | N
         return None
     safe_name = {
         "需求解析": "requirements",
+        "系统识别": "system_recognition",
         "测试点生成": "test_points",
         "用例生成": "test_cases",
         "脚本生成": "automation_scripts",

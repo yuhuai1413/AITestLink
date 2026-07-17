@@ -14,6 +14,28 @@ from app.schemas.environment_config import (
 from app.utils import decrypt_value, encrypt_value, verify_project_owner
 
 
+def _captcha_required(environment: EnvironmentConfig) -> bool:
+    """Default legacy rows to requiring captcha unless explicitly disabled."""
+    return environment.captcha_required is not False
+
+
+def _environment_type(environment: EnvironmentConfig) -> str:
+    value = (getattr(environment, "environment_type", "") or "").strip()
+    if value in {"Web", "APP"}:
+        return value
+    return "APP" if (environment.app_url and not environment.web_url) else "Web"
+
+
+def _target_url(environment: EnvironmentConfig) -> str:
+    return (environment.app_url if _environment_type(environment) == "APP" else environment.web_url) or ""
+
+
+def _normalize_target_fields(environment_type: str, web_url: str = "", app_url: str = "") -> tuple[str, str]:
+    if environment_type == "APP":
+        return "", app_url
+    return web_url, ""
+
+
 class EnvironmentService:
     """环境配置服务"""
 
@@ -62,11 +84,15 @@ class EnvironmentService:
                     "id": config.id,
                     "projectId": config.project_id,
                     "name": config.name,
+                    "environmentType": _environment_type(config),
                     "webUrl": config.web_url or "",
                     "appUrl": config.app_url or "",
+                    "targetUrl": _target_url(config),
                     "otherUrls": config.other_urls or "",
                     "timeout": config.timeout or "30",
                     "retryCount": config.retry_count or "3",
+                    "captchaRequired": _captcha_required(config),
+                    "captchaCode": config.captcha_code or "",
                     "notes": config.notes or "",
                     "isDefault": bool(config.is_default),
                     "createdAt": config.created_at.isoformat() if config.created_at else "",
@@ -95,23 +121,29 @@ class EnvironmentService:
         async with self._session() as db:
             await verify_project_owner(db, project_id, user_id)
             existing_result = await db.execute(select(EnvironmentConfig.id).where(
-                EnvironmentConfig.project_id == project_id
+                EnvironmentConfig.project_id == project_id,
+                EnvironmentConfig.environment_type == data.environmentType,
             ).limit(1))
             make_default = data.isDefault or existing_result.scalar_one_or_none() is None
             if make_default:
                 for item in (await db.execute(select(EnvironmentConfig).where(
-                    EnvironmentConfig.project_id == project_id
+                    EnvironmentConfig.project_id == project_id,
+                    EnvironmentConfig.environment_type == data.environmentType,
                 ))).scalars().all():
                     item.is_default = False
+            web_url, app_url = _normalize_target_fields(data.environmentType, data.webUrl, data.appUrl)
             config = EnvironmentConfig(
                 id=str(__import__("uuid").uuid4()),
                 project_id=project_id,
                 name=data.name,
-                web_url=data.webUrl,
-                app_url=data.appUrl,
+                environment_type=data.environmentType,
+                web_url=web_url,
+                app_url=app_url,
                 other_urls=data.otherUrls,
                 timeout=data.timeout,
                 retry_count=data.retryCount,
+                captcha_required=data.captchaRequired,
+                captcha_code=data.captchaCode,
                 notes=data.notes,
                 is_default=make_default,
             )
@@ -123,11 +155,15 @@ class EnvironmentService:
                 "id": config.id,
                 "projectId": config.project_id,
                 "name": config.name,
+                "environmentType": _environment_type(config),
                 "webUrl": config.web_url or "",
                 "appUrl": config.app_url or "",
+                "targetUrl": _target_url(config),
                 "otherUrls": config.other_urls or "",
                 "timeout": config.timeout or "30",
                 "retryCount": config.retry_count or "3",
+                "captchaRequired": _captcha_required(config),
+                "captchaCode": config.captcha_code or "",
                 "notes": config.notes or "",
                 "isDefault": bool(config.is_default),
                 "accounts": [],
@@ -148,21 +184,38 @@ class EnvironmentService:
 
             if data.name is not None:
                 config.name = data.name
+            target_type = data.environmentType or _environment_type(config)
+            if data.environmentType is not None:
+                config.environment_type = data.environmentType
             if data.webUrl is not None:
                 config.web_url = data.webUrl
             if data.appUrl is not None:
                 config.app_url = data.appUrl
+            if data.environmentType is not None or data.webUrl is not None or data.appUrl is not None:
+                if target_type == "Web":
+                    config.app_url = ""
+                    if not (config.web_url or "").strip():
+                        raise ValueError("Web 环境必须配置 Web 地址")
+                else:
+                    config.web_url = ""
+                    if not (config.app_url or "").strip():
+                        raise ValueError("APP 环境必须配置 APP 地址")
             if data.otherUrls is not None:
                 config.other_urls = data.otherUrls
             if data.timeout is not None:
                 config.timeout = data.timeout
             if data.retryCount is not None:
                 config.retry_count = data.retryCount
+            if data.captchaRequired is not None:
+                config.captcha_required = data.captchaRequired
+            if data.captchaCode is not None:
+                config.captcha_code = data.captchaCode
             if data.notes is not None:
                 config.notes = data.notes
             if data.isDefault is True:
                 for item in (await db.execute(select(EnvironmentConfig).where(
                     EnvironmentConfig.project_id == config.project_id,
+                    EnvironmentConfig.environment_type == _environment_type(config),
                     EnvironmentConfig.id != config.id,
                 ))).scalars().all():
                     item.is_default = False
@@ -211,27 +264,46 @@ class EnvironmentService:
             environments = list(result.scalars().all())
             if not environments:
                 raise ValueError("尚未配置测试环境，请先填写 Web 地址或 APP 地址")
-            environment = next((item for item in environments if item.is_default), environments[0])
-            if not environment.web_url and not environment.app_url:
-                raise ValueError("默认测试环境未配置 Web 地址或 APP 地址")
+            web_environment = self._pick_default_environment(environments, "Web")
+            app_environment = self._pick_default_environment(environments, "APP")
+            if not web_environment and not app_environment:
+                raise ValueError("尚未配置有效的 Web 或 APP 测试入口")
 
-            accounts = list((await db.execute(
-                select(TestAccount).where(TestAccount.environment_id == environment.id)
-                .order_by(TestAccount.created_at.asc())
-            )).scalars().all())
-            roles = sorted({(item.role or item.name).strip() for item in accounts if (item.role or item.name).strip()})
             targets = []
-            if environment.web_url:
-                targets.append({"platform": "PC", "url": environment.web_url})
-            if environment.app_url:
-                targets.append({"platform": "APP", "url": environment.app_url})
+            role_set: set[str] = set()
+            for platform, environment in (("PC", web_environment), ("APP", app_environment)):
+                if not environment:
+                    continue
+                url = _target_url(environment)
+                if not url:
+                    continue
+                accounts = list((await db.execute(
+                    select(TestAccount).where(TestAccount.environment_id == environment.id)
+                    .order_by(TestAccount.created_at.asc())
+                )).scalars().all())
+                roles = sorted({(item.role or item.name).strip() for item in accounts if (item.role or item.name).strip()})
+                role_set.update(roles)
+                targets.append({
+                    "platform": platform,
+                    "environmentId": environment.id,
+                    "environmentName": environment.name,
+                    "url": url,
+                    "availableRoles": roles,
+                })
+            primary = web_environment or app_environment
             return {
-                "environmentId": environment.id,
-                "environmentName": environment.name,
+                "environmentId": primary.id,
+                "environmentName": primary.name,
                 "targets": targets,
-                "availableRoles": roles,
-                "timeoutSeconds": int(environment.timeout or 30),
-                "retryCount": int(environment.retry_count or 0),
+                "availableRoles": sorted(role_set),
+                "loginCaptcha": {
+                    "required": _captcha_required(web_environment) if web_environment else False,
+                    "codeEnv": "TEST_LOGIN_CAPTCHA_CODE",
+                    "requiredEnv": "TEST_LOGIN_CAPTCHA_REQUIRED",
+                    "hasFixedCode": bool(web_environment and web_environment.captcha_code),
+                },
+                "timeoutSeconds": int(primary.timeout or 30),
+                "retryCount": int(primary.retry_count or 0),
             }
 
     async def build_runtime_variables(
@@ -259,10 +331,14 @@ class EnvironmentService:
                     raise ValueError("所选账号不属于当前测试环境")
 
             variables = {
-                "WEB_BASE_URL": environment.web_url or "",
-                "APP_BASE_URL": environment.app_url or "",
+                "WEB_BASE_URL": environment.web_url if _environment_type(environment) == "Web" else "",
+                "APP_BASE_URL": environment.app_url if _environment_type(environment) == "APP" else "",
                 "TEST_TIMEOUT": environment.timeout or "30",
                 "TEST_RETRY_COUNT": environment.retry_count or "0",
+                "TEST_LOGIN_CAPTCHA_REQUIRED": "true" if _captcha_required(environment) else "false",
+                "LOGIN_CAPTCHA_REQUIRED": "true" if _captcha_required(environment) else "false",
+                "TEST_LOGIN_CAPTCHA_CODE": environment.captcha_code or "",
+                "LOGIN_CAPTCHA_CODE": environment.captcha_code or "",
             }
             if account:
                 encrypted = account.password or ""
@@ -273,14 +349,24 @@ class EnvironmentService:
             snapshot = {
                 "environmentId": environment.id,
                 "environmentName": environment.name,
+                "environmentType": _environment_type(environment),
                 "webUrl": environment.web_url or "",
                 "appUrl": environment.app_url or "",
+                "targetUrl": _target_url(environment),
                 "timeoutSeconds": int(environment.timeout or 30),
                 "retryCount": int(environment.retry_count or 0),
+                "captchaRequired": _captcha_required(environment),
+                "hasCaptchaCode": bool(environment.captcha_code),
                 "accountId": account.id if account else None,
                 "accountRole": (account.role or account.name) if account else "无",
             }
             return variables, snapshot
+
+    def _pick_default_environment(self, environments: list[EnvironmentConfig], environment_type: str) -> EnvironmentConfig | None:
+        typed = [item for item in environments if _environment_type(item) == environment_type and _target_url(item)]
+        if not typed:
+            return None
+        return next((item for item in typed if item.is_default), typed[0])
 
     async def create_account(self, data: TestAccountCreate, user_id: str) -> dict:
         """创建测试账号"""

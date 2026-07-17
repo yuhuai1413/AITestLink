@@ -16,9 +16,9 @@
 .pagination__size-select {
   height: 32px;
   padding: 0 28px 0 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-l4);
-  background: var(--surface);
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  background: var(--input-bg);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 8px center;
@@ -27,12 +27,18 @@
   font-size: 13px;
   color: var(--text);
   cursor: pointer;
-  transition: border-color 0.15s;
+  box-shadow: var(--input-shadow);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+}
+
+.pagination__size-select:hover {
+  border-color: var(--input-border-hover);
 }
 
 .pagination__size-select:focus {
   outline: none;
-  border-color: var(--blue);
+  border-color: var(--input-border-focus);
+  box-shadow: var(--input-shadow);
 }
 
 .pagination__buttons {
@@ -94,13 +100,21 @@
   width: 48px;
   height: 32px;
   padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-l4);
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  background: var(--input-bg);
+  box-shadow: var(--input-shadow);
   text-align: center;
   font-size: 13px;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+}
+
+.pagination__goto-input:hover {
+  border-color: var(--input-border-hover);
 }
 
 .pagination__goto-input:focus {
   outline: none;
-  border-color: var(--blue);
+  border-color: var(--input-border-focus);
+  box-shadow: var(--input-shadow);
 }

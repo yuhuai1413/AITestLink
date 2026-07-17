@@ -256,8 +256,8 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
       <section className="work-panel">
         <DataTable rows={templates} getRowKey={(r) => r.id} columns={[
           { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
-          { key: "name", label: "模板名称", render: (r) => r.name },
-          { key: "desc", label: "说明", render: (r) => r.desc },
+          { key: "name", label: "模板名称", lineClamp: 2, render: (r) => r.name },
+          { key: "desc", label: "说明", lineClamp: 2, render: (r) => r.desc },
           { key: "needs", label: "前置数据", render: (r) => r.needs.map((n) => n === "files" ? "文档" : "用例").join("、") },
           { key: "status", label: "状态", align: "center", render: (r) => {
             const st = getTemplateStatus(r);

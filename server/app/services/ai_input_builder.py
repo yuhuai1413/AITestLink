@@ -1,11 +1,13 @@
 """Build traceable AI inputs and validate references returned by the model."""
 
 import json
+import re
 from collections.abc import Iterable
 from typing import Any
 
 
 MAX_BATCH_CHARS = 12000
+SCRIPT_BATCH_CHARS = 20000
 
 
 def _json_batches(records: Iterable[dict[str, Any]], max_chars: int = MAX_BATCH_CHARS) -> list[str]:
@@ -23,6 +25,102 @@ def _json_batches(records: Iterable[dict[str, Any]], max_chars: int = MAX_BATCH_
     if current:
         batches.append(json.dumps(current, ensure_ascii=False))
     return batches
+
+
+def _pick_element_fields(item: dict[str, Any]) -> dict[str, Any]:
+    """Keep only locator-relevant fields for script generation prompts."""
+    return {
+        key: value
+        for key in ("tag", "text", "title", "placeholder", "type", "role", "visible")
+        if (value := item.get(key)) not in (None, "", [], {})
+    }
+
+
+def _flatten_menu_paths(menus: list[dict[str, Any]], *, limit: int = 120) -> list[str]:
+    paths: list[str] = []
+
+    def walk(items: list[dict[str, Any]], prefix: tuple[str, ...] = ()) -> None:
+        for item in items:
+            if len(paths) >= limit:
+                return
+            title = str(item.get("title") or "").strip()
+            next_prefix = prefix + (title,) if title else prefix
+            if title:
+                paths.append(" / ".join(next_prefix))
+            children = item.get("children")
+            if isinstance(children, list):
+                walk(children, next_prefix)
+
+    walk(menus)
+    return paths
+
+
+def _case_keywords(item: Any) -> list[str]:
+    text = " ".join(
+        str(value or "")
+        for value in (
+            getattr(item, "module", ""),
+            getattr(item, "feature", ""),
+            getattr(item, "title", ""),
+            getattr(item, "steps", ""),
+            getattr(item, "expected_result", ""),
+        )
+    )
+    candidates = re.findall(r"[\u4e00-\u9fff]{2,}|[A-Za-z][A-Za-z0-9_-]{2,}", text)
+    stop_words = {
+        "测试", "验证", "页面", "系统", "功能", "成功", "失败", "显示", "进入", "点击",
+        "进行", "支持", "能够", "用户", "操作", "信息", "检查", "应当", "是否",
+    }
+    keywords: list[str] = []
+    for word in candidates:
+        normalized = word.strip()
+        if not normalized or normalized in stop_words:
+            continue
+        if normalized not in keywords:
+            keywords.append(normalized)
+    return keywords[:20]
+
+
+def _compact_ui_context_for_script(context: dict[str, Any], item: Any) -> dict[str, Any]:
+    """Create a small, per-case UI context instead of repeating the full UI tree.
+
+    The full system-recognition snapshot can contain a large nested menu tree.
+    Repeating it on every test case makes script generation split into many
+    LLM calls. Scripts only need login locators, a few visible controls, and
+    menu hints relevant to the current case.
+    """
+    menu_paths = _flatten_menu_paths(context.get("menus") or [])
+    keywords = _case_keywords(item)
+    matched_menu_paths = [
+        path for path in menu_paths
+        if any(keyword.lower() in path.lower() for keyword in keywords)
+    ]
+    selected_menu_paths = (matched_menu_paths or menu_paths)[:16]
+
+    buttons = [
+        _pick_element_fields(button)
+        for button in (context.get("buttons") or [])
+        if isinstance(button, dict) and (button.get("visible") or button.get("text") or button.get("title"))
+    ][:12]
+    login_inputs = [
+        _pick_element_fields(input_item)
+        for input_item in (context.get("loginInputs") or [])
+        if isinstance(input_item, dict)
+    ][:8]
+
+    ai_analysis = context.get("aiAnalysis") if isinstance(context.get("aiAnalysis"), dict) else {}
+    script_guidance = ai_analysis.get("scriptGuidance") if isinstance(ai_analysis.get("scriptGuidance"), list) else []
+
+    return {
+        "recognizedAtUrl": context.get("recognizedAtUrl") or "",
+        "scopeMode": context.get("scopeMode") or "full",
+        "componentHints": context.get("componentHints") or {},
+        "loginInputs": login_inputs,
+        "menuPaths": selected_menu_paths,
+        "matchedByKeywords": keywords,
+        "buttons": buttons,
+        "scriptGuidance": script_guidance[:5],
+    }
 
 
 def requirement_records(requirements: Iterable[Any]) -> list[dict[str, Any]]:
@@ -70,7 +168,10 @@ def test_point_batches(
     return _json_batches(records)
 
 
-def test_case_records(cases: Iterable[Any]) -> list[dict[str, Any]]:
+def test_case_records(
+    cases: Iterable[Any],
+    ui_context_by_environment: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     records = []
     for item in cases:
         test_data: Any = item.test_data or ""
@@ -79,7 +180,7 @@ def test_case_records(cases: Iterable[Any]) -> list[dict[str, Any]]:
                 test_data = json.loads(test_data)
             except json.JSONDecodeError:
                 pass
-        records.append({
+        record = {
             "testCaseId": item.id,
             "caseCode": item.case_code,
             "requirementId": item.requirement_id or "",
@@ -97,12 +198,21 @@ def test_case_records(cases: Iterable[Any]) -> list[dict[str, Any]]:
             "targetPlatform": item.target_platform or "PC",
             "testUrl": item.test_url or "",
             "requiredRole": item.required_role or "无",
-        })
+        }
+        if ui_context_by_environment and item.environment_id in ui_context_by_environment:
+            record["recognizedUI"] = _compact_ui_context_for_script(
+                ui_context_by_environment[item.environment_id],
+                item,
+            )
+        records.append(record)
     return records
 
 
-def test_case_batches(cases: Iterable[Any]) -> list[str]:
-    return _json_batches(test_case_records(cases))
+def test_case_batches(
+    cases: Iterable[Any],
+    ui_context_by_environment: dict[str, dict[str, Any]] | None = None,
+) -> list[str]:
+    return _json_batches(test_case_records(cases, ui_context_by_environment), max_chars=SCRIPT_BATCH_CHARS)
 
 
 def document_context(
@@ -176,16 +286,26 @@ def validate_persisted_traceability(
 
 def validate_case_environment(items: list[dict[str, Any]], context: dict[str, Any]) -> None:
     target_urls = {item["platform"]: item["url"] for item in context["targets"]}
+    target_environment_ids = {
+        item["platform"]: item.get("environmentId") or context.get("environmentId")
+        for item in context["targets"]
+    }
+    target_roles = {
+        item["platform"]: set(item.get("availableRoles") or context.get("availableRoles") or [])
+        for item in context["targets"]
+    }
     allowed_roles = set(context.get("availableRoles", [])) | {"无", "待配置"}
     for item in items:
-        if item["environmentId"] != context["environmentId"]:
-            raise ValueError("AI 修改了测试环境 ID")
         platform = item["targetPlatform"]
         if platform not in target_urls:
             raise ValueError(f"默认环境未配置 {platform} 测试地址")
+        expected_environment_id = target_environment_ids.get(platform)
+        if item["environmentId"] != expected_environment_id:
+            raise ValueError(f"AI 返回的 {platform} 环境 ID 与默认环境不一致")
         if item["testUrl"] != target_urls[platform]:
             raise ValueError(f"AI 返回的 {platform} 测试地址与环境配置不一致")
-        if item["requiredRole"] not in allowed_roles:
+        platform_allowed_roles = target_roles.get(platform) or allowed_roles
+        if item["requiredRole"] not in (platform_allowed_roles | {"无", "待配置"}):
             raise ValueError(f"AI 返回了环境中不存在的角色：{item['requiredRole']}")
 
 

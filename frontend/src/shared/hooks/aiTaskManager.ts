@@ -27,20 +27,29 @@ export const addNotification = addTaskNotification;
 
 // ── 活跃轮询任务 ──
 const activeTasks = new Map<string, AbortController>();
+const DEFAULT_POLL_SECONDS = 900;
+const LONG_RUNNING_POLL_SECONDS: Partial<Record<AITaskType, number>> = {
+  "脚本生成": 1800,
+  "文档生成": 1800,
+};
 
 // ── 轮询 AI 任务状态 ──
 async function pollAITask(
   projectId: string,
   taskId: string,
+  taskType: AITaskType,
   signal: AbortSignal,
 ): Promise<{ success: boolean; error?: string }> {
-  for (let i = 0; i < 600; i++) {
+  const maxPollSeconds = LONG_RUNNING_POLL_SECONDS[taskType] ?? DEFAULT_POLL_SECONDS;
+  let lastStatus = "";
+  for (let i = 0; i < maxPollSeconds; i++) {
     if (signal.aborted) return { success: false };
     await new Promise((r) => setTimeout(r, 1000));
     if (signal.aborted) return { success: false };
     try {
       const tasks = await aiApi.listTasks(projectId);
       const task = tasks.find((t) => t.id === taskId);
+      if (task) lastStatus = task.status;
       if (task && (task.status === "成功" || task.status === "失败")) {
         if (_dispatch) {
           _dispatch({
@@ -62,18 +71,13 @@ async function pollAITask(
       }
     } catch (e) { console.warn('Polling error:', e); }
   }
-  return { success: false, error: "任务超时未响应" };
+  if (lastStatus === "执行中") {
+    return { success: false, error: `${taskType}仍在后台执行，生成内容较多时会耗时较长，请稍后刷新任务列表查看结果` };
+  }
+  return { success: false, error: `${taskType}等待超时，未获取到任务结果` };
 }
 
-// ── 任务类型 → 目标页面映射 ──
-const TASK_TAB_MAP: Record<string, string> = {
-  "需求解析": "requirements",
-  "测试点生成": "testPoints",
-  "用例生成": "testCases",
-  "文档生成": "docGenerate",
-};
-
-function getTargetTab(projectId: string, _taskType: string): string {
+function getTaskTargetPath(projectId: string): string {
   return `/projects/${projectId}`;
 }
 
@@ -181,17 +185,17 @@ async function runTask(
       });
     }
 
-    const pollResult = await pollAITask(projectId, task.id, controller.signal);
+    const pollResult = await pollAITask(projectId, task.id, taskType, controller.signal);
 
     if (pollResult.success) {
       if (onSuccess) await onSuccess();
       emitProjectDataRefresh(projectId);
-      addNotification("任务完成", taskType, projectId, `${taskType}已完成`, getTargetTab(projectId, taskType));
+      addNotification("任务完成", taskType, projectId, `${taskType}已完成`, getTaskTargetPath(projectId));
       return { success: true };
     } else {
       const errorMsg = pollResult.error || `${taskType}失败`;
       if (!controller.signal.aborted) {
-        notifyTaskFailure(taskType, projectId, errorMsg, getTargetTab(projectId, taskType));
+        notifyTaskFailure(taskType, projectId, errorMsg, getTaskTargetPath(projectId));
       }
       return { success: false, error: errorMsg };
     }

@@ -81,6 +81,14 @@ def friendly_error(err: Exception, task_type: str = "") -> str:
         return "SSL 连接错误，请检查网络环境"
     if "JSONDecodeError" in message or "json" in message.lower():
         return "模型返回的数据格式异常，无法解析，请稍后重试"
+    if "结果结构校验失败" in message:
+        if task_type == "测试点生成" and "requirementId" in message:
+            return (
+                "测试点生成失败：模型返回的测试点缺少「关联需求ID」。"
+                "系统无法判断测试点属于哪条需求，因此已停止写入，避免数据关联错误。"
+                "请重新生成；如果连续失败，请检查「测试点生成」模型配置或提示词。"
+            )
+        return f"{task_type or 'AI任务'}失败：模型返回结果不符合系统要求。{message[:160]}"
     if "KeyError" in message:
         return "模型返回数据结构异常，请稍后重试"
     if "配置不存在" in message or "模型配置" in message or "请先" in message:

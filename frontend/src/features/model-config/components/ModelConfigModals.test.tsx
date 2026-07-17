@@ -9,6 +9,7 @@ describe("AdminPromptModal", () => {
     const onTest = vi.fn();
     const onSave = vi.fn();
     const onRollback = vi.fn();
+    const onDelete = vi.fn();
 
     render(
       <AdminPromptModal
@@ -27,6 +28,7 @@ describe("AdminPromptModal", () => {
         testing={false}
         onTest={onTest}
         onRollback={onRollback}
+        onDelete={onDelete}
       />,
     );
 
@@ -35,7 +37,7 @@ describe("AdminPromptModal", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "测试提示词" }));
     fireEvent.click(screen.getByRole("button", { name: "发布新版本" }));
-    fireEvent.click(screen.getByRole("button", { name: "回滚到此版本" }));
+    fireEvent.click(screen.getByRole("button", { name: "回滚" }));
 
     expect(onTest).toHaveBeenCalledOnce();
     expect(onSave).toHaveBeenCalledOnce();

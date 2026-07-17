@@ -126,14 +126,14 @@ export function PersonalSettingsModal({ open, onClose, userInfo, onSaved }: Pers
             <div>
               <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b5b8a", marginBottom: 6 }}>昵称</label>
               <div style={{ position: "relative" }}>
-                <input type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="请输入昵称" style={{ width: "100%", height: 44, padding: "0 40px 0 16px", background: "#f8f7ff", border: "1px solid rgba(0,0,0,0.06)", borderRadius: 999, fontSize: 14, color: "#6b5b8a", outline: "none", boxSizing: "border-box" }} />
+                <input className="form-input form-input--pill" type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="请输入昵称" style={{ height: 44, paddingRight: 40 }} />
                 {nickname && <button type="button" onClick={() => setNickname("")} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.06)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ color: "rgba(100,116,139,0.6)" }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
               </div>
             </div>
 
             <div>
               <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b5b8a", marginBottom: 6 }}>手机号</label>
-              <div style={{ width: "100%", height: 44, padding: "0 16px", background: "#f8f7ff", border: "1px solid rgba(0,0,0,0.04)", borderRadius: 999, fontSize: 14, color: "#6b5b8a", display: "flex", alignItems: "center", boxSizing: "border-box" }}>{phone}</div>
+              <div className="form-input form-input--pill" style={{ height: 44, display: "flex", alignItems: "center", color: "var(--muted)", background: "var(--surface-soft)" }}>{phone}</div>
             </div>
 
             <button disabled={saving} onClick={handleSave} style={{ width: "100%", height: 44, background: saving ? "#a78bfa" : "#5b21b6", color: "#fff", border: "none", borderRadius: 999, fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer", marginTop: 4 }}>
@@ -157,7 +157,7 @@ export function PersonalSettingsModal({ open, onClose, userInfo, onSaved }: Pers
               <div key={label}>
                 <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#6b5b8a", marginBottom: 6 }}>{label}</label>
                 <div style={{ position: "relative" }}>
-                  <input type={show ? "text" : "password"} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} style={{ width: "100%", height: 44, padding: "0 40px 0 16px", background: "#f8f7ff", border: "1px solid rgba(0,0,0,0.06)", borderRadius: 999, fontSize: 14, color: "#6b5b8a", outline: "none", boxSizing: "border-box" }} />
+                  <input className="form-input form-input--pill" type={show ? "text" : "password"} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} style={{ height: 44, paddingRight: 40 }} />
                   <button type="button" onClick={onToggle} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", width: 24, height: 24, background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     {show ? <EyeOff size={16} style={{ color: "rgba(100,116,139,0.5)" }} /> : <Eye size={16} style={{ color: "rgba(100,116,139,0.5)" }} />}
                   </button>

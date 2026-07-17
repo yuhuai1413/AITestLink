@@ -25,6 +25,10 @@ import { useNavHighlight } from "../hooks/useNavHighlight";
 import { notificationsApi } from "../../api/client";
 import { LogoMark } from "../../features/auth/components/LogoMark";
 import { TOKEN_KEY } from "../config/storage";
+import {
+  getProjectTabFromTask,
+  persistProjectTab,
+} from "../../features/projects/detail/projectDetail.config";
 
 interface UserInfo {
   nickname: string;
@@ -64,6 +68,16 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
   const [showNotifications, setShowNotifications] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
   const unreadCount = useUnreadCount();
+
+  const handleNotificationClick = (notification: AppNotification) => {
+    const tab = getProjectTabFromTask(notification.taskType);
+    persistProjectTab(notification.projectId, tab);
+    window.dispatchEvent(new CustomEvent("aitestlink:navigate-tab", { detail: { tab, projectId: notification.projectId } }));
+    navigate(notification.targetPath || `/projects/${notification.projectId}`);
+    dispatch({ type: "MARK_NOTIFICATION_READ", payload: notification.id });
+    notificationsApi.markRead(notification.id).catch(() => {});
+    setShowNotifications(false);
+  };
 
   const fetchUser = useCallback(() => {
     getMeWithAdmin().then((res) => {
@@ -343,7 +357,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
                       <div className="notif-panel__empty">暂无通知</div>
                     ) : (
                       state.notifications.slice(0, 20).map((n: AppNotification) => (
-                        <div key={n.id} className={`notif-item ${n.type === "任务失败" ? "notif-item--error" : "notif-item--success"}`} onClick={() => { const tab = n.taskType === "需求解析" ? "requirements" : n.taskType === "测试点生成" ? "testPoints" : n.taskType === "用例生成" ? "testCases" : n.taskType === "文档生成" ? "docGenerate" : "overview"; localStorage.setItem("aitestlink-project-tab-" + n.projectId, tab); window.dispatchEvent(new CustomEvent("aitestlink:navigate-tab", { detail: { tab, projectId: n.projectId } })); navigate(n.targetPath || `/projects/${n.projectId}`); dispatch({ type: "MARK_NOTIFICATION_READ", payload: n.id }); notificationsApi.markRead(n.id).catch(() => {}); setShowNotifications(false); }}>
+                        <div key={n.id} className={`notif-item ${n.type === "任务失败" ? "notif-item--error" : "notif-item--success"}`} onClick={() => handleNotificationClick(n)}>
                           <div className="notif-item__icon">{n.type === "任务完成" ? "✓" : "✕"}</div>
                           <div className="notif-item__body">
                             <div className="notif-item__title">{n.taskType} · {n.projectName}</div>

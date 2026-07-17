@@ -16,8 +16,6 @@ import { formatProjectTime as formatTime, reviewTone } from "./projectDetail.con
 
 // ═══════════════════════════════════════
 
-const truncateText = (text: string, maxLen = 50) => text.length > maxLen ? text.slice(0, maxLen) + "..." : text;
-
 export function RequirementsTab({ projectId }: { projectId: string }) {
   const { files, requirements, refresh, loading, initialLoading } = useProjectData(projectId);
   const { state, dispatch } = useStore();
@@ -110,11 +108,11 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "reqId", label: "需求编号", width: "12%", render: (r) => r.reqId || <span style={{ color: "var(--muted)" }}>-</span> },
             { key: "module", label: "模块", width: "10%", render: (r) => r.module },
-            { key: "feature", label: "功能点", width: "10%", align: "left", render: (r) => r.feature },
+            { key: "feature", label: "功能点", width: "10%", align: "left", lineClamp: 2, render: (r) => r.feature },
             { key: "source", label: "来源", width: "10%", render: (r) => r.source },
             { key: "risk", label: "风险", align: "center", render: (r) => <StatusPill tone={r.risk === "高" ? "red" : r.risk === "中" ? "amber" : "green"}>{r.risk}</StatusPill> },
-            { key: "rule", label: "业务规则", width: "20%", align: "left", render: (r) => <span title={r.rule}>{truncateText(r.rule)}</span> },
-            { key: "question", label: "待确认", width: "20%", align: "left", render: (r) => r.question ? <span title={r.question}>{truncateText(r.question)}</span> : <span style={{ color: "var(--muted)" }}>-</span> },
+            { key: "rule", label: "业务规则", width: "20%", align: "left", lineClamp: 2, render: (r) => <span title={r.rule}>{r.rule}</span> },
+            { key: "question", label: "待确认", width: "20%", align: "left", lineClamp: 2, render: (r) => r.question ? <span title={r.question}>{r.question}</span> : <span style={{ color: "var(--muted)" }}>-</span> },
             { key: "reviewStatus", label: "评审", width: "8%", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={r.reviewStatus === "已通过" ? "green" : "slate"}>{r.reviewStatus || "待评审"}</StatusPill></button> },
             { key: "createdAt", label: "生成时间", render: (r) => formatTime(r.createdAt) },
             { key: "updatedAt", label: "更新时间", render: (r) => formatTime(r.updatedAt) },

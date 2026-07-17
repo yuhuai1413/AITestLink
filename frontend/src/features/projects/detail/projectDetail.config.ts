@@ -1,4 +1,5 @@
 import type { Priority } from "../../../shared/types/platform";
+import type { AITaskType } from "../../../shared/types/platform";
 
 export type ProjectDetailTabKey =
   | "overview"
@@ -26,6 +27,38 @@ export const projectDetailTabs: { key: ProjectDetailTabKey; label: string }[] = 
   { key: "summary", label: "测试总结" },
   { key: "docGenerate", label: "文档生成" },
 ];
+
+const projectDetailTabKeys = new Set<ProjectDetailTabKey>(projectDetailTabs.map((tab) => tab.key));
+
+export const PROJECT_TAB_STORAGE_PREFIX = "aitestlink-project-tab-";
+
+export const aiTaskTargetTabMap: Record<AITaskType, ProjectDetailTabKey> = {
+  "需求解析": "requirements",
+  "测试点生成": "testPoints",
+  "用例生成": "testCases",
+  "脚本生成": "scripts",
+  "执行脚本": "executeScripts",
+  "文档生成": "docGenerate",
+};
+
+export function isProjectDetailTabKey(value: string | null | undefined): value is ProjectDetailTabKey {
+  return Boolean(value && projectDetailTabKeys.has(value as ProjectDetailTabKey));
+}
+
+export function getProjectTabFromTask(taskType: AITaskType): ProjectDetailTabKey {
+  return aiTaskTargetTabMap[taskType] ?? "overview";
+}
+
+export function getStoredProjectTab(projectId: string | null | undefined): ProjectDetailTabKey | null {
+  if (!projectId) return null;
+  const stored = localStorage.getItem(PROJECT_TAB_STORAGE_PREFIX + projectId);
+  return isProjectDetailTabKey(stored) ? stored : null;
+}
+
+export function persistProjectTab(projectId: string | null | undefined, tab: ProjectDetailTabKey) {
+  if (!projectId) return;
+  localStorage.setItem(PROJECT_TAB_STORAGE_PREFIX + projectId, tab);
+}
 
 export function formatProjectTime(iso?: string): string {
   if (!iso) return "-";

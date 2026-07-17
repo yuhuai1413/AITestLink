@@ -39,6 +39,7 @@ from app.services.ai_task_support import (
     update_task_status as _update_task_status,
 )
 from app.services.environment_service import EnvironmentService
+from app.services.ui_recognition_service import UIRecognitionService
 from app.utils import model_to_dict
 from app.utils import verify_project_owner
 
@@ -52,6 +53,14 @@ ai_service = AIService()
 
 
 # ─── 后台任务 ───
+
+async def _update_task_progress(db: AsyncSession, task_id: str, payload: dict) -> None:
+    result = await db.execute(select(AITask).where(AITask.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        return
+    task.result = json.dumps(payload, ensure_ascii=False)
+    await db.commit()
 
 async def run_parse_requirements(task_id: str, project_id: str, file_content: str, user_id: str):
     async with async_session() as db:
@@ -300,7 +309,7 @@ async def run_generate_scripts(task_id: str, project_id: str, user_id: str):
                 select(TestCase).where(
                     TestCase.project_id == project_id,
                     TestCase.automation == "是"
-                )
+                ).order_by(TestCase.created_at.asc())
             )
             test_cases = tc_result.scalars().all()
             if not test_cases:
@@ -309,12 +318,45 @@ async def run_generate_scripts(task_id: str, project_id: str, user_id: str):
             validate_persisted_traceability(cases=test_cases)
             validate_case_runtime_fields(test_cases, for_automation=True)
 
+            ui_context = await UIRecognitionService(db).latest_context_by_project(project_id, user_id)
             scripts = []
-            for payload in test_case_batches(test_cases):
-                batch_scripts = await ai_service.generate_automation_scripts(payload, user_id)
+            payload_batches = test_case_batches(test_cases, ui_context)
+            await _update_task_progress(db, task_id, {
+                "stage": "generating",
+                "message": f"正在生成自动化脚本：共 {len(test_cases)} 条用例，拆分为 {len(payload_batches)} 批",
+                "totalCases": len(test_cases),
+                "totalBatches": len(payload_batches),
+                "finishedBatches": 0,
+            })
+            for batch_index, payload in enumerate(payload_batches, start=1):
                 batch_case_ids = {item["testCaseId"] for item in json.loads(payload)}
+                await _update_task_progress(db, task_id, {
+                    "stage": "generating",
+                    "message": f"正在生成第 {batch_index}/{len(payload_batches)} 批脚本",
+                    "totalCases": len(test_cases),
+                    "totalBatches": len(payload_batches),
+                    "finishedBatches": batch_index - 1,
+                    "currentBatchCases": len(batch_case_ids),
+                })
+                logger.info(
+                    "run_generate_scripts: task_id=%s batch=%s/%s chars=%s cases=%s",
+                    task_id,
+                    batch_index,
+                    len(payload_batches),
+                    len(payload),
+                    len(batch_case_ids),
+                )
+                batch_scripts = await ai_service.generate_automation_scripts(payload, user_id)
                 validate_references(batch_scripts, "testCaseId", batch_case_ids)
                 scripts.extend(batch_scripts)
+                await _update_task_progress(db, task_id, {
+                    "stage": "generating",
+                    "message": f"第 {batch_index}/{len(payload_batches)} 批脚本已生成",
+                    "totalCases": len(test_cases),
+                    "totalBatches": len(payload_batches),
+                    "finishedBatches": batch_index,
+                    "generatedScripts": len(scripts),
+                })
 
             if not scripts:
                 await _update_task_status(db, task_id, "失败", "AI 未返回有效的脚本数据")
@@ -342,7 +384,7 @@ async def run_generate_scripts(task_id: str, project_id: str, user_id: str):
                     framework=s.get("framework", "Playwright"),
                     language=s.get("language", "Python"),
                     code=s.get("code", ""),
-                    status="待执行",
+                    status="未测试",
                     generated_by_ai=True,
                 ))
 

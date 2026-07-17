@@ -15,6 +15,9 @@ import { TestPointsTab } from "./detail/TestPointsTab";
 import { TestCasesTab } from "./detail/TestCasesTab";
 import { EnvironmentPage } from "../environment/EnvironmentPage";
 import {
+  getStoredProjectTab,
+  isProjectDetailTabKey,
+  persistProjectTab,
   projectDetailTabs as allTabs,
   type ProjectDetailTabKey as TabKey,
 } from "./detail/projectDetail.config";
@@ -54,28 +57,23 @@ function TabLoadingSkeleton() {
   );
 }
 
-const TAB_STORAGE_PREFIX = "aitestlink-project-tab-";
-
 export function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { project, loading } = useProjectData(id);
   const prevIdRef = useRef<string | null | undefined>(null);
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
-    if (id) {
-      const stored = localStorage.getItem(TAB_STORAGE_PREFIX + id);
-      if (stored) return stored as TabKey;
-    }
-    return "overview";
+    return getStoredProjectTab(id) ?? "overview";
   });
   const tabContentRef = useRef<HTMLDivElement>(null);
-  const handleTabChange = (tab: TabKey) => { setActiveTab(tab); if (id) localStorage.setItem(TAB_STORAGE_PREFIX + id, tab); };
+  const handleTabChange = (tab: TabKey) => { setActiveTab(tab); persistProjectTab(id, tab); };
 
   // 仅在项目 ID 真正切换时重置到概览页，页面刷新时恢复已保存的 tab
   useEffect(() => {
     if (prevIdRef.current !== null && prevIdRef.current !== id) {
-      setActiveTab("overview");
-      if (id) localStorage.setItem(TAB_STORAGE_PREFIX + id, "overview");
+      const nextTab = getStoredProjectTab(id) ?? "overview";
+      setActiveTab(nextTab);
+      persistProjectTab(id, nextTab);
     }
     prevIdRef.current = id;
   }, [id]);
@@ -84,9 +82,9 @@ export function ProjectDetailPage() {
   useEffect(() => {
     const handler = (e: Event) => {
       const { tab, projectId } = (e as CustomEvent).detail;
-      if (projectId === id && tab) {
-        setActiveTab(tab as TabKey);
-        if (id) localStorage.setItem(TAB_STORAGE_PREFIX + id, tab);
+      if (projectId === id && isProjectDetailTabKey(tab)) {
+        setActiveTab(tab);
+        persistProjectTab(id, tab);
       }
     };
     window.addEventListener("aitestlink:navigate-tab", handler);

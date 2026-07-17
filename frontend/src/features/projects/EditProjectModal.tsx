@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Modal } from "../../shared/components/Modal";
+import { MenuSelect } from "../../shared/components/MenuSelect";
 import { useAPISync } from "../../api/useAPISync";
 import { useUnsavedChanges } from "../../shared/hooks/useUnsavedChanges";
 import type { Project, TestType } from "../../shared/types/platform";
@@ -19,7 +20,7 @@ const testTypeOptions: { value: TestType; label: string }[] = [
 ];
 
 const testStatusOptions = ["待测试", "测试中", "已测试"];
-const docStatusOptions = ["待生成", "生成中", "已完成"];
+const docStatusOptions = ["待解析", "待生成", "生成中", "部分生成", "已完成"];
 
 export function EditProjectModal({ open, onClose, project }: EditProjectModalProps) {
   const { updateProject } = useAPISync();
@@ -51,7 +52,7 @@ export function EditProjectModal({ open, onClose, project }: EditProjectModalPro
   };
 
   const testStatusOrder = ["待测试", "测试中", "已测试"];
-  const docStatusOrder = ["待生成", "生成中", "已完成"];
+  const docStatusOrder = ["待解析", "待生成", "生成中", "部分生成", "已完成"];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,35 +105,25 @@ export function EditProjectModal({ open, onClose, project }: EditProjectModalPro
         <div className="form-row">
           <label className="form-label">
             测试类型 *
-            <select className="form-select" value={testType} onChange={(e) => { setTestType(e.target.value as TestType); projDirty.markDirty(); }}>
-              {testTypeOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            <MenuSelect value={testType} options={testTypeOptions} onChange={(value) => { setTestType(value); projDirty.markDirty(); }} required />
           </label>
         </div>
         <div className="form-row">
           <label className="form-label">
             优先级
-            <select className="form-select" value={priority} onChange={(e) => { setPriority(e.target.value as "高" | "中" | "低"); projDirty.markDirty(); }}>
-              <option value="高">高</option>
-              <option value="中">中</option>
-              <option value="低">低</option>
-            </select>
+            <MenuSelect value={priority} options={[{ value: "高", label: "高" }, { value: "中", label: "中" }, { value: "低", label: "低" }]} onChange={(value) => { setPriority(value); projDirty.markDirty(); }} />
           </label>
         </div>
         <div className="form-row">
           <label className="form-label">
             测试状态
-            <select className="form-select" value={testStatus} onChange={(e) => { setTestStatus(e.target.value); projDirty.markDirty(); }}>
-              {testStatusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <MenuSelect value={testStatus} options={testStatusOptions.map((s) => ({ value: s, label: s }))} onChange={(value) => { setTestStatus(value); projDirty.markDirty(); }} />
           </label>
         </div>
         <div className="form-row">
           <label className="form-label">
             文档状态
-            <select className="form-select" value={docStatus} onChange={(e) => { setDocStatus(e.target.value); projDirty.markDirty(); }}>
-              {docStatusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <MenuSelect value={docStatus} options={docStatusOptions.map((s) => ({ value: s, label: s }))} onChange={(value) => { setDocStatus(value); projDirty.markDirty(); }} />
           </label>
         </div>
         <div className="form-row">

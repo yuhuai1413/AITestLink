@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 export interface Column<T> {
   key: string;
@@ -7,6 +7,7 @@ export interface Column<T> {
   align?: "left" | "center" | "right";
   width?: string;
   sticky?: "left" | "right";
+  lineClamp?: number;
 }
 
 interface DataTableProps<T> {
@@ -38,10 +39,22 @@ export function DataTable<T>({ columns, rows, getRowKey }: DataTableProps<T>) {
               {columns.map((column) => (
                 <td
                   key={column.key}
-                  className={`align-${column.align ?? "center"}${column.sticky ? ` sticky-${column.sticky}` : ""}`}
-                  style={column.width ? { width: column.width, minWidth: column.width } : undefined}
+                  className={`align-${column.align ?? "center"}${column.sticky ? ` sticky-${column.sticky}` : ""}${column.lineClamp ? " data-table__td--multiline" : ""}`}
+                  style={{
+                    ...(column.width ? { width: column.width, minWidth: column.width } : {}),
+                    ...(column.lineClamp ? { "--line-clamp": column.lineClamp } as CSSProperties : {}),
+                  }}
                 >
-                  {column.render(row)}
+                  {column.lineClamp ? (
+                    <div className="data-table__cell-multiline-frame">
+                      <div className="data-table__cell-layout-sizer" aria-hidden="true">
+                        {column.render(row)}
+                      </div>
+                      <div className="data-table__cell-multiline">
+                        {column.render(row)}
+                      </div>
+                    </div>
+                  ) : column.render(row)}
                 </td>
               ))}
             </tr>

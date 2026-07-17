@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.model_config import ModelConfig
@@ -39,7 +39,13 @@ async def get_published_prompt(db: AsyncSession, config_key: str | None) -> str:
         .order_by(ModelConfig.updated_at.desc())
         .limit(1)
     )
-    return legacy.scalar_one_or_none() or ""
+    legacy_content = legacy.scalar_one_or_none()
+    if legacy_content:
+        return legacy_content
+
+    from app.prompts.prompt_catalog import PROMPT_CATALOG
+
+    return PROMPT_CATALOG.get(config_key, "")
 
 
 async def _next_version(db: AsyncSession, config_key: str) -> int:
@@ -121,3 +127,30 @@ async def list_prompt_versions(db: AsyncSession, config_key: str) -> list[Prompt
         .order_by(PromptVersion.version.desc())
     )
     return list(result.scalars().all())
+
+
+async def delete_prompt_version(
+    db: AsyncSession,
+    config_key: str,
+    version_id: str,
+) -> bool:
+    result = await db.execute(
+        select(PromptVersion.status).where(
+            PromptVersion.id == version_id,
+            PromptVersion.config_key == config_key,
+        )
+    )
+    status = result.scalar_one_or_none()
+    if not status:
+        return False
+    if status == "published":
+        raise ValueError("当前发布版本不能删除")
+
+    await db.execute(
+        delete(PromptVersion).where(
+            PromptVersion.id == version_id,
+            PromptVersion.config_key == config_key,
+        )
+    )
+    await db.flush()
+    return True

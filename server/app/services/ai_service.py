@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # 任务类型到配置key的映射
 TASK_CONFIG_MAP = {
     "需求解析": "parse-requirements",
+    "系统识别": "system-recognition",
     "测试点生成": "generate-test-points",
     "用例生成": "generate-test-cases",
     "脚本生成": "generate-scripts",
@@ -322,7 +323,16 @@ class AIService:
         user_prompt = f"以下是本批需求 JSON。只处理这些需求，并保持 requirementId 原值不变：\n{requirements_text}"
 
         response = await self._call_llm(user_prompt, "测试点生成", user_id)
-        return validate_ai_output("测试点生成", self._parse_json_response(response))
+        parsed = self._parse_json_response(response)
+        try:
+            return validate_ai_output("测试点生成", parsed)
+        except ValueError:
+            logger.error(
+                "generate_test_points validation failed. input_preview=%s output_preview=%s",
+                requirements_text[:1000],
+                json.dumps(parsed, ensure_ascii=False)[:2000] if isinstance(parsed, (dict, list)) else str(parsed)[:2000],
+            )
+            raise
 
     async def generate_test_cases(self, test_points_text: str, user_id: str = "") -> list[dict]:
         """Generate test cases from test points."""
@@ -340,6 +350,17 @@ class AIService:
 
         response = await self._call_llm(user_prompt, "脚本生成", user_id)
         return validate_ai_output("脚本生成", self._parse_json_response(response))
+
+    async def analyze_system_recognition(self, recognition_input: dict, user_id: str = "") -> dict:
+        """Use AI to turn real DOM snapshots plus requirement scope into page objects."""
+        user_prompt = (
+            "请基于以下真实系统 DOM 摘要和需求范围进行系统识别。"
+            "只输出结构化 JSON，不要解释。\n\n"
+            f"{json.dumps(recognition_input, ensure_ascii=False)}"
+        )
+
+        response = await self._call_llm(user_prompt, "系统识别", user_id, max_tokens=16000)
+        return validate_ai_object("系统识别", self._parse_json_response(response))
 
     async def analyze_script_execution(self, scripts_text: str, execution_results: str, user_id: str = "") -> dict:
         """AI analysis of script execution results and generate report."""

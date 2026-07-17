@@ -10,6 +10,14 @@
   --surface-soft: #f8fafc;
   --line: #dbe3ec;
   --line-strong: #c5d0dc;
+  --input-border: rgba(15, 23, 42, 0.11);
+  --input-border-hover: rgba(91, 33, 182, 0.24);
+  --input-border-focus: rgba(91, 33, 182, 0.48);
+  --input-bg: #ffffff;
+  --input-bg-soft: #fbfcfe;
+  --input-shadow: 0 1px 2px rgba(15, 23, 42, 0.025);
+  --input-radius: 12px;
+  --input-radius-pill: 999px;
   --text: #102033;
   --muted: #64748b;
   --subtle: #8b98a8;
@@ -68,7 +76,9 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 

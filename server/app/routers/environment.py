@@ -1,4 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
+from typing import Literal
+
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -8,8 +11,17 @@ from app.schemas.environment_config import (
     TestAccountCreate, TestAccountUpdate
 )
 from app.services.environment_service import EnvironmentService
+from app.services.ui_recognition_service import UIRecognitionService
 
 router = APIRouter()
+
+
+class RecognizeUIRequest(BaseModel):
+    accountId: str | None = None
+    headed: bool = False
+    scopeMode: Literal["full", "incremental"] = "full"
+    requirementIds: list[str] = []
+    requirementText: str = ""
 
 
 @router.get("/projects/{project_id}/environments")
@@ -44,7 +56,10 @@ async def update_environment(
 ):
     """更新环境配置"""
     service = EnvironmentService(db)
-    result = await service.update(config_id, data, user["sub"])
+    try:
+        result = await service.update(config_id, data, user["sub"])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not result:
         raise HTTPException(status_code=404, detail="环境配置不存在")
     return result
@@ -107,3 +122,41 @@ async def delete_account(
     if not success:
         raise HTTPException(status_code=404, detail="测试账号不存在")
     return {"ok": True}
+
+
+@router.get("/environments/{environment_id}/ui-snapshot")
+async def get_ui_snapshot(
+    environment_id: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """获取环境最近一次系统识别结果"""
+    service = UIRecognitionService(db)
+    try:
+        result = await service.latest_snapshot(environment_id, user["sub"])
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return result or {"ok": False, "message": "暂无识别结果"}
+
+
+@router.post("/environments/{environment_id}/ui-snapshot/recognize")
+async def recognize_ui_snapshot(
+    environment_id: str,
+    data: RecognizeUIRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """登录目标系统并识别页面结构，用于后续生成更稳定的自动化脚本。"""
+    service = UIRecognitionService(db)
+    try:
+        return await service.recognize(
+            environment_id,
+            user["sub"],
+            data.accountId,
+            headed=data.headed,
+            scope_mode=data.scopeMode,
+            requirement_ids=data.requirementIds,
+            requirement_text=data.requirementText,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

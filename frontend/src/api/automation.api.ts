@@ -1,5 +1,5 @@
 import { request } from "./request";
-import type { ExecuteScriptRequest, ExecutionOptions, Script, ExecutionResult } from "../contracts/automation";
+import type { ExecuteScriptRequest, ExecutionOptions, ExecutionRun, Script, ExecutionResult } from "../contracts/automation";
 
 export const scriptsApi = {
   list: (projectId: string) => request<Script[]>(`/projects/${projectId}/scripts`),
@@ -12,4 +12,5 @@ export const scriptsApi = {
   executionOptions: (id: string) => request<ExecutionOptions>(`/scripts/${id}/execution-options`),
   execute: (id: string, data: ExecuteScriptRequest) =>
     request<ExecutionResult>(`/scripts/${id}/execute`, { method: "POST", body: JSON.stringify(data) }),
+  executions: (id: string) => request<ExecutionRun[]>(`/scripts/${id}/executions`),
 };

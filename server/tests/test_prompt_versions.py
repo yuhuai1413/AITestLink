@@ -70,6 +70,43 @@ def test_admin_can_publish_draft_and_rollback_prompt(client, admin_headers):
     assert rollback.json()["version"]["version"] == 3
 
 
+def test_admin_can_delete_archived_prompt_but_not_published(client, admin_headers):
+    published = client.put(
+        "/api/model-configs/admin-prompts",
+        json={"prompts": [{"configKey": "generate-test-cases", "prompt": "当前版本"}]},
+        headers=admin_headers,
+    )
+    assert published.status_code == 200
+
+    draft = client.post(
+        "/api/model-configs/admin-prompts/generate-test-cases/draft",
+        json={"prompt": "待清理历史版本"},
+        headers=admin_headers,
+    )
+    assert draft.status_code == 200
+    draft_id = draft.json()["version"]["id"]
+
+    delete_draft = client.delete(
+        f"/api/model-configs/admin-prompts/generate-test-cases/versions/{draft_id}",
+        headers=admin_headers,
+    )
+    assert delete_draft.status_code == 200
+
+    versions = client.get(
+        "/api/model-configs/admin-prompts/generate-test-cases/versions",
+        headers=admin_headers,
+    ).json()
+    assert all(item["id"] != draft_id for item in versions)
+    published_id = next(item["id"] for item in versions if item["status"] == "published")
+
+    delete_published = client.delete(
+        f"/api/model-configs/admin-prompts/generate-test-cases/versions/{published_id}",
+        headers=admin_headers,
+    )
+    assert delete_published.status_code == 400
+    assert delete_published.json()["detail"] == "当前发布版本不能删除"
+
+
 def test_runtime_prefers_published_version_over_legacy_copy(async_engine, event_loop):
     session_factory = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
 

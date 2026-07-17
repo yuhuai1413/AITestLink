@@ -32,7 +32,12 @@ class RequirementOutput(_AIOutputBase):
 
 
 class TestPointOutput(_AIOutputBase):
-    requirementId: str
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True, populate_by_name=True)
+
+    requirementId: str = Field(
+        validation_alias=AliasChoices("requirementId", "requirement_id", "reqId", "req_id"),
+        serialization_alias="requirementId",
+    )
     module: str
     type: str
     title: str
@@ -44,6 +49,17 @@ class TestPointOutput(_AIOutputBase):
     _type_required = field_validator("type", mode="before")(_required_text)
     _title_required = field_validator("title", mode="before")(_required_text)
     _requirement_required = field_validator("requirementId", mode="before")(_required_text)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_model_payload(cls, value: Any) -> Any:
+        """测试点只入库核心字段；模型额外返回的用例字段会被忽略。"""
+        if isinstance(value, dict):
+            cleaned = dict(value)
+            for key in ("id", "testPointId", "testPointCode", "pointCode", "code"):
+                cleaned.pop(key, None)
+            return cleaned
+        return value
 
     @field_validator("priority", mode="before")
     @classmethod
@@ -196,8 +212,53 @@ class GeneratedDocumentOutput(_AIOutputBase):
     _content_required = field_validator("content", mode="before")(_required_text)
 
 
+class SystemRecognitionOutput(_AIOutputBase):
+    class RelevantModule(_AIOutputBase):
+        name: str
+        reason: str = ""
+        confidence: float = Field(default=0, ge=0, le=1)
+
+        _name_required = field_validator("name", mode="before")(_required_text)
+
+    class Element(_AIOutputBase):
+        name: str
+        type: str
+        selector: str = ""
+        selectorType: str = ""
+        action: str = ""
+        required: bool = False
+        confidence: float = Field(default=0, ge=0, le=1)
+        evidence: str = ""
+
+        _name_required = field_validator("name", mode="before")(_required_text)
+        _type_required = field_validator("type", mode="before")(_required_text)
+
+    class PageObject(_AIOutputBase):
+        pageName: str
+        routeOrMenuPath: list[str] = Field(default_factory=list)
+        purpose: str = ""
+        elements: list["SystemRecognitionOutput.Element"] = Field(default_factory=list)
+        assertions: list[str] = Field(default_factory=list)
+        risks: list[str] = Field(default_factory=list)
+
+        _page_required = field_validator("pageName", mode="before")(_required_text)
+
+    class NavigationStep(_AIOutputBase):
+        fromPage: str = Field(default="", validation_alias=AliasChoices("fromPage", "from"), serialization_alias="fromPage")
+        toPage: str = Field(default="", validation_alias=AliasChoices("toPage", "to"), serialization_alias="toPage")
+        steps: list[str] = Field(default_factory=list)
+
+    scopeMode: Literal["full", "incremental"] = "full"
+    relevantModules: list[RelevantModule] = Field(default_factory=list)
+    pageObjects: list[PageObject] = Field(default_factory=list)
+    navigationPlan: list[NavigationStep] = Field(default_factory=list)
+    scriptGuidance: list[str] = Field(default_factory=list)
+    unresolvedQuestions: list[str] = Field(default_factory=list)
+
+
 OUTPUT_SCHEMAS: dict[str, type[_AIOutputBase]] = {
     "需求解析": RequirementOutput,
+    "系统识别": SystemRecognitionOutput,
     "测试点生成": TestPointOutput,
     "用例生成": TestCaseOutput,
     "脚本生成": AutomationScriptOutput,
@@ -205,7 +266,37 @@ OUTPUT_SCHEMAS: dict[str, type[_AIOutputBase]] = {
     "文档生成": GeneratedDocumentOutput,
 }
 
-SINGLE_OBJECT_TASKS = {"执行脚本", "文档生成"}
+SINGLE_OBJECT_TASKS = {"系统识别", "执行脚本", "文档生成"}
+
+FIELD_LABELS: dict[str, str] = {
+    "requirementId": "关联需求ID",
+    "testPointId": "关联测试点ID",
+    "testCaseId": "关联用例ID",
+    "module": "模块",
+    "type": "类型",
+    "title": "标题",
+    "description": "描述",
+    "priority": "优先级",
+    "automatable": "是否可自动化",
+}
+
+
+def _friendly_validation_message(task_type: str, exc: ValidationError, index: int | None = None) -> str:
+    first_error = exc.errors()[0]
+    field = ".".join(str(part) for part in first_error.get("loc", ())) or "结果"
+    field_label = FIELD_LABELS.get(field, field)
+    raw_message = first_error.get("msg", "不合法")
+    if raw_message == "Field required":
+        message = f"缺少「{field_label}（{field}）」"
+    else:
+        message = f"「{field_label}（{field}）」{raw_message}"
+    prefix = f"第 {index + 1} 条" if index is not None else ""
+    if task_type == "测试点生成" and field == "requirementId":
+        return (
+            f"{task_type}结果结构校验失败：{prefix}{message}。"
+            "模型返回的测试点没有带上原始需求的 requirementId，系统无法确认该测试点属于哪条需求。"
+        )
+    return f"{task_type}结果结构校验失败：{prefix}{message}"
 
 
 def extract_ai_items(data: Any) -> list[dict[str, Any]]:
@@ -229,17 +320,13 @@ def validate_ai_output(task_type: str, data: Any) -> list[dict[str, Any]]:
     if not items:
         raise ValueError(f"{task_type}未返回任何数据")
 
-    try:
-        return [
-            schema.model_validate(item).model_dump(by_alias=True)
-            for item in items
-        ]
-    except ValidationError as exc:
-        first_error = exc.errors()[0]
-        field = ".".join(str(part) for part in first_error.get("loc", ())) or "结果"
-        raise ValueError(
-            f"{task_type}结果结构校验失败：字段 {field} {first_error.get('msg', '不合法')}"
-        ) from exc
+    output: list[dict[str, Any]] = []
+    for index, item in enumerate(items):
+        try:
+            output.append(schema.model_validate(item).model_dump(by_alias=True))
+        except ValidationError as exc:
+            raise ValueError(_friendly_validation_message(task_type, exc, index)) from exc
+    return output
 
 
 def validate_ai_object(task_type: str, data: Any) -> dict[str, Any]:
@@ -253,6 +340,9 @@ def output_json_schema(task_type: str) -> dict[str, Any] | None:
     if schema is None:
         return None
     item_schema = schema.model_json_schema(by_alias=True)
+    if task_type == "测试点生成":
+        # 对支持 JSON Schema 的模型仍声明严格输出；本地校验负责兼容非严格模型的无害多余字段。
+        item_schema["additionalProperties"] = False
     if task_type in SINGLE_OBJECT_TASKS:
         return item_schema
     return {"type": "array", "items": item_schema, "minItems": 1}

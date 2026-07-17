@@ -175,7 +175,7 @@ export function FilesTab({ projectId }: { projectId: string }) {
         {initialLoading && files.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : files.length === 0 ? <div className="empty-state"><p>暂无文档，请上传文件。</p></div> : (
           <DataTable rows={files} getRowKey={(r) => r.id} columns={[
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
-            { key: "name", label: "文件名称", align: "left", render: (r) => <strong>{r.name}</strong> },
+            { key: "name", label: "文件名称", align: "left", lineClamp: 2, render: (r) => <strong>{r.name}</strong> },
             { key: "type", label: "文件类型", render: (r) => r.fileType },
             { key: "size", label: "文件大小", render: (r) => r.size },
             { key: "parseStatus", label: "解析状态", align: "center", render: (r) => <span title={r.parseError || undefined}><StatusPill tone={r.parseStatus === "已完成" ? "green" : r.parseStatus === "解析中" ? "blue" : r.parseStatus === "失败" ? "red" : "slate"}>{r.parseStatus}</StatusPill></span> },

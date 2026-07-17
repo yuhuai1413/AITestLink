@@ -26,6 +26,48 @@ def test_test_point_output_normalizes_supported_values():
     assert result[0]["automatable"] is True
 
 
+def test_test_point_output_missing_requirement_id_has_user_friendly_message():
+    with pytest.raises(ValueError) as exc:
+        validate_ai_output("测试点生成", [{
+            "module": "登录",
+            "type": "正常流程",
+            "title": "正确账号登录",
+            "priority": "P0",
+            "automatable": True,
+        }])
+    message = str(exc.value)
+    assert "关联需求ID" in message
+    assert "requirementId" in message
+    assert "Field required" not in message
+
+
+def test_test_point_output_drops_model_generated_id_fields():
+    result = validate_ai_output("测试点生成", [{
+        "id": "model-made-id",
+        "testPointId": "model-made-test-point-id",
+        "testPointCode": "TP_MODEL_001",
+        "precondition": "模型误返回的用例前置条件",
+        "steps": "模型误返回的用例步骤",
+        "expectedResult": "模型误返回的预期结果",
+        "testData": "模型误返回的测试数据",
+        "requirementId": "req-1",
+        "module": "登录",
+        "type": "正常流程",
+        "title": "正确账号登录",
+        "priority": "P0",
+        "automatable": True,
+    }])
+    assert result == [{
+        "requirementId": "req-1",
+        "module": "登录",
+        "type": "正常流程",
+        "title": "正确账号登录",
+        "description": "",
+        "priority": "P0",
+        "automatable": True,
+    }]
+
+
 def test_test_case_output_rejects_missing_required_field():
     with pytest.raises(ValueError, match="title"):
         validate_ai_output("用例生成", [{"testPointId": "tp-1", "module": "登录"}])

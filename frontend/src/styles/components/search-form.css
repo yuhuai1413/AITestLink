@@ -27,20 +27,28 @@
   height: 34px;
   padding: 0 12px;
   padding-right: 28px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-l4);
-  background: var(--surface-soft);
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  background: var(--input-bg-soft);
   font-size: 13px;
   color: var(--text);
   width: 160px;
-  transition: border-color 0.15s;
+  box-shadow: var(--input-shadow);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+}
+
+.search-form__input:hover,
+.search-form__select:hover {
+  border-color: var(--input-border-hover);
+  background: var(--surface);
 }
 
 .search-form__input:focus,
 .search-form__select:focus {
   outline: none;
-  border-color: var(--blue);
+  border-color: var(--input-border-focus);
   background: var(--surface);
+  box-shadow: var(--input-shadow);
 }
 
 .search-form__select {
