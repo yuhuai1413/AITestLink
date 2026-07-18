@@ -6,6 +6,8 @@ class RequirementUpdate(BaseModel):
     rule: Optional[str] = None
     question: Optional[str] = None
     confirmed: Optional[bool] = None
+    clarificationStatus: Optional[str] = None
+    clarificationAnswer: Optional[str] = None
     reviewStatus: Optional[str] = None
 
 
@@ -21,4 +23,6 @@ class RequirementResponse(BaseModel):
     rule: str
     question: str
     confirmed: bool
+    clarificationStatus: str = "无需确认"
+    clarificationAnswer: str = ""
     reviewStatus: str = "待评审" 

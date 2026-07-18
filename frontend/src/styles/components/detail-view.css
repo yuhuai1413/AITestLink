@@ -8,10 +8,10 @@
 .detail-row {
   display: grid;
   grid-template-columns: 100px 1fr;
-  gap: 12px;
+  gap: 8px;
   min-height: 36px;
   align-items: center;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.72);
   padding: 10px 4px;
   font-size: 14px;
   color: var(--text);
@@ -27,6 +27,40 @@
 
 .detail-row--full {
   grid-template-columns: 100px 1fr;
+}
+
+.reverse-requirements-form {
+  gap: 8px;
+}
+
+.reverse-requirements-form .detail-row {
+  border-bottom: 0;
+  padding: 6px 4px;
+}
+
+.reverse-requirements-form .form-textarea {
+  border-color: var(--line);
+  border-radius: var(--radius-l2);
+  background: var(--surface);
+  box-shadow: none;
+  font-weight: 400;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.reverse-requirements-form .form-textarea:hover:not(:disabled) {
+  border-color: rgba(91, 33, 182, 0.32);
+  background: var(--surface-soft);
+}
+
+.reverse-requirements-form .form-textarea:focus {
+  border-color: var(--blue);
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.reverse-requirements-form .form-textarea::placeholder,
+.reverse-requirements-form .menu-field-input::placeholder {
+  font-weight: 400;
 }
 
 .detail-label {

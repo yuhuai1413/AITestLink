@@ -4,7 +4,7 @@ import uuid
 import re
 import json
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 
 from app.models.test_point import TestPoint
 from app.models.test_case import TestCase
@@ -19,6 +19,7 @@ from app.services.ai_input_builder import (
     validate_references,
 )
 from app.services.ai_task_support import normalize_automation
+from app.services.data_lineage_service import VALID, cascade_delete_test_case, cascade_delete_test_point
 from app.services.environment_service import EnvironmentService
 from app.contracts.test_design import TestPointUpdate, TestCaseUpdate
 
@@ -42,6 +43,14 @@ class TestDesignService(BaseService):
         if not requirements or {item.id for item in requirements} != set(requirement_ids):
             from fastapi import HTTPException
             raise HTTPException(status_code=400, detail="未找到需求数据")
+        invalid_count = sum(1 for item in requirements if (item.validity_status or VALID) != VALID)
+        if invalid_count:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=f"还有 {invalid_count} 条需求已失效，请先重新解析需求")
+        unreviewed_count = sum(1 for item in requirements if item.review_status != "已通过")
+        if unreviewed_count:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=f"还有 {unreviewed_count} 条需求未评审通过，请先完成需求评审")
 
         generated: list[dict] = []
         for payload in requirement_batches(requirements):
@@ -125,24 +134,22 @@ class TestDesignService(BaseService):
         return self._to_dict(tp)
 
     async def delete_test_point(self, point_id: str) -> bool:
-        result = await self.db.execute(select(TestPoint).where(TestPoint.id == point_id))
-        tp = result.scalar_one_or_none()
-        if not tp:
+        if not await cascade_delete_test_point(self.db, point_id):
             return False
-        await self.db.delete(tp)
         await self.db.commit()
         return True
 
     async def batch_update_review(self, point_ids: list[str], status: str) -> int:
+        ids = [str(item) for item in point_ids if str(item).strip()]
+        if not ids:
+            return 0
         result = await self.db.execute(
-            select(TestPoint).where(TestPoint.id.in_(point_ids))
+            update(TestPoint)
+            .where(TestPoint.id.in_(ids))
+            .values(review_status=status, updated_at=self._now())
         )
-        count = 0
-        for tp in result.scalars().all():
-            tp.review_status = status
-            count += 1
         await self.db.commit()
-        return count
+        return result.rowcount or 0
 
     # ── Test Cases ───────────────────────────────────────────────────
 
@@ -156,6 +163,14 @@ class TestDesignService(BaseService):
         if not test_points or {item.id for item in test_points} != set(test_point_ids):
             from fastapi import HTTPException
             raise HTTPException(status_code=400, detail="未找到测试点数据")
+        invalid_count = sum(1 for item in test_points if (item.validity_status or VALID) != VALID)
+        if invalid_count:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=f"还有 {invalid_count} 个测试点已失效，请先重新生成测试点")
+        unreviewed_count = sum(1 for item in test_points if item.review_status != "已通过")
+        if unreviewed_count:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=f"还有 {unreviewed_count} 个测试点未评审通过，请先完成测试点评审")
 
         if any(not item.requirement_id for item in test_points):
             from fastapi import HTTPException
@@ -278,11 +293,8 @@ class TestDesignService(BaseService):
         return self._to_dict(tc)
 
     async def delete_test_case(self, case_id: str) -> bool:
-        result = await self.db.execute(select(TestCase).where(TestCase.id == case_id))
-        tc = result.scalar_one_or_none()
-        if not tc:
+        if not await cascade_delete_test_case(self.db, case_id):
             return False
-        await self.db.delete(tc)
         await self.db.commit()
         return True
 
@@ -298,15 +310,16 @@ class TestDesignService(BaseService):
         return count
 
     async def batch_update_review(self, case_ids: list[str], status: str) -> int:
+        ids = [str(item) for item in case_ids if str(item).strip()]
+        if not ids:
+            return 0
         result = await self.db.execute(
-            select(TestCase).where(TestCase.id.in_(case_ids))
+            update(TestCase)
+            .where(TestCase.id.in_(ids))
+            .values(review_status=status, updated_at=self._now())
         )
-        count = 0
-        for tc in result.scalars().all():
-            tc.review_status = status
-            count += 1
         await self.db.commit()
-        return count
+        return result.rowcount or 0
 
     # ── Coverage ─────────────────────────────────────────────────────
 

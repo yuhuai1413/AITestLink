@@ -8,7 +8,6 @@ import { useUnsavedChanges } from "../../../shared/hooks/useUnsavedChanges";
 import { DataTable } from "../../../shared/components/DataTable";
 import { SectionHeader } from "../../../shared/components/SectionHeader";
 import { StatusPill } from "../../../shared/components/StatusPill";
-import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { Modal } from "../../../shared/components/Modal";
 import { formatTestStepsForDisplay } from "../../../shared/utils/formatTestSteps";
 import { formatProjectTime as formatTime, priorityTone, reviewTone } from "./projectDetail.config";
@@ -22,16 +21,10 @@ export function DocFusionTab({ projectId }: { projectId: string }) {
   const { testCases, scripts } = useProjectData(projectId);
   const [manualResults, setManualResults] = useState<Record<string, string>>({});
   const inputRef = useRef<HTMLInputElement>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [viewCase, setViewCase] = useState<typeof testCases[0] | null>(null);
   const [editCase, setEditCase] = useState<typeof testCases[0] | null>(null);
   const [editActual, setEditActual] = useState("");
   const execDirty = useUnsavedChanges("实测结果");
-  const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
-
-  const allSelected = testCases.length > 0 && testCases.every((tc) => selectedIds.has(tc.id));
-  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(testCases.map((tc) => tc.id)));
-  const toggleSelect = (id: string) => setSelectedIds((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
 
   const handleUploadManual = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -94,35 +87,6 @@ export function DocFusionTab({ projectId }: { projectId: string }) {
     } catch { toast.error("保存失败"); }
   };
 
-    const toggleReview = async (tc: typeof testCases[0]) => {
-    const newStatus = tc.reviewStatus === "已通过" ? "待评审" : "已通过";
-    try {
-      const updated = await testCasesApi.update(tc.id, { reviewStatus: newStatus } as any);
-      dispatch({ type: "UPDATE_TEST_CASE", payload: { ...tc, reviewStatus: newStatus, createdAt: updated.createdAt, updatedAt: updated.updatedAt } });
-      toast.success(newStatus === "已通过" ? "评审已通过" : "已取消评审");
-    } catch (e) {
-      toast.error("评审操作失败: " + (e as Error).message);
-    }
-  };
-
-  const batchApprove = async () => {
-    let successCount = 0;
-    for (const id of selectedIds) {
-      const tc = testCases.find((c) => c.id === id);
-      if (tc && tc.reviewStatus !== "已通过") {
-        try {
-          const updated = await testCasesApi.update(tc.id, { reviewStatus: "已通过" } as any);
-          dispatch({ type: "UPDATE_TEST_CASE", payload: { ...tc, reviewStatus: "已通过", createdAt: updated.createdAt, updatedAt: updated.updatedAt } });
-          successCount++;
-        } catch (e) {
-          toast.error(`用例 ${tc.caseCode} 评审失败`);
-        }
-      }
-    }
-    toast.success(`已通过 ${successCount} 条用例`);
-    setSelectedIds(new Set());
-  };
-
   const getScriptTime = (tc: typeof testCases[0]) => {
     const script = scripts.find((s) => s.testCaseId === tc.id);
     return script ? formatTime(script.updatedAt) : "-";
@@ -130,21 +94,18 @@ export function DocFusionTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="手动 + 自动化结果合并" description="上传手动测试结果文档，与自动化测试数据按用例编号合并展示。"
+      <SectionHeader title="手动 + 自动化结果合并" description="上传手动测试结果文档，与自动化测试数据按用例编号合并展示。" meta={<>共 <strong>{testCases.length}</strong> 条用例</>}
         actions={<>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
-              {selectedIds.size > 0 && <button className="primary-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}>批量评审通过 ({selectedIds.size})</button>}
               <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} onChange={handleUploadManual} />
               <button className="primary-button" type="button" onClick={() => inputRef.current?.click()}><FileUp size={13} /> 上传手动测试结果</button>
             </div>
-            <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{testCases.length}</strong> 条用例</span>
           </div>
         </>} />
       <section className="work-panel">
         {testCases.length === 0 ? <div className="empty-state"><p>暂无测试用例数据</p></div> : (
           <DataTable rows={testCases} getRowKey={(r) => r.id} columns={[
-            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "module", label: "模块", render: (r) => r.module },
             { key: "caseCode", label: "用例编号", render: (r) => r.caseCode },
             { key: "feature", label: "测试点", align: "left", lineClamp: 2, render: (r) => <span title={r.feature}>{r.feature}</span> },
@@ -162,7 +123,7 @@ export function DocFusionTab({ projectId }: { projectId: string }) {
               const matched = actual && r.expectedResult && actual.trim() === r.expectedResult.trim();
               return matched ? <StatusPill tone="green">通过</StatusPill> : actual ? <StatusPill tone="red">未通过</StatusPill> : <StatusPill tone="slate">未执行</StatusPill>;
             }},
-            { key: "reviewStatus", label: "评审状态", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={r.reviewStatus === "已通过" ? "green" : "slate"}>{r.reviewStatus || "待评审"}</StatusPill></button> },
+            { key: "reviewStatus", label: "评审状态", align: "center", render: (r) => <StatusPill tone={r.reviewStatus === "已通过" ? "green" : "slate"}>{r.reviewStatus || "待评审"}</StatusPill> },
             { key: "automation", label: "是否自动化", align: "center", render: (r) => r.automation === "是" ? "是" : "否" },
             { key: "testTime", label: "测试时间", render: (r) => <span>{getScriptTime(r)}</span> },
             { key: "actions", label: "操作", width: "100px", sticky: "right" as const, align: "center", render: (r) => (
@@ -224,7 +185,6 @@ export function DocFusionTab({ projectId }: { projectId: string }) {
           </div>
         )}
       </Modal>
-      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 条用例标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
       {execDirty.confirmDialog}
     </div>
   );

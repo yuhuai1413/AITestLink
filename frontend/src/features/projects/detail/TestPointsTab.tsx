@@ -8,7 +8,6 @@ import { useConfigError } from "../../../shared/hooks/useConfigError";
 import { startGenerateTestPoints } from "../../../shared/hooks/aiTaskManager";
 import { useUnsavedChanges } from "../../../shared/hooks/useUnsavedChanges";
 import { DataTable } from "../../../shared/components/DataTable";
-import { MenuSelect } from "../../../shared/components/MenuSelect";
 import { SectionHeader } from "../../../shared/components/SectionHeader";
 import { StatusPill } from "../../../shared/components/StatusPill";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
@@ -27,7 +26,6 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
   const [streamCount, setStreamCount] = useState(0);
-  const [moduleFilter, setModuleFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [viewTP, setViewTP] = useState<typeof testPoints[0] | null>(null);
@@ -37,20 +35,20 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
   const tpDirty = useUnsavedChanges("测试点");
 
   const hasPrerequisite = requirements.length > 0;
+  const invalidReqCount = requirements.filter((r) => (r as any).validityStatus === "已失效").length;
   const unreviewedReqCount = requirements.filter((r) => (r as any).reviewStatus !== "已通过").length;
 
   const handleGenerate = async () => {
     if (!hasPrerequisite) { toast.warning("请先在「需求列表」页面完成需求解析"); return; }
+    if (invalidReqCount > 0) { toast.warning(`还有 ${invalidReqCount} 条需求已失效，请先重新解析需求`); return; }
     if (unreviewedReqCount > 0) { toast.warning(`还有 ${unreviewedReqCount} 条需求未评审通过，请先完成需求评审`); return; }
     if (testPoints.length > 0 && !showGenerateConfirm) { setShowGenerateConfirm(true); return; }
     setShowGenerateConfirm(false);
     await startGenerateTestPoints(projectId);
-    await refreshTestPoints();
+    await refresh();
   };
-  const modules = useMemo(() => Array.from(new Set(testPoints.map((tp) => tp.module))), [testPoints]);
-  const filtered = useMemo(() => moduleFilter === "all" ? testPoints : testPoints.filter((tp) => tp.module === moduleFilter), [testPoints, moduleFilter]);
-  const allSelected = filtered.length > 0 && filtered.every((tp) => selectedIds.has(tp.id));
-  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(filtered.map((tp) => tp.id)));
+  const allSelected = testPoints.length > 0 && testPoints.every((tp) => selectedIds.has(tp.id));
+  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(testPoints.map((tp) => tp.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleReview = async (tp: any) => {
     const newStatus = tp.reviewStatus === "已通过" ? "待评审" : "已通过";
@@ -59,14 +57,6 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
     await refreshTestPoints();
   };
   const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
-  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
-  const batchDelete = async () => {
-    for (const id of selectedIds) { try { await testPointsApi.delete(id); } catch {} }
-    selectedIds.forEach((id) => dispatch({ type: "DELETE_TEST_POINT", payload: id }));
-    toast.success(`已删除 ${selectedIds.size} 个测试点`);
-    setSelectedIds(new Set());
-    await refreshTestPoints();
-  };
   const batchApprove = async () => {
     for (const id of selectedIds) {
       const tp = testPoints.find((t) => t.id === id);
@@ -95,20 +85,18 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="测试点生成" description="AI 从文档中提取测试点，支持评审。"
+      <SectionHeader title="测试点生成" description="AI 从文档中提取测试点，支持评审。" meta={<>共 <strong>{testPoints.length}</strong> 个测试点</>}
         actions={<>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
               {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
               <button className="primary-button" type="button" onClick={handleGenerate} disabled={generating}>{generating ? <><Loader2 size={13} className="animate-spin" /> 生成中...</> : <><WandSparkles size={13} /> 生成测试点</>}</button>
             </div>
-            <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{testPoints.length}</strong> 个测试点</span>
           </div>
         </>} />
-      {modules.length > 0 && <div className="filter-bar"><span className="filter-label">模块筛选</span><MenuSelect className="filter-menu-select" size="compact" value={moduleFilter} options={[{ value: "all", label: "全部模块" }, ...modules.map((m) => ({ value: m, label: m }))]} onChange={setModuleFilter} /></div>}
       <section className="work-panel">
-        {initialLoading && filtered.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : filtered.length === 0 ? <div className="empty-state"><p>暂无测试点</p></div> : (
-          <DataTable rows={filtered} getRowKey={(r) => r.id} columns={[
+        {initialLoading && testPoints.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : testPoints.length === 0 ? <div className="empty-state"><p>暂无测试点</p></div> : (
+          <DataTable rows={testPoints} getRowKey={(r) => r.id} columns={[
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "pointCode", label: "测试点编号", render: (r) => r.pointCode || <span style={{ color: "var(--muted)" }}>-</span> },
             { key: "module", label: "模块", render: (r) => r.module },
@@ -116,13 +104,13 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
             { key: "title", label: "测试点", align: "left", lineClamp: 2, render: (r) => r.title },
             { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
             { key: "reviewStatus", label: "评审", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus}</StatusPill></button> },
+            { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <span title={r.invalidReason || ""}><StatusPill tone={r.validityStatus === "已失效" ? "amber" : "green"}>{r.validityStatus || "有效"}</StatusPill></span> },
             { key: "createdAt", label: "生成时间", render: (r) => formatTime(r.createdAt) },
             { key: "updatedAt", label: "更新时间", render: (r) => formatTime(r.updatedAt) },
             { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
               <div className="inline-actions">
                 <button className="text-button" type="button" onClick={() => setViewTP(r)}>查看</button>
                 <button className="text-button" type="button" onClick={() => { setEditTP(r); setEditTitle(r.title); setEditDesc(r.description); }}>编辑</button>
-
               </div>
             )},
           ]} />

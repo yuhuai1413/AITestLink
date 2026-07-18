@@ -138,6 +138,25 @@ def _utc_iso(value: datetime | None) -> str | None:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _is_config_level_failure(exc: Exception) -> bool:
+    """Only persistent configuration failures should poison node status.
+
+    A long generation can fail because of timeout, transient network jitter, or
+    output validation. Those should make the task fail, but should not mark the
+    model connection as globally abnormal and block the next attempt.
+    """
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None) if response is not None else None
+    if status_code in {401, 403, 404}:
+        return True
+    message = str(exc)
+    config_markers = (
+        "401", "Unauthorized", "403", "Forbidden", "404", "Not Found",
+        "invalid api key", "incorrect api key", "API Key",
+    )
+    return any(marker in message for marker in config_markers)
+
+
 async def _mark_config_status(task_type: str, user_id: str, status: str, message: str = "") -> None:
     config_key = TASK_CONFIG_MAP.get(task_type)
     if not config_key or not user_id:
@@ -188,7 +207,8 @@ class AIService:
             await _mark_config_status(task_type, user_id, "normal", "最近一次任务调用成功")
             return content
         except Exception as exc:
-            await _mark_config_status(task_type, user_id, "abnormal", str(exc))
+            if _is_config_level_failure(exc):
+                await _mark_config_status(task_type, user_id, "abnormal", str(exc))
             raise
 
     def _parse_json_response(self, text: str) -> list | dict:
@@ -314,6 +334,23 @@ class AIService:
             doc_text = "".join(parts) + "\n\n【文档结束】"
 
         user_prompt = f"请对以下文档内容进行专业的需求分析。\n\n注意区分需求文档和辅助文档，辅助文档中的关键测试数据（如账号、密码、部门信息等）请在「question」字段中标注，格式为：【辅助文档信息】xxx。\n\n文档内容：\n\n{doc_text}"
+
+        response = await self._call_llm(user_prompt, "需求解析", user_id)
+        return validate_ai_output("需求解析", self._parse_json_response(response))
+
+    async def reverse_requirements(self, context_text: str, user_id: str = "") -> list[dict]:
+        """Infer candidate requirements from recognized UI and environment context."""
+        user_prompt = f"""请基于以下系统识别结果和反推约束，反推出可进入需求列表的候选需求。
+
+要求：
+1. 只基于输入中的环境、账号角色、页面、菜单、按钮、表单字段、URL 和识别证据反推，禁止编造看不到的业务规则。
+2. 需求粒度控制在“可测试的功能点”，不要把每个按钮机械拆成一条需求。
+3. 不确定的业务规则、权限边界、状态流转、数据范围必须写入 question。
+4. source 统一填写“系统识别反推”。
+5. 输出字段必须严格为 module、feature、source、risk、rule、question。
+
+反推上下文：
+{context_text}"""
 
         response = await self._call_llm(user_prompt, "需求解析", user_id)
         return validate_ai_output("需求解析", self._parse_json_response(response))

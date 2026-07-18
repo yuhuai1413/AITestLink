@@ -387,6 +387,7 @@
 
 .login-input::placeholder {
   color: #a0a0b0;
+  font-weight: 400;
 }
 
 /* 密码显示按钮 */

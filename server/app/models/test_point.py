@@ -20,5 +20,8 @@ class TestPoint(Base):
     priority = Column(String(10), default="P1")
     automatable = Column(Boolean, default=False)
     review_status = Column(String(50), default="待评审")
+    validity_status = Column(String(50), default="有效")
+    invalid_reason = Column(Text, default="")
+    invalidated_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

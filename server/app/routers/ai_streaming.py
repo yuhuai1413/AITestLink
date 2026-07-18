@@ -32,6 +32,7 @@ from app.services.ai_task_support import (
     to_eng_abbr as _to_eng_abbr,
 )
 from app.services.environment_service import EnvironmentService
+from app.services.requirement_clarification import default_clarification_status, is_clarification_resolved
 from app.services.ui_recognition_service import UIRecognitionService
 from app.schemas.ai_output import validate_ai_output
 from app.utils import verify_project_owner
@@ -55,6 +56,14 @@ async def _stream_generate_test_points(task_id: str, project_id: str, user_id: s
             requirements = result.scalars().all()
             if not requirements:
                 yield f"data: {json.dumps({'event': 'error', 'message': '需求列表为空'})}\n\n"
+                return
+            unreviewed_count = sum(1 for item in requirements if item.review_status != "已通过")
+            if unreviewed_count:
+                yield f"data: {json.dumps({'event': 'error', 'message': f'还有 {unreviewed_count} 条需求未评审通过，请先完成需求评审'}, ensure_ascii=False)}\n\n"
+                return
+            unresolved_count = sum(1 for item in requirements if not is_clarification_resolved(item.question, item.clarification_status, item.clarification_answer))
+            if unresolved_count:
+                yield f"data: {json.dumps({'event': 'error', 'message': f'还有 {unresolved_count} 条需求存在待确认问题，请先处理确认结论'}, ensure_ascii=False)}\n\n"
                 return
 
             all_items: list[dict] = []
@@ -334,17 +343,19 @@ async def _stream_parse_requirements(project_id: str, user_id: str):
             from sqlalchemy import delete
             await db.execute(delete(Requirement).where(Requirement.project_id == project_id))
             for index, req in enumerate(all_items, 1):
-                    db.add(Requirement(
-                        id=str(uuid.uuid4()),
-                        req_id=f"REQ_{index:03d}",
-                        project_id=project_id,
-                        module=req.get("module", ""),
-                        feature=req.get("feature", ""),
-                        source=req.get("source", ""),
-                        risk=req.get("risk", "中"),
-                        rule=req.get("rule", ""),
-                        question=req.get("question", ""),
-                    ))
+                question = req.get("question", "")
+                db.add(Requirement(
+                    id=str(uuid.uuid4()),
+                    req_id=f"REQ_{index:03d}",
+                    project_id=project_id,
+                    module=req.get("module", ""),
+                    feature=req.get("feature", ""),
+                    source=req.get("source", ""),
+                    risk=req.get("risk", "中"),
+                    rule=req.get("rule", ""),
+                    question=question,
+                    clarification_status=default_clarification_status(question),
+                ))
             # 标记文件为已完成
             for f in files:
                 f.parse_status = "已完成"

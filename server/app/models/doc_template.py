@@ -14,6 +14,11 @@ class DocTemplate(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text, default="")
     template_file = Column(String(500), default="")  # 模板文件路径
+    template_hash = Column(String(64), default="")
+    template_structure = Column(Text, default="")
+    parse_status = Column(String(50), default="未解析")
+    parse_error = Column(Text, default="")
+    parsed_at = Column(DateTime, nullable=True)
     prompt_template = Column(Text, default="")
     output_fields = Column(Text, default="")
     display_order = Column(Integer, default=0)

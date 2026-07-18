@@ -19,6 +19,9 @@ class AutomationScript(Base):
     status = Column(String(20), default="未测试")  # 未测试 / 通过 / 失败
     script_code = Column(String(50), default="")
     review_status = Column(String(50), default="待评审")
+    validity_status = Column(String(50), default="有效")
+    invalid_reason = Column(Text, default="")
+    invalidated_at = Column(DateTime, nullable=True)
     executed_at = Column(DateTime, nullable=True)
     generated_by_ai = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

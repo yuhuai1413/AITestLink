@@ -18,6 +18,12 @@ def test_execution_options_use_bound_environment_without_password(
     assert "dummy" not in response.text
 
 
+def test_delete_script_forbidden(client, api_script, auth_headers):
+    response = client.delete(f"/api/scripts/{api_script.id}", headers=auth_headers)
+    assert response.status_code == 400
+    assert "不允许单独删除" in response.json()["detail"]
+
+
 def test_execute_rejects_environment_not_bound_to_case(
     client, api_script, api_test_account, auth_headers
 ):

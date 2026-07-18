@@ -137,6 +137,11 @@ class DocTemplateResponse(BaseModel):
     name: str
     description: str
     template_file: str = Field(alias="templateFile")
+    template_hash: str = Field(default="", alias="templateHash")
+    template_structure: str = Field(default="", alias="templateStructure")
+    parse_status: str = Field(default="未解析", alias="parseStatus")
+    parse_error: str = Field(default="", alias="parseError")
+    parsed_at: datetime | None = Field(default=None, alias="parsedAt")
     prompt_template: str = Field(alias="promptTemplate")
     output_fields: str = Field(alias="outputFields")
     display_order: int = Field(alias="displayOrder")

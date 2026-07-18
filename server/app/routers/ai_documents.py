@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -18,6 +19,8 @@ from app.routers.auth import get_current_user
 from app.services.ai_service import AIService, check_config_for_task
 from app.services.ai_input_builder import document_context, validate_case_runtime_fields, validate_persisted_traceability
 from app.services.ai_task_support import friendly_error as _friendly_error, update_task_status as _update_task_status
+from app.services.data_lineage_service import VALID
+from app.services.doc_template_renderer import render_docx_from_template
 from app.utils import model_to_dict, verify_project_owner
 
 logger = logging.getLogger(__name__)
@@ -44,21 +47,42 @@ async def run_generate_docs(task_id: str, project_id: str, user_id: str, templat
 
             # 获取需求
             req_result = await db.execute(
-                select(Requirement).where(Requirement.project_id == project_id)
+                select(Requirement).where(
+                    Requirement.project_id == project_id,
+                    Requirement.review_status == "已通过",
+                    Requirement.validity_status == VALID,
+                )
             )
             requirements = req_result.scalars().all()
 
             # 获取测试点
             tp_result = await db.execute(
-                select(TestPoint).where(TestPoint.project_id == project_id)
+                select(TestPoint).where(
+                    TestPoint.project_id == project_id,
+                    TestPoint.review_status == "已通过",
+                    TestPoint.validity_status == VALID,
+                )
             )
             points = tp_result.scalars().all()
 
             # 获取测试用例
             tc_result = await db.execute(
-                select(TestCase).where(TestCase.project_id == project_id)
+                select(TestCase).where(
+                    TestCase.project_id == project_id,
+                    TestCase.review_status == "已通过",
+                    TestCase.validity_status == VALID,
+                )
             )
             cases = tc_result.scalars().all()
+            if not requirements:
+                await _update_task_status(db, task_id, "失败", "没有已评审通过的需求，无法生成文档")
+                return
+            if not points:
+                await _update_task_status(db, task_id, "失败", "没有已评审通过的测试点，无法生成文档")
+                return
+            if not cases:
+                await _update_task_status(db, task_id, "失败", "没有已评审通过的测试用例，无法生成文档")
+                return
             validate_persisted_traceability(points, cases)
             validate_case_runtime_fields(cases)
             req_text, tp_text, tc_text = document_context(requirements, points, cases)
@@ -82,27 +106,28 @@ async def run_generate_docs(task_id: str, project_id: str, user_id: str, templat
             # 逐个模板生成
             results = []
             for tpl in tpl_list:
-                # 使用模板专属 prompt
-                custom_prompt = tpl.prompt_template or ""
-                if custom_prompt and custom_prompt != "test":
-                    # 将模板 prompt 作为 system_prompt，项目数据作为 user_prompt
-                    doc_result = await ai_service.generate_doc_by_template(
-                        custom_prompt, project_info, req_text, tp_text, tc_text, user_id
+                template_path = _resolve_docx_template_path(tpl.template_file or "")
+                if template_path:
+                    doc_result = render_docx_from_template(
+                        template_path,
+                        template_name=tpl.name,
+                        project=project,
+                        requirements=requirements,
+                        test_points=points,
+                        test_cases=cases,
                     )
                 else:
-                    # 使用默认 prompt
-                    doc_result = await ai_service.generate_test_documents(
-                        project_info, req_text, tp_text, tc_text, user_id
-                    )
-
-                # 尝试读取 Word 模板文件并合并内容
-                if tpl.template_file:
-                    template_path = os.path.join("uploads", "doc-templates", tpl.template_file)
-                    if os.path.exists(template_path):
-                        try:
-                            doc_result = _merge_docx_template(template_path, doc_result, project.name or "")
-                        except Exception as merge_err:
-                            logger.warning(f"Failed to merge docx template: {merge_err}")
+                    # No Word template file is available. Fall back to the LLM
+                    # JSON document path so the feature still produces content.
+                    custom_prompt = tpl.prompt_template or ""
+                    if custom_prompt and custom_prompt != "test":
+                        doc_result = await ai_service.generate_doc_by_template(
+                            custom_prompt, project_info, req_text, tp_text, tc_text, user_id
+                        )
+                    else:
+                        doc_result = await ai_service.generate_test_documents(
+                            project_info, req_text, tp_text, tc_text, user_id
+                        )
 
                 results.append({
                     "templateId": tpl.config_key,
@@ -121,6 +146,40 @@ async def run_generate_docs(task_id: str, project_id: str, user_id: str, templat
         except Exception as e:
             logger.exception("run_generate_docs failed")
             await _update_task_status(db, task_id, "失败", _friendly_error(e, "文档生成"))
+
+
+async def _needs_llm_for_docs(db: AsyncSession, user_id: str, template_id: str | None) -> bool:
+    from app.models.doc_template import DocTemplate
+
+    if template_id:
+        result = await db.execute(
+            select(DocTemplate).where(
+                DocTemplate.config_key == template_id,
+                DocTemplate.user_id == user_id,
+            )
+        )
+        templates = [tpl for tpl in [result.scalar_one_or_none()] if tpl]
+    else:
+        result = await db.execute(select(DocTemplate).where(DocTemplate.user_id == user_id))
+        templates = result.scalars().all()
+
+    if not templates:
+        return True
+    return any(not _resolve_docx_template_path(tpl.template_file or "") for tpl in templates)
+
+
+def _resolve_docx_template_path(template_file: str) -> str:
+    if not template_file:
+        return ""
+    safe_name = os.path.basename(template_file)
+    candidates = [
+        os.path.join("uploads", "doc-templates", safe_name),
+        os.path.join("server", "uploads", "doc-templates", safe_name),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return ""
 
 
 def _merge_docx_template(template_path: str, doc_result: dict, project_name: str) -> dict:
@@ -187,11 +246,47 @@ async def generate_docs(
 ):
     await verify_project_owner(db, project_id, user["sub"])
 
-    config_check = await check_config_for_task("文档生成", user["sub"])
-    if not config_check["configured"]:
-        raise HTTPException(status_code=400, detail=config_check["message"])
+    req_count = (await db.execute(
+        select(Requirement).where(Requirement.project_id == project_id)
+    )).scalars().all()
+    if not req_count:
+        raise HTTPException(status_code=400, detail="需求列表为空，请先完成需求解析")
+    invalid_req = sum(1 for item in req_count if (item.validity_status or VALID) != VALID)
+    if invalid_req:
+        raise HTTPException(status_code=400, detail=f"还有 {invalid_req} 条需求已失效，请先重新解析需求")
+    unreviewed_req = sum(1 for item in req_count if item.review_status != "已通过")
+    if unreviewed_req:
+        raise HTTPException(status_code=400, detail=f"还有 {unreviewed_req} 条需求未评审通过，请先完成需求评审")
+
+    point_count = (await db.execute(
+        select(TestPoint).where(TestPoint.project_id == project_id)
+    )).scalars().all()
+    if not point_count:
+        raise HTTPException(status_code=400, detail="测试点列表为空，请先生成测试点")
+    invalid_point = sum(1 for item in point_count if (item.validity_status or VALID) != VALID)
+    if invalid_point:
+        raise HTTPException(status_code=400, detail=f"还有 {invalid_point} 个测试点已失效，请先重新生成测试点")
+    unreviewed_point = sum(1 for item in point_count if item.review_status != "已通过")
+    if unreviewed_point:
+        raise HTTPException(status_code=400, detail=f"还有 {unreviewed_point} 个测试点未评审通过，请先完成测试点评审")
+
+    case_count = (await db.execute(
+        select(TestCase).where(TestCase.project_id == project_id)
+    )).scalars().all()
+    if not case_count:
+        raise HTTPException(status_code=400, detail="测试用例列表为空，请先生成测试用例")
+    invalid_case = sum(1 for item in case_count if (item.validity_status or VALID) != VALID)
+    if invalid_case:
+        raise HTTPException(status_code=400, detail=f"还有 {invalid_case} 条测试用例已失效，请先重新生成测试用例")
+    unreviewed_case = sum(1 for item in case_count if item.review_status != "已通过")
+    if unreviewed_case:
+        raise HTTPException(status_code=400, detail=f"还有 {unreviewed_case} 条测试用例未评审通过，请先完成用例评审")
 
     template_id = body.template_id if body else None
+    if await _needs_llm_for_docs(db, user["sub"], template_id):
+        config_check = await check_config_for_task("文档生成", user["sub"])
+        if not config_check["configured"]:
+            raise HTTPException(status_code=400, detail=config_check["message"])
 
     task = AITask(
         id=str(uuid.uuid4()),

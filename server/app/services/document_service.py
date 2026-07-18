@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import uuid
 
+from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.config import settings
@@ -12,6 +13,12 @@ from app.models.requirement import Requirement
 from app.models.status_log import StatusLog
 from app.services.base import BaseService
 from app.contracts.document import RequirementUpdate
+from app.services.requirement_clarification import (
+    CLARIFICATION_NOT_REQUIRED,
+    CLARIFICATION_PENDING,
+    default_clarification_status,
+    is_clarification_resolved,
+)
 
 ALLOWED_EXTENSIONS = {
     "docx", "doc", "pdf", "md", "txt", "json", "yaml", "yml", "csv",
@@ -113,7 +120,9 @@ class DocumentService(BaseService):
         from app.models.test_point import TestPoint
         from app.models.test_case import TestCase
         from app.models.automation_script import AutomationScript
+        from app.models.execution_run import ExecutionRun
 
+        await self.db.execute(delete(ExecutionRun).where(ExecutionRun.project_id == project_id))
         await self.db.execute(delete(Requirement).where(Requirement.project_id == project_id))
         await self.db.execute(delete(TestPoint).where(TestPoint.project_id == project_id))
         await self.db.execute(delete(TestCase).where(TestCase.project_id == project_id))
@@ -190,16 +199,40 @@ class DocumentService(BaseService):
             "rule": "rule",
             "question": "question",
             "confirmed": "confirmed",
+            "clarificationStatus": "clarification_status",
+            "clarification_status": "clarification_status",
+            "clarificationAnswer": "clarification_answer",
+            "clarification_answer": "clarification_answer",
             "reviewStatus": "review_status",
+            "review_status": "review_status",
         }
         for schema_key, db_key in field_map.items():
             if schema_key in update_data:
                 setattr(req, db_key, update_data[schema_key])
 
+        req.clarification_status = default_clarification_status(
+            req.question,
+            False,
+            req.clarification_answer,
+        )
+        req.confirmed = req.clarification_status in {"已确认", "无需确认"}
+
+        if req.review_status == "已通过" and not is_clarification_resolved(req.question, req.clarification_status, req.clarification_answer):
+            raise HTTPException(status_code=400, detail="该需求还有待确认问题未处理，请先填写确认结论")
+
         req.updated_at = self._now()
         await self.db.commit()
         await self.db.refresh(req)
         return self._to_dict(req)
+
+    async def delete_requirement(self, req_id: str) -> bool:
+        from app.services.data_lineage_service import cascade_delete_requirement
+
+        deleted = await cascade_delete_requirement(self.db, req_id)
+        if not deleted:
+            return False
+        await self.db.commit()
+        return True
 
     async def search_requirements(self, project_id: str, query: str) -> list[dict]:
         result = await self.db.execute(
@@ -218,7 +251,12 @@ class DocumentService(BaseService):
         )
         count = 0
         for req in result.scalars().all():
-            req.confirmed = confirmed
+            req.clarification_status = default_clarification_status(
+                req.question,
+                False,
+                req.clarification_answer,
+            )
+            req.confirmed = req.clarification_status != CLARIFICATION_PENDING
             count += 1
         await self.db.commit()
         return count

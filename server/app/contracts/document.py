@@ -26,6 +26,8 @@ class RequirementUpdate(BaseModel):
     rule: str | None = None
     question: str | None = None
     confirmed: bool | None = None
+    clarification_status: str | None = Field(default=None, alias="clarificationStatus")
+    clarification_answer: str | None = Field(default=None, alias="clarificationAnswer")
     review_status: str | None = Field(default=None, alias="reviewStatus")
 
     model_config = {"populate_by_name": True}
@@ -42,6 +44,8 @@ class RequirementResponse(BaseModel):
     rule: str
     question: str
     confirmed: bool
+    clarification_status: str = Field(default="无需确认", alias="clarificationStatus")
+    clarification_answer: str = Field(default="", alias="clarificationAnswer")
     review_status: str = Field(default="待评审", alias="reviewStatus")
     created_at: datetime | None = None
     updated_at: datetime | None = None

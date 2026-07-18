@@ -1,4 +1,4 @@
-import { request } from "./request";
+import { API_BASE, getAuthHeaders, request } from "./request";
 import type { TestPoint, TestPointCreate, TestPointUpdate, TestCase, TestCaseCreate, TestCaseUpdate, TestCoverage } from "../contracts/test-design";
 
 export const testPointsApi = {
@@ -42,6 +42,18 @@ export const testCasesApi = {
       method: "POST",
       body: JSON.stringify({ ids, status }),
     }),
+  export: async (projectId: string, type: "all" | "manual") => {
+    const response = await fetch(`${API_BASE}/projects/${projectId}/test-cases/export?type=${type}`, {
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      let detail = text;
+      try { detail = JSON.parse(text).detail || text; } catch {}
+      throw new Error(detail || "导出失败");
+    }
+    return response.blob();
+  },
   getCoverage: (projectId: string) =>
     request<TestCoverage>(`/projects/${projectId}/coverage`),
 };

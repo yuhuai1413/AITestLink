@@ -8,6 +8,7 @@ from app.models.automation_script import AutomationScript
 from app.models.test_case import TestCase
 from app.services.base import BaseService
 from app.services.ai_service import AIService
+from app.services.data_lineage_service import VALID, cascade_delete_script
 
 
 class AutomationService(BaseService):
@@ -26,6 +27,10 @@ class AutomationService(BaseService):
         if not cases:
             from fastapi import HTTPException
             raise HTTPException(status_code=400, detail="未找到测试用例数据")
+        invalid_count = sum(1 for item in cases if (item.validity_status or VALID) != VALID)
+        if invalid_count:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=f"还有 {invalid_count} 条测试用例已失效，请先重新生成测试用例")
 
         # 构建用例文本
         cases_text = "\n".join([
@@ -93,11 +98,8 @@ class AutomationService(BaseService):
         return self._to_dict(script)
 
     async def delete_script(self, script_id: str) -> bool:
-        result = await self.db.execute(select(AutomationScript).where(AutomationScript.id == script_id))
-        script = result.scalar_one_or_none()
-        if not script:
+        if not await cascade_delete_script(self.db, script_id):
             return False
-        await self.db.delete(script)
         await self.db.commit()
         return True
 

@@ -5,18 +5,29 @@ import re
 from collections.abc import Iterable
 from typing import Any
 
+from app.services.requirement_clarification import default_clarification_status
+
 
 MAX_BATCH_CHARS = 12000
-SCRIPT_BATCH_CHARS = 20000
+# 脚本生成单条用例就可能输出数千字符代码。按单条/小批次生成，
+# 可以降低模型超时概率，并支持“边生成边落库、边展示”。
+SCRIPT_BATCH_CHARS = 6000
 
 
-def _json_batches(records: Iterable[dict[str, Any]], max_chars: int = MAX_BATCH_CHARS) -> list[str]:
+def _json_batches(
+    records: Iterable[dict[str, Any]],
+    max_chars: int = MAX_BATCH_CHARS,
+    max_records: int | None = None,
+) -> list[str]:
     batches: list[str] = []
     current: list[dict[str, Any]] = []
     current_size = 2
     for record in records:
         encoded = json.dumps(record, ensure_ascii=False)
-        if current and current_size + len(encoded) + 1 > max_chars:
+        if current and (
+            current_size + len(encoded) + 1 > max_chars
+            or (max_records is not None and len(current) >= max_records)
+        ):
             batches.append(json.dumps(current, ensure_ascii=False))
             current = []
             current_size = 2
@@ -133,6 +144,12 @@ def requirement_records(requirements: Iterable[Any]) -> list[dict[str, Any]]:
         "risk": item.risk or "中",
         "rule": item.rule or "",
         "question": item.question or "无",
+        "clarificationStatus": getattr(item, "clarification_status", "") or default_clarification_status(
+            item.question,
+            getattr(item, "confirmed", False),
+            getattr(item, "clarification_answer", ""),
+        ),
+        "clarificationAnswer": getattr(item, "clarification_answer", "") or "",
     } for item in requirements]
 
 
@@ -212,7 +229,11 @@ def test_case_batches(
     cases: Iterable[Any],
     ui_context_by_environment: dict[str, dict[str, Any]] | None = None,
 ) -> list[str]:
-    return _json_batches(test_case_records(cases, ui_context_by_environment), max_chars=SCRIPT_BATCH_CHARS)
+    return _json_batches(
+        test_case_records(cases, ui_context_by_environment),
+        max_chars=SCRIPT_BATCH_CHARS,
+        max_records=1,
+    )
 
 
 def document_context(

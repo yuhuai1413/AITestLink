@@ -154,14 +154,13 @@ export function FilesTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="文档管理" description="上传需求文档、接口文档、原型和变更说明，支持拖拽上传。"
+      <SectionHeader title="文档管理" description="上传需求文档、接口文档、原型和变更说明，支持拖拽上传。" meta={<>共 <strong>{files.length}</strong> 个文件</>}
         actions={<>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
               <input ref={inputRef} type="file" multiple accept=".docx,.doc,.pdf,.md,.json,.yaml,.yml,.xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => handleUpload(e.target.files)} />
               <button className="ghost-button" type="button" onClick={() => inputRef.current?.click()} disabled={uploading}>手动上传</button>
             </div>
-            <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{files.length}</strong> 个文件</span>
           </div>
         </>} />
       <div onDrop={handleDrop} onDragOver={(e) => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}

@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
 from fastapi.responses import FileResponse
@@ -11,6 +12,7 @@ from app.config import settings
 from app.database import get_db
 from app.models.doc_template import DocTemplate
 from app.routers.auth import get_current_user, require_admin
+from app.services.doc_template_parser import dumps_structure, parse_docx_template
 
 router = APIRouter()
 
@@ -84,12 +86,40 @@ def _to_dict(m: DocTemplate) -> dict:
         "name": m.name,
         "description": m.description,
         "templateFile": m.template_file or "",
+        "templateHash": m.template_hash or "",
+        "templateStructure": m.template_structure or "",
+        "parseStatus": m.parse_status or "未解析",
+        "parseError": m.parse_error or "",
+        "parsedAt": m.parsed_at.isoformat() if m.parsed_at else "",
         "promptTemplate": m.prompt_template or "",
         "outputFields": m.output_fields or "",
         "displayOrder": m.display_order,
         "createdAt": m.created_at.isoformat() if m.created_at else "",
         "updatedAt": m.updated_at.isoformat() if m.updated_at else "",
     }
+
+
+def _template_path(template_file: str) -> str:
+    if not template_file:
+        return ""
+    safe_name = os.path.basename(template_file)
+    return os.path.join(TEMPLATE_DIR, safe_name)
+
+
+def _parse_template_into_model(tpl: DocTemplate, file_path: str) -> None:
+    try:
+        structure = parse_docx_template(file_path)
+        tpl.template_hash = structure.get("fileHash", "")
+        tpl.template_structure = dumps_structure(structure)
+        tpl.parse_status = "已解析"
+        tpl.parse_error = ""
+        tpl.parsed_at = datetime.now(timezone.utc)
+    except Exception as exc:
+        tpl.template_hash = ""
+        tpl.template_structure = ""
+        tpl.parse_status = "解析失败"
+        tpl.parse_error = f"{type(exc).__name__}: {exc}"
+        tpl.parsed_at = None
 
 
 async def _ensure_user_templates(db: AsyncSession, user_id: str):
@@ -116,6 +146,26 @@ async def _ensure_user_templates(db: AsyncSession, user_id: str):
     await db.commit()
 
 
+async def _ensure_parsed_templates(db: AsyncSession, templates: list[DocTemplate]) -> None:
+    changed = False
+    for tpl in templates:
+        if not tpl.template_file:
+            continue
+        file_path = _template_path(tpl.template_file)
+        if not os.path.exists(file_path):
+            if tpl.parse_status != "文件不存在":
+                tpl.parse_status = "文件不存在"
+                tpl.parse_error = "模板文件不存在，请重新上传模板"
+                changed = True
+            continue
+        if tpl.parse_status == "已解析" and tpl.template_structure:
+            continue
+        _parse_template_into_model(tpl, file_path)
+        changed = True
+    if changed:
+        await db.commit()
+
+
 @router.get("/doc-configs")
 async def list_doc_configs(
     user: dict = Depends(get_current_user),
@@ -128,6 +178,7 @@ async def list_doc_configs(
         select(DocTemplate).where(DocTemplate.user_id == user_id).order_by(DocTemplate.display_order)
     )
     templates = result.scalars().all()
+    await _ensure_parsed_templates(db, templates)
     return [_to_dict(t) for t in templates]
 
 
@@ -163,7 +214,7 @@ async def download_doc_template(
     if not tpl.template_file:
         raise HTTPException(status_code=404, detail="模板文件不存在")
 
-    file_path = os.path.join(TEMPLATE_DIR, tpl.template_file)
+    file_path = _template_path(tpl.template_file)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="模板文件不存在")
 
@@ -231,8 +282,17 @@ async def upload_template_file(
     with open(file_path, "wb") as f:
         f.write(content_bytes)
 
-    # Update database
+    # Update database and cache template structure. The generated document still
+    # starts from the original file; this structure only helps routing/filling.
     tpl.template_file = safe_filename
+    _parse_template_into_model(tpl, file_path)
     await db.commit()
 
-    return {"ok": True, "templateFile": safe_filename}
+    return {
+        "ok": True,
+        "templateFile": safe_filename,
+        "templateHash": tpl.template_hash or "",
+        "parseStatus": tpl.parse_status or "未解析",
+        "parseError": tpl.parse_error or "",
+        "parsedAt": tpl.parsed_at.isoformat() if tpl.parsed_at else "",
+    }

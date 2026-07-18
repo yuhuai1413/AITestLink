@@ -76,7 +76,7 @@ export const docConfigApi = {
       method: "POST",
       headers: getAuthHeaders(),
       body: formData,
-    }).then((r) => r.json()) as Promise<{ ok: boolean; templateFile: string }>;
+    }).then((r) => r.json()) as Promise<{ ok: boolean; templateFile: string; templateHash?: string; parseStatus?: string; parseError?: string; parsedAt?: string }>;
   },
 };
 
@@ -94,6 +94,8 @@ export const aiApi = {
     request<ConfigCheckResult>(`/projects/${projectId}/ai/check-config/${taskType}`),
   parseRequirements: (projectId: string) =>
     request<AITask>(`/projects/${projectId}/ai/parse-requirements`, { method: "POST" }),
+  reverseRequirements: (projectId: string, data: { scope: string; testTarget: string; writeMode: string; maxPages: number; maxRequirements: number; keywords?: string }) =>
+    request<AITask>(`/projects/${projectId}/ai/reverse-requirements`, { method: "POST", body: JSON.stringify(data) }),
   generateTestPoints: (projectId: string) =>
     request<AITask>(`/projects/${projectId}/ai/generate-test-points`, { method: "POST" }),
   generateTestCases: (projectId: string) =>

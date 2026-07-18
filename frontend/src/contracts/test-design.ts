@@ -17,6 +17,9 @@ export interface TestPoint {
   priority: Priority;
   automatable: boolean;
   reviewStatus: ReviewStatus;
+  validityStatus?: string;
+  invalidReason?: string;
+  invalidatedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -57,6 +60,9 @@ export interface TestCase {
   passed: string;
   automation: AutomationFlag;
   reviewStatus: ReviewStatus;
+  validityStatus?: string;
+  invalidReason?: string;
+  invalidatedAt?: string | null;
   remark: string;
   tester: string;
   testDate: string;

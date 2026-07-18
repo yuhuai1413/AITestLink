@@ -19,7 +19,7 @@ import { formatProjectTime as formatTime } from "./projectDetail.config";
 // ═══════════════════════════════════════
 
 export function DocGenerateTab({ projectId }: { projectId: string }) {
-  const { files, testCases, refresh, loading, initialLoading } = useProjectData(projectId);
+  const { files, requirements, testPoints, testCases, refresh, loading, initialLoading } = useProjectData(projectId);
   const templates = [
     { id: "tpl-plan", name: "软件测试计划", desc: "测试范围、策略、资源、进度安排", needs: ["files"] },
     { id: "tpl-spec", name: "软件测试说明", desc: "测试环境、用例设计、执行方法", needs: ["files", "testCases"] },
@@ -61,6 +61,28 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
     return true;
   };
 
+  const getGenerationGateError = () => {
+    if (requirements.length === 0) return "需求列表为空，请先完成需求解析";
+    const invalidReq = requirements.filter((item) => (item as any).validityStatus === "已失效").length;
+    if (invalidReq > 0) return `还有 ${invalidReq} 条需求已失效，请先重新解析需求`;
+    const unreviewedReq = requirements.filter((item) => item.reviewStatus !== "已通过").length;
+    if (unreviewedReq > 0) return `还有 ${unreviewedReq} 条需求未评审通过，请先完成需求评审`;
+
+    if (testPoints.length === 0) return "测试点列表为空，请先生成测试点";
+    const invalidPoint = testPoints.filter((item) => (item as any).validityStatus === "已失效").length;
+    if (invalidPoint > 0) return `还有 ${invalidPoint} 个测试点已失效，请先重新生成测试点`;
+    const unreviewedPoint = testPoints.filter((item) => item.reviewStatus !== "已通过").length;
+    if (unreviewedPoint > 0) return `还有 ${unreviewedPoint} 个测试点未评审通过，请先完成测试点评审`;
+
+    if (testCases.length === 0) return "测试用例列表为空，请先生成测试用例";
+    const invalidCase = testCases.filter((item) => (item as any).validityStatus === "已失效").length;
+    if (invalidCase > 0) return `还有 ${invalidCase} 条测试用例已失效，请先重新生成测试用例`;
+    const unreviewedCase = testCases.filter((item) => item.reviewStatus !== "已通过").length;
+    if (unreviewedCase > 0) return `还有 ${unreviewedCase} 条测试用例未评审通过，请先完成用例评审`;
+
+    return "";
+  };
+
   const handleGenerateClick = (id: string) => {
     if (statusMap[id]?.status === "已生成") {
       setReGenerateId(id);
@@ -70,8 +92,14 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
   };
 
   const handleGenerate = async (id: string) => {
-    setGenerating(id);
     const tpl = templates.find((t) => t.id === id);
+    const gateError = getGenerationGateError();
+    if (gateError) {
+      toast.warning(gateError);
+      return;
+    }
+
+    setGenerating(id);
 
     // 立即设置状态为「生成中」
     await docGenApi.updateStatus(projectId, id, "生成中");
@@ -97,6 +125,26 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
     }
   };
 
+  const pickGeneratedDoc = (tasks: any[], templateId: string) => {
+    for (const task of tasks) {
+      if (task.type !== "文档生成" || task.status !== "成功" || !task.result) continue;
+      try {
+        const parsed = JSON.parse(task.result);
+        if (Array.isArray(parsed)) {
+          const matched = parsed.find((item) => item?.templateId === templateId);
+          if (matched) return matched;
+        } else if (parsed?.templateId === templateId) {
+          return parsed;
+        } else if (!parsed?.templateId && tasks.length === 1) {
+          return parsed;
+        }
+      } catch {
+        continue;
+      }
+    }
+    return null;
+  };
+
   const handlePreview = useCallback(async (id: string) => {
     if (statusMap[id]?.status !== "已生成") { toast.warning("该文档尚未生成，请先点击「生成」"); return; }
     const tpl = templates.find((t) => t.id === id);
@@ -108,9 +156,8 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
       });
       if (response.ok) {
         const tasks = await response.json();
-        const docTask = tasks.find((t: any) => t.type === "文档生成" && t.status === "成功" && t.result);
-        if (docTask && docTask.result) {
-          const docData = JSON.parse(docTask.result);
+        const docData = pickGeneratedDoc(tasks, id);
+        if (docData) {
           // 优先使用 docxBase64 渲染真正的 Word 预览
           if (docData.docxBase64 && previewRef.current) {
             const binaryStr = atob(docData.docxBase64);
@@ -168,9 +215,8 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
       });
       if (!response.ok) throw new Error("获取任务失败");
       const tasks = await response.json();
-      const docTask = tasks.find((t: any) => t.type === "文档生成" && t.status === "成功" && t.result);
-      if (docTask && docTask.result) {
-        const docData = JSON.parse(docTask.result);
+      const docData = pickGeneratedDoc(tasks, id);
+      if (docData) {
         if (docData.docxBase64) {
           const binaryStr = atob(docData.docxBase64);
           const bytes = new Uint8Array(binaryStr.length);
@@ -213,6 +259,12 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
   };
 
   const doBatchGenerate = async () => {
+    const gateError = getGenerationGateError();
+    if (gateError) {
+      toast.warning(gateError);
+      return;
+    }
+
     const readyIds = [...selectedIds].filter((id) => {
       const tpl = templates.find((t) => t.id === id);
       return tpl && isReady(tpl.needs);

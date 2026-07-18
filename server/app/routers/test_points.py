@@ -84,10 +84,10 @@ async def delete_test_point(
     user: dict = Depends(get_current_user),
     service: TestDesignService = Depends(get_test_design_service),
 ):
-    success = await service.delete_test_point(tp_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Test point not found")
-    return {"ok": True}
+    raise HTTPException(
+        status_code=400,
+        detail="测试点属于测试链路中间产物，不允许单独删除；如需调整，请修改评审状态或重新生成测试点。",
+    )
 
 
 class BatchReviewRequest(BaseModel):

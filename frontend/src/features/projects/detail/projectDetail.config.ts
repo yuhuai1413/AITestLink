@@ -34,6 +34,7 @@ export const PROJECT_TAB_STORAGE_PREFIX = "aitestlink-project-tab-";
 
 export const aiTaskTargetTabMap: Record<AITaskType, ProjectDetailTabKey> = {
   "需求解析": "requirements",
+  "AI反推需求": "requirements",
   "测试点生成": "testPoints",
   "用例生成": "testCases",
   "脚本生成": "scripts",

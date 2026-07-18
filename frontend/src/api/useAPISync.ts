@@ -115,10 +115,9 @@ export function useAPISync(enabled = true) {
       }
     }, [dispatch, state.testPoints.length]),
 
-    deleteTestPoint: useCallback(async (id: string) => {
-      await testPointsApi.delete(id);
-      dispatch({ type: "DELETE_TEST_POINT", payload: id });
-    }, [dispatch]),
+    deleteTestPoint: useCallback(async (_id: string) => {
+      throw new Error("测试点属于测试链路中间产物，不允许单独删除；如需调整，请修改评审状态或重新生成测试点。");
+    }, []),
 
     updateTestCase: useCallback(async (id: string, data: Record<string, unknown>) => {
       await testCasesApi.update(id, data as Record<string, unknown>);
@@ -128,10 +127,9 @@ export function useAPISync(enabled = true) {
       }
     }, [dispatch, state.testCases.length]),
 
-    deleteTestCase: useCallback(async (id: string) => {
-      await testCasesApi.delete(id);
-      dispatch({ type: "DELETE_TEST_CASE", payload: id });
-    }, [dispatch]),
+    deleteTestCase: useCallback(async (_id: string) => {
+      throw new Error("测试用例属于测试链路中间产物，不允许单独删除；如需调整，请修改评审状态或重新生成测试用例。");
+    }, []),
 
     parseRequirements: useCallback(async (projectId: string) => {
       const task = await aiApi.parseRequirements(projectId);
@@ -225,6 +223,8 @@ function apiToRequirement(r: ApiRequirement): Requirement {
     id: r.id, reqId: r.reqId || "", projectId: r.projectId, module: r.module, feature: r.feature,
     source: r.source, risk: r.risk as Requirement["risk"],
     rule: r.rule, question: r.question, confirmed: r.confirmed,
+    clarificationStatus: r.clarificationStatus,
+    clarificationAnswer: r.clarificationAnswer,
     reviewStatus: r.reviewStatus ?? "待评审",
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,

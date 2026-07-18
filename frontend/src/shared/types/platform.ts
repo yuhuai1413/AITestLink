@@ -77,7 +77,12 @@ export interface Requirement {
   rule: string;
   question: string;
   confirmed: boolean;
+  clarificationStatus?: string;
+  clarificationAnswer?: string;
   reviewStatus: string;
+  validityStatus?: string;
+  invalidReason?: string;
+  invalidatedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -106,6 +111,9 @@ export interface TestPoint {
   priority: Priority;
   automatable: boolean;
   reviewStatus: ReviewStatus;
+  validityStatus?: string;
+  invalidReason?: string;
+  invalidatedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -137,6 +145,9 @@ export interface TestCase {
   passed: string;
   automation: AutomationFlag;
   reviewStatus: ReviewStatus;
+  validityStatus?: string;
+  invalidReason?: string;
+  invalidatedAt?: string | null;
   remark: string;
   tester: string;
   testDate: string;
@@ -148,6 +159,7 @@ export interface TestCase {
 
 export type AITaskType =
   | "需求解析"
+  | "AI反推需求"
   | "测试点生成"
   | "用例生成"
   | "脚本生成"
@@ -183,6 +195,9 @@ export interface AutomationScript {
   code: string;
   status: ScriptStatus;
   reviewStatus: string;
+  validityStatus?: string;
+  invalidReason?: string;
+  invalidatedAt?: string | null;
   executedAt: string | null;
   generatedByAi: boolean;
   createdAt: string;

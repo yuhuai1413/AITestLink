@@ -25,7 +25,12 @@ export interface Requirement {
   rule: string;
   question: string;
   confirmed: boolean;
+  clarificationStatus?: string;
+  clarificationAnswer?: string;
   reviewStatus: string;
+  validityStatus?: string;
+  invalidReason?: string;
+  invalidatedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -34,6 +39,8 @@ export interface RequirementUpdate {
   rule?: string;
   question?: string;
   confirmed?: boolean;
+  clarificationStatus?: string;
+  clarificationAnswer?: string;
   reviewStatus?: string;
 }
 

@@ -22,6 +22,7 @@ from app.services.environment_service import EnvironmentService
 from app.services.script_runner import LocalScriptRunner
 from app.services.script_quality import validate_script_covers_test_case
 from app.services.ui_recognition_service import UIRecognitionService
+from app.services.data_lineage_service import VALID, invalidate_after_scripts
 from app.utils import model_to_dict
 
 logger = logging.getLogger(__name__)
@@ -132,10 +133,10 @@ async def delete_script(
     user: dict = Depends(get_current_user),
     service: AutomationService = Depends(get_automation_service),
 ):
-    success = await service.delete_script(script_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Script not found")
-    return {"ok": True}
+    raise HTTPException(
+        status_code=400,
+        detail="自动化脚本属于测试链路中间产物，不允许单独删除；如需调整，请修改评审状态或重新生成脚本。",
+    )
 
 
 async def _execution_subject(db: AsyncSession, script_id: str, user_id: str):
@@ -185,6 +186,10 @@ async def execute_script(
     db: AsyncSession = Depends(get_db),
 ):
     script, test_case = await _execution_subject(db, script_id, user["sub"])
+    if (script.validity_status or VALID) != VALID:
+        raise HTTPException(status_code=400, detail=script.invalid_reason or "脚本已失效，请重新生成脚本")
+    if (test_case.validity_status or VALID) != VALID:
+        raise HTTPException(status_code=400, detail=test_case.invalid_reason or "测试用例已失效，请重新生成测试用例")
     if (script.review_status or "待评审") != "已通过":
         raise HTTPException(status_code=400, detail="脚本未评审通过，不能执行")
     if test_case.environment_id and data.environmentId != test_case.environment_id:
@@ -302,6 +307,12 @@ async def generate_scripts(
 
     if not test_cases:
         raise HTTPException(status_code=400, detail="没有适合自动化的测试用例")
+    invalid_count = sum(1 for item in test_cases if (item.validity_status or VALID) != VALID)
+    if invalid_count:
+        raise HTTPException(status_code=400, detail=f"还有 {invalid_count} 条适合自动化的用例已失效，请先重新生成测试用例")
+    unreviewed_count = sum(1 for item in test_cases if (item.review_status or "待评审") != "已通过")
+    if unreviewed_count:
+        raise HTTPException(status_code=400, detail=f"还有 {unreviewed_count} 条适合自动化的用例未评审通过，请先完成用例评审")
     try:
         validate_persisted_traceability(cases=test_cases)
         validate_case_runtime_fields(test_cases, for_automation=True)
@@ -322,6 +333,7 @@ async def generate_scripts(
             validate_references(batch_scripts, "testCaseId", allowed_ids)
             ai_scripts.extend(batch_scripts)
 
+        await invalidate_after_scripts(db, project_id, "自动化脚本已重新生成，执行结果已失效")
         await db.execute(delete(AutomationScript).where(AutomationScript.project_id == project_id))
         test_cases_by_id = {item.id: item for item in test_cases}
         scripts = []

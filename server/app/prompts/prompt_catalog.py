@@ -52,7 +52,8 @@ navigationPlan 每项包含 fromPage、toPage、steps。
 1. 每个输入需求至少生成正常流程和异常流程各一个测试点。
 2. 边界值、权限控制、数据一致性、状态流转仅在需求规则明确涉及该维度时生成。
 3. 一个测试点只验证一个目标；仅测试数据不同但验证逻辑相同时合并到 description。
-4. 不得使用输入中没有的阈值、角色、接口、页面、业务结果或测试数据；信息不足时在 description 中写“待确认”。
+4. 如果输入需求包含 clarificationStatus/clarificationAnswer，clarificationStatus 为“已确认”时必须把 clarificationAnswer 作为权威补充信息使用；为“无需确认”且 clarificationAnswer 有内容时，按 clarificationAnswer 说明的范围或原因处理。
+5. 不得使用输入中没有的阈值、角色、接口、页面、业务结果或测试数据；信息不足时在 description 中写“待确认”。
 
 禁止输出字段：
 id、testPointId、testPointCode、pointCode、code、req_id、requirementCode、precondition、steps、expectedResult、testData、question、reviewStatus、createdAt、updatedAt。

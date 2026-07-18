@@ -36,19 +36,19 @@
   line-height: 1;
 }
 
-.form-input,
-.form-select {
+.form-input {
   width: 100%;
-  min-height: 40px;
-  border: 1px solid var(--input-border);
-  border-radius: var(--input-radius);
-  background: var(--input-bg);
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l2);
+  background: var(--surface);
   color: var(--text);
-  padding: 0 13px;
+  padding: 0 14px;
   font: inherit;
   font-size: 14px;
-  box-shadow: var(--input-shadow);
-  transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+  font-weight: 400;
+  box-shadow: none;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .form-input {
@@ -56,54 +56,44 @@
   background-image: none;
 }
 
-.form-select {
-  padding-right: 32px;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  cursor: pointer;
-}
-
 .form-input::placeholder,
 .form-textarea::placeholder {
   color: var(--subtle);
+  font-weight: 400;
   opacity: 0.74;
 }
 
 .form-input:hover:not(:disabled),
-.form-select:hover:not(:disabled),
 .form-textarea:hover:not(:disabled) {
-  border-color: var(--input-border-hover);
-  background: var(--surface);
+  border-color: rgba(91, 33, 182, 0.32);
+  background: var(--surface-soft);
 }
 
 .form-input:focus,
-.form-select:focus,
 .form-textarea:focus {
   outline: none;
-  border-color: var(--input-border-focus);
+  border-color: var(--blue);
   background: var(--surface);
-  box-shadow: var(--input-shadow);
+  box-shadow: none;
 }
 
 .form-textarea {
   width: 100%;
   min-height: 80px;
-  border: 1px solid var(--input-border);
-  border-radius: var(--input-radius);
-  background: var(--input-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l2);
+  background: var(--surface);
   color: var(--text);
-  padding: 10px 13px;
+  padding: 10px 14px;
   font: inherit;
   font-size: 14px;
+  font-weight: 400;
   resize: vertical;
-  box-shadow: var(--input-shadow);
-  transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+  box-shadow: none;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .form-input:disabled,
-.form-select:disabled,
 .form-textarea:disabled {
   cursor: not-allowed;
   background-color: var(--surface-soft);
@@ -114,8 +104,14 @@
 }
 
 .form-input[type="number"] {
-  padding-right: 8px;
+  appearance: textfield;
   font-variant-numeric: tabular-nums;
+}
+
+.form-input[type="number"]::-webkit-outer-spin-button,
+.form-input[type="number"]::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
 }
 
 .input-with-icon .form-input {
@@ -124,28 +120,6 @@
 
 .form-input--pill {
   border-radius: var(--input-radius-pill);
-}
-
-.inline-select {
-  min-height: 28px;
-  padding: 2px 26px 2px 8px;
-  border: 1px solid var(--input-border);
-  border-radius: var(--radius-l4);
-  background: var(--input-bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
-}
-
-.inline-select:focus {
-  outline: none;
-  border-color: var(--input-border-focus);
-  box-shadow: var(--input-shadow);
 }
 
 .form-actions {

@@ -10,6 +10,7 @@ describe("project detail notification tab mapping", () => {
   it("maps every AI task type to the tab users should see after clicking a notification", () => {
     const cases: Array<[AITaskType, string]> = [
       ["需求解析", "requirements"],
+      ["AI反推需求", "requirements"],
       ["测试点生成", "testPoints"],
       ["用例生成", "testCases"],
       ["脚本生成", "scripts"],

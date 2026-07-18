@@ -69,6 +69,11 @@ class TestRequirementUpdate:
         assert data.rule == "新规则"
         assert data.question == "新问题"
 
+    def test_update_clarification_fields(self):
+        data = RequirementUpdate(clarificationStatus="已确认", clarificationAnswer="确认结论")
+        assert data.clarificationStatus == "已确认"
+        assert data.clarificationAnswer == "确认结论"
+
     def test_partial_update(self):
         data = RequirementUpdate(confirmed=True)
         dumped = data.model_dump(exclude_unset=True)

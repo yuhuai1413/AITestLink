@@ -62,6 +62,8 @@
 
 .search-form__input::placeholder {
   color: var(--subtle);
+  font-weight: 400;
+  opacity: 0.74;
 }
 
 .search-form__clear {

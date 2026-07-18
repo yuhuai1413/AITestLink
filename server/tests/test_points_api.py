@@ -76,15 +76,10 @@ def test_update_test_point_not_found(client, auth_headers):
     assert response.status_code == 404
 
 
-def test_delete_test_point(client, api_test_point, auth_headers):
+def test_delete_test_point_forbidden(client, api_test_point, auth_headers):
     response = client.delete(f"/api/test-points/{api_test_point.id}", headers=auth_headers)
-    assert response.status_code == 200
-    assert response.json()["ok"] is True
-
-
-def test_delete_test_point_not_found(client, auth_headers):
-    response = client.delete("/api/test-points/nonexistent", headers=auth_headers)
-    assert response.status_code == 404
+    assert response.status_code == 400
+    assert "不允许单独删除" in response.json()["detail"]
 
 
 def test_test_point_all_types(client, api_project, auth_headers):

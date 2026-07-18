@@ -167,9 +167,20 @@ export function DocConfigPage() {
       const result = await docConfigApi.upload(config.id, file);
       if (result.ok) {
         setConfigs((prev) =>
-          prev.map((c) => (c.id === config.id ? { ...c, templateFile: result.templateFile } : c))
+          prev.map((c) => (c.id === config.id ? {
+            ...c,
+            templateFile: result.templateFile,
+            templateHash: result.templateHash || "",
+            parseStatus: result.parseStatus || "未解析",
+            parseError: result.parseError || "",
+            parsedAt: result.parsedAt || "",
+          } : c))
         );
-        toast.success("模板上传成功");
+        if (result.parseStatus === "解析失败") {
+          toast.warning(`模板已上传，但结构解析失败：${result.parseError || "请检查文件格式"}`);
+        } else {
+          toast.success("模板上传并解析成功");
+        }
       }
     } catch (error) {
       console.error("Upload error:", error);
@@ -263,10 +274,23 @@ export function DocConfigPage() {
             {
               key: "description",
               label: "说明",
-              width: "20%",
+              width: "18%",
               align: "left",
               lineClamp: 2,
               render: (row) => <span style={{ fontSize: 13 }}>{row.description || "-"}</span>,
+            },
+            {
+              key: "parseStatus",
+              label: "解析状态",
+              width: "12%",
+              align: "center",
+              render: (row) => {
+                const status = row.parseStatus || (row.templateFile ? "未解析" : "无模板");
+                if (status === "已解析") return <StatusPill tone="green">已解析</StatusPill>;
+                if (status === "解析失败" || status === "文件不存在") return <StatusPill tone="red">{status}</StatusPill>;
+                if (!row.templateFile) return <StatusPill tone="slate">无模板</StatusPill>;
+                return <StatusPill tone="amber">{status}</StatusPill>;
+              },
             },
             {
               key: "updatedAt",
@@ -429,7 +453,7 @@ export function DocConfigPage() {
             </div>
             <div className="form-row">
               <label className="form-label">
-                提示词模板
+                模板填充说明
                 <textarea
                   className="form-textarea"
                   rows={12}
@@ -444,6 +468,9 @@ export function DocConfigPage() {
                   }
                   style={{ fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.6 }}
                 />
+                <span className="form-help">
+                  有 Word 模板文件时，系统会优先复制模板并按占位符、表格结构填充数据；这里仅作为模板缺失或需要补充生成说明时使用。
+                </span>
               </label>
             </div>
 

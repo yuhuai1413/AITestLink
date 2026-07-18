@@ -30,14 +30,13 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
   const [editScript, setEditScript] = useState<AutomationScript | null>(null);
   const [editCode, setEditCode] = useState("");
   const scriptDirty = useUnsavedChanges("脚本");
-  const [deletingScript, setDeletingScript] = useState<{ id: string; name: string } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
   const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
 
   const automatable = useMemo(() => testCases.filter((tc) => tc.automation === "是"), [testCases]);
   const existingScriptCount = scripts.length;
   const hasPrerequisite = automatable.length > 0;
+  const invalidTCCount = automatable.filter((tc) => (tc as any).validityStatus === "已失效").length;
   const unreviewedTCCount = automatable.filter((tc) => tc.reviewStatus !== "已通过").length;
   const allSelected = scripts.length > 0 && scripts.every((s) => selectedIds.has(s.id));
   const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(scripts.map((s) => s.id)));
@@ -45,15 +44,6 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
   const normalizeTestStatus = (status?: string | null) => status === "通过" ? "通过" : status === "失败" ? "失败" : "未测试";
   const testStatusTone = (status?: string | null) => normalizeTestStatus(status) === "通过" ? "green" : normalizeTestStatus(status) === "失败" ? "red" : "slate";
 
-  const batchDelete = async () => {
-    for (const id of selectedIds) {
-      const script = scripts.find((s) => s.id === id);
-      if (script) { try { await scriptsApi.delete(script.id); dispatch({ type: "DELETE_SCRIPT", payload: script.id }); } catch {} }
-    }
-    toast.success(`已删除 ${selectedIds.size} 个脚本`);
-    setSelectedIds(new Set());
-    await refreshScripts();
-  };
   const toggleReview = async (script: AutomationScript) => {
     const newStatus = (script as any).reviewStatus === "已通过" ? "待评审" : "已通过";
     try { await scriptsApi.update(script.id, { reviewStatus: newStatus } as any); } catch {}
@@ -79,6 +69,8 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
 
   const handleGenerate = async () => {
     if (!hasPrerequisite) { toast.warning("请先生成测试用例并标记适合自动化的用例"); return; }
+    if (invalidTCCount > 0) { toast.warning(`还有 ${invalidTCCount} 条适合自动化的用例已失效，请先重新生成测试用例`); return; }
+    if (unreviewedTCCount > 0) { toast.warning(`还有 ${unreviewedTCCount} 条适合自动化的用例未评审通过，请先完成用例评审`); return; }
     if (existingScriptCount > 0 && !showGenerateConfirm) { setShowGenerateConfirm(true); return; }
     setShowGenerateConfirm(false);
     await startGenerateScripts(projectId);
@@ -100,42 +92,23 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
     }
   };
 
-  const handleDelete = async () => {
-    if (!deletingScript) return;
-    try {
-      await scriptsApi.delete(deletingScript.id);
-      dispatch({ type: "DELETE_SCRIPT", payload: deletingScript.id });
-      toast.success("删除成功");
-      await refreshScripts();
-    } catch {
-      toast.error("删除失败");
-    }
-    setDeletingScript(null);
-  };
-
-  const getTestCaseTitle = (testCaseId: string | null | undefined) => {
-    if (!testCaseId) return "-";
-    const tc = testCases.find((t) => t.id === testCaseId);
-    return tc ? tc.title : "-";
-  };
-
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="自动化脚本" description="适合自动化的测试用例列表，可一键生成 Playwright 脚本。"
+      <SectionHeader title="自动化脚本" description="适合自动化的测试用例列表，可一键生成 Playwright 脚本。" meta={<>共 <strong>{scripts.length}</strong> 个脚本</>}
         actions={<>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
               {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
-
               <button className="primary-button" type="button" onClick={() => {
                 if (!hasPrerequisite) { toast.warning("请先生成测试用例并标记适合自动化的用例"); return; }
+                if (invalidTCCount > 0) { toast.warning(`还有 ${invalidTCCount} 条适合自动化的用例已失效，请先重新生成测试用例`); return; }
+                if (unreviewedTCCount > 0) { toast.warning(`还有 ${unreviewedTCCount} 条适合自动化的用例未评审通过，请先完成用例评审`); return; }
                 if (existingScriptCount > 0) { setShowGenerateConfirm(true); return; }
                 handleGenerate();
               }} disabled={generating}>
                 {generating ? <><Loader2 size={13} className="animate-spin" /> 生成中...</> : <><Code size={13} /> 生成自动化脚本</>}
               </button>
             </div>
-            <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{automatable.length}</strong> 条适合自动化的用例，已生成 <strong style={{ color: "var(--text)" }}>{existingScriptCount}</strong> 个脚本</span>
           </div>
         </>} />
       {error && <div className="error-banner"><span>{error}</span></div>}
@@ -164,6 +137,7 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
                 const rev = (r as any).reviewStatus || "待评审";
                 return <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={rev === "已通过" ? "green" : "slate"}>{rev}</StatusPill></button>;
               }},
+              { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <span title={(r as any).invalidReason || ""}><StatusPill tone={(r as any).validityStatus === "已失效" ? "amber" : "green"}>{(r as any).validityStatus || "有效"}</StatusPill></span> },
               { key: "createdAt", label: "生成时间", align: "center", render: (r) => formatTime(r.createdAt) },
               { key: "updatedAt", label: "更新时间", align: "center", render: (r) => formatTime(r.updatedAt) },
               { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (

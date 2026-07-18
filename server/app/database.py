@@ -40,6 +40,50 @@ async def init_db():
 
 async def _migrate_sqlite_schema(conn):
     """Small idempotent migrations for existing local installations."""
+    async def ensure_columns(table: str, additions: dict[str, str]) -> set[str]:
+        columns = {row[1] for row in (await conn.execute(text(f"PRAGMA table_info({table})"))).all()}
+        for name, sql_type in additions.items():
+            if name not in columns:
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}"))
+                columns.add(name)
+        return columns
+
+    validity_additions = {
+        "validity_status": "VARCHAR(50) DEFAULT '有效'",
+        "invalid_reason": "TEXT DEFAULT ''",
+        "invalidated_at": "DATETIME",
+    }
+    for table in ("requirements", "test_points", "test_cases", "automation_scripts", "execution_runs"):
+        await ensure_columns(table, validity_additions)
+
+    await ensure_columns("requirements", {
+        "clarification_status": "VARCHAR(50) DEFAULT '无需确认'",
+        "clarification_answer": "TEXT DEFAULT ''",
+    })
+    await conn.execute(text("""
+        UPDATE requirements
+        SET clarification_status = CASE
+            WHEN COALESCE(TRIM(question), '') = ''
+              OR TRIM(question) IN ('无', '暂无', '无。', '暂无。', '无待确认问题', '无待确认问题。')
+              OR TRIM(question) LIKE '【辅助文档信息】%'
+              OR TRIM(question) LIKE '辅助文档信息%'
+                THEN '无需确认'
+            WHEN confirmed = 1 THEN '已确认'
+            ELSE '待确认'
+        END
+        WHERE clarification_status IS NULL OR clarification_status = ''
+    """))
+    await conn.execute(text("""
+        UPDATE requirements
+        SET clarification_status = '待确认'
+        WHERE clarification_status = '无需确认'
+          AND COALESCE(TRIM(clarification_answer), '') = ''
+          AND COALESCE(TRIM(question), '') != ''
+          AND TRIM(question) NOT IN ('无', '暂无', '无。', '暂无。', '无待确认问题', '无待确认问题。')
+          AND TRIM(question) NOT LIKE '【辅助文档信息】%'
+          AND TRIM(question) NOT LIKE '辅助文档信息%'
+    """))
+
     environment_columns = {
         row[1] for row in (await conn.execute(text("PRAGMA table_info(environment_configs)"))).all()
     }
@@ -169,6 +213,15 @@ async def _migrate_sqlite_schema(conn):
     for name, sql_type in model_config_additions.items():
         if name not in model_config_columns:
             await conn.execute(text(f"ALTER TABLE model_configs ADD COLUMN {name} {sql_type}"))
+
+    doc_template_additions = {
+        "template_hash": "VARCHAR(64) DEFAULT ''",
+        "template_structure": "TEXT DEFAULT ''",
+        "parse_status": "VARCHAR(50) DEFAULT '未解析'",
+        "parse_error": "TEXT DEFAULT ''",
+        "parsed_at": "DATETIME",
+    }
+    await ensure_columns("doc_templates", doc_template_additions)
 
     automation_tables = {
         row[0] for row in (await conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))).all()

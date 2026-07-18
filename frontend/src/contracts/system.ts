@@ -56,6 +56,11 @@ export interface DocConfig {
   name: string;
   description: string;
   templateFile: string;
+  templateHash: string;
+  templateStructure: string;
+  parseStatus: string;
+  parseError: string;
+  parsedAt: string;
   promptTemplate: string;
   outputFields: string;
   displayOrder: number;
@@ -112,6 +117,7 @@ export type NotificationType = "任务完成" | "任务失败";
 
 export type AITaskType =
   | "需求解析"
+  | "AI反推需求"
   | "测试点生成"
   | "用例生成"
   | "脚本生成"

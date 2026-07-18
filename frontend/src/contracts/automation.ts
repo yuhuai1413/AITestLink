@@ -16,6 +16,9 @@ export interface Script {
   status: ScriptStatus;
   scriptCode: string;
   reviewStatus: string;
+  validityStatus?: string;
+  invalidReason?: string;
+  invalidatedAt?: string | null;
   generatedByAi: boolean;
   executedAt: string | null;
   createdAt: string;

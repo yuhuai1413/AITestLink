@@ -45,6 +45,18 @@ async def update_requirement(
     return req
 
 
+@router.delete("/requirements/{req_id}")
+async def delete_requirement(
+    req_id: str,
+    user: dict = Depends(get_current_user),
+    service: DocumentService = Depends(get_document_service),
+):
+    raise HTTPException(
+        status_code=400,
+        detail="需求属于测试链路中间产物，不允许单独删除；如需调整，请修改评审状态或重新解析输入资料。",
+    )
+
+
 class BatchConfirmRequest(BaseModel):
     ids: list[str]
     confirmed: bool

@@ -4,7 +4,7 @@
  * 任务完成/失败时自动往 store 里写通知。
  */
 import { aiApi, requirementsApi, testPointsApi, testCasesApi, scriptsApi } from "../../api/client";
-import type { ApiRequirement, ApiTestPoint, ApiTestCase } from "../../api/client";
+import type { ApiRequirement, ApiTestPoint, ApiTestCase, ApiScript } from "../../api/client";
 import { toast } from "sonner";
 import { addTaskNotification, initNotificationContext } from "../ai-tasks/aiTaskNotifications";
 import type { AITaskType } from "../types/platform";
@@ -39,9 +39,11 @@ async function pollAITask(
   taskId: string,
   taskType: AITaskType,
   signal: AbortSignal,
+  onProgress?: () => Promise<void>,
 ): Promise<{ success: boolean; error?: string }> {
   const maxPollSeconds = LONG_RUNNING_POLL_SECONDS[taskType] ?? DEFAULT_POLL_SECONDS;
   let lastStatus = "";
+  let lastResult = "";
   for (let i = 0; i < maxPollSeconds; i++) {
     if (signal.aborted) return { success: false };
     await new Promise((r) => setTimeout(r, 1000));
@@ -50,6 +52,10 @@ async function pollAITask(
       const tasks = await aiApi.listTasks(projectId);
       const task = tasks.find((t) => t.id === taskId);
       if (task) lastStatus = task.status;
+      if (task?.result && task.result !== lastResult) {
+        lastResult = task.result;
+        await onProgress?.();
+      }
       if (task && (task.status === "成功" || task.status === "失败")) {
         if (_dispatch) {
           _dispatch({
@@ -89,6 +95,105 @@ function makeTaskKey(projectId: string, type: string) {
 
 function emitProjectDataRefresh(projectId: string) {
   window.dispatchEvent(new CustomEvent("aitestlink:data-refresh", { detail: { projectId } }));
+}
+
+async function refreshRequirements(projectId: string) {
+  const reqs = await requirementsApi.list(projectId);
+  if (!_dispatch) return;
+  _dispatch({ type: "CLEAR_REQUIREMENTS", payload: projectId });
+  reqs.forEach((r: ApiRequirement) => {
+    _dispatch!({
+      type: "ADD_REQUIREMENT",
+      payload: {
+        id: r.id, projectId: r.projectId, module: r.module, feature: r.feature,
+        reqId: r.reqId,
+        source: r.source, risk: r.risk, rule: r.rule, question: r.question, confirmed: r.confirmed,
+        clarificationStatus: r.clarificationStatus,
+        clarificationAnswer: r.clarificationAnswer,
+        reviewStatus: r.reviewStatus ?? "待评审",
+        validityStatus: (r as any).validityStatus ?? "有效",
+        invalidReason: (r as any).invalidReason ?? "",
+        invalidatedAt: (r as any).invalidatedAt ?? null,
+        createdAt: r.createdAt, updatedAt: r.updatedAt,
+      },
+    });
+  });
+}
+
+async function refreshTestPoints(projectId: string) {
+  const tps = await testPointsApi.list(projectId);
+  if (!_dispatch) return;
+  _dispatch({ type: "CLEAR_TEST_POINTS", payload: projectId });
+  tps.forEach((tp: ApiTestPoint) => {
+    _dispatch!({
+      type: "ADD_TEST_POINT",
+      payload: {
+        id: tp.id, projectId: tp.projectId, requirementId: tp.requirementId ?? null,
+        pointCode: tp.pointCode,
+        module: tp.module, type: tp.type, title: tp.title, description: tp.description,
+        priority: tp.priority, automatable: tp.automatable, reviewStatus: tp.reviewStatus,
+        validityStatus: (tp as any).validityStatus ?? "有效",
+        invalidReason: (tp as any).invalidReason ?? "",
+        invalidatedAt: (tp as any).invalidatedAt ?? null,
+        createdAt: tp.createdAt, updatedAt: tp.updatedAt,
+      },
+    });
+  });
+}
+
+async function refreshTestCases(projectId: string) {
+  const tcs = await testCasesApi.list(projectId);
+  if (!_dispatch) return;
+  _dispatch({ type: "CLEAR_TEST_CASES", payload: projectId });
+  tcs.forEach((tc: ApiTestCase) => {
+    _dispatch!({
+      type: "ADD_TEST_CASE",
+      payload: {
+        id: tc.id, projectId: tc.projectId,
+        testPointId: tc.testPointId ?? null, requirementId: tc.requirementId ?? null,
+        caseCode: tc.caseCode, module: tc.module, feature: tc.feature, title: tc.title,
+        priority: tc.priority, precondition: tc.precondition, steps: tc.steps,
+        testData: tc.testData, expectedResult: tc.expectedResult,
+        environmentId: tc.environmentId, targetPlatform: tc.targetPlatform,
+        testUrl: tc.testUrl, requiredRole: tc.requiredRole,
+        testType: tc.testType ?? "功能测试", actualResult: tc.actualResult ?? "", passed: tc.passed ?? "未执行",
+        automation: tc.automation, reviewStatus: tc.reviewStatus, remark: tc.remark,
+        validityStatus: (tc as any).validityStatus ?? "有效",
+        invalidReason: (tc as any).invalidReason ?? "",
+        invalidatedAt: (tc as any).invalidatedAt ?? null,
+        tester: tc.tester ?? "", testDate: tc.testDate ?? "",
+        createdAt: tc.createdAt, updatedAt: tc.updatedAt,
+      },
+    });
+  });
+}
+
+async function refreshScripts(projectId: string) {
+  const scripts = await scriptsApi.list(projectId);
+  if (!_dispatch) return;
+  _dispatch({ type: "CLEAR_SCRIPTS", payload: projectId });
+  scripts.forEach((s: ApiScript) => {
+    _dispatch!({
+      type: "ADD_SCRIPT",
+      payload: {
+        id: s.id, projectId: s.projectId, testCaseId: s.testCaseId,
+        scriptType: s.scriptType as any,
+        framework: s.framework as any,
+        language: s.language,
+        code: s.code,
+        status: s.status as any,
+        scriptCode: s.scriptCode,
+        reviewStatus: s.reviewStatus,
+        validityStatus: (s as any).validityStatus ?? "有效",
+        invalidReason: (s as any).invalidReason ?? "",
+        invalidatedAt: (s as any).invalidatedAt ?? null,
+        generatedByAi: s.generatedByAi,
+        executedAt: s.executedAt,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+      },
+    });
+  });
 }
 
 function isModelConfigError(message: string) {
@@ -153,7 +258,7 @@ async function runTask(
   taskType: AITaskType,
   apiCall: () => Promise<{ id: string; projectId: string; type: string; status: string; modelName: string; createdAt: string }>,
   onSuccess?: () => Promise<void>,
-  opts?: { skipStartDispatch?: boolean },
+  opts?: { skipStartDispatch?: boolean; onProgress?: () => Promise<void>; onStarted?: () => void },
 ): Promise<{ success: boolean; error?: string }> {
   const key = makeTaskKey(projectId, taskType);
 
@@ -184,8 +289,9 @@ async function runTask(
         },
       });
     }
+    opts?.onStarted?.();
 
-    const pollResult = await pollAITask(projectId, task.id, taskType, controller.signal);
+    const pollResult = await pollAITask(projectId, task.id, taskType, controller.signal, opts?.onProgress);
 
     if (pollResult.success) {
       if (onSuccess) await onSuccess();
@@ -230,27 +336,43 @@ export async function startParseRequirements(projectId: string) {
     }
 
     toast.info("需求解析已启动，完成后会在通知列表中提醒");
-    return await runTask(projectId, "需求解析", () => aiApi.parseRequirements(projectId), async () => {
-      const reqs = await requirementsApi.list(projectId);
-      if (_dispatch) {
-        _dispatch({ type: "CLEAR_REQUIREMENTS", payload: projectId });
-        reqs.forEach((r: ApiRequirement) => {
-          _dispatch!({
-            type: "ADD_REQUIREMENT",
-            payload: {
-              id: r.id, projectId: r.projectId, module: r.module, feature: r.feature,
-              reqId: r.reqId,
-              source: r.source, risk: r.risk, rule: r.rule, question: r.question, confirmed: r.confirmed,
-              createdAt: r.createdAt, updatedAt: r.updatedAt,
-            },
-          });
-        });
-      }
-    }, { skipStartDispatch: true });
+    return await runTask(projectId, "需求解析", () => aiApi.parseRequirements(projectId), () => refreshRequirements(projectId), {
+      skipStartDispatch: true,
+      onProgress: () => refreshRequirements(projectId),
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "需求解析失败";
     notifyTaskFailure("需求解析", projectId, msg);
     if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:需求解析` });
+    return { success: false, error: msg };
+  }
+}
+
+export async function startReverseRequirements(
+  projectId: string,
+  options: { scope: string; testTarget: string; writeMode: string; maxPages: number; maxRequirements: number; keywords?: string },
+) {
+  try {
+    if (_dispatch) {
+      _dispatch({ type: "START_ACTIVE_AI_TASK", payload: `${projectId}:AI反推需求` });
+    }
+
+    const verify = await verifyAIConfig(projectId, "需求解析");
+    if (!verify.ok) {
+      if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:AI反推需求` });
+      notifyTaskFailure("AI反推需求", projectId, `AI反推需求失败：${verify.error}`);
+      return { success: false, error: verify.error };
+    }
+
+    toast.info("AI反推需求已启动，完成后会在通知列表中提醒");
+    return await runTask(projectId, "AI反推需求", () => aiApi.reverseRequirements(projectId, options), () => refreshRequirements(projectId), {
+      skipStartDispatch: true,
+      onProgress: () => refreshRequirements(projectId),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "AI反推需求失败";
+    notifyTaskFailure("AI反推需求", projectId, msg);
+    if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:AI反推需求` });
     return { success: false, error: msg };
   }
 }
@@ -267,24 +389,10 @@ export async function startGenerateTestPoints(projectId: string) {
     }
 
     toast.info("测试点生成已启动，完成后会在通知列表中提醒");
-    return await runTask(projectId, "测试点生成", () => aiApi.generateTestPoints(projectId), async () => {
-      const tps = await testPointsApi.list(projectId);
-      if (_dispatch) {
-        _dispatch({ type: "CLEAR_TEST_POINTS", payload: projectId });
-        tps.forEach((tp: ApiTestPoint) => {
-          _dispatch!({
-            type: "ADD_TEST_POINT",
-            payload: {
-              id: tp.id, projectId: tp.projectId, requirementId: tp.requirementId ?? null,
-              pointCode: tp.pointCode,
-              module: tp.module, type: tp.type, title: tp.title, description: tp.description,
-              priority: tp.priority, automatable: tp.automatable, reviewStatus: tp.reviewStatus,
-              createdAt: tp.createdAt, updatedAt: tp.updatedAt,
-            },
-          });
-        });
-      }
-    }, { skipStartDispatch: true });
+    return await runTask(projectId, "测试点生成", () => aiApi.generateTestPoints(projectId), () => refreshTestPoints(projectId), {
+      skipStartDispatch: true,
+      onProgress: () => refreshTestPoints(projectId),
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "测试点生成失败";
     notifyTaskFailure("测试点生成", projectId, msg);
@@ -305,30 +413,10 @@ export async function startGenerateTestCases(projectId: string) {
     }
 
     toast.info("用例生成已启动，完成后会在通知列表中提醒");
-    return await runTask(projectId, "用例生成", () => aiApi.generateTestCases(projectId), async () => {
-      const tcs = await testCasesApi.list(projectId);
-      if (_dispatch) {
-        _dispatch({ type: "CLEAR_TEST_CASES", payload: projectId });
-        tcs.forEach((tc: ApiTestCase) => {
-          _dispatch!({
-            type: "ADD_TEST_CASE",
-            payload: {
-              id: tc.id, projectId: tc.projectId,
-              testPointId: tc.testPointId ?? null, requirementId: tc.requirementId ?? null,
-              caseCode: tc.caseCode, module: tc.module, feature: tc.feature, title: tc.title,
-              priority: tc.priority, precondition: tc.precondition, steps: tc.steps,
-              testData: tc.testData, expectedResult: tc.expectedResult,
-              environmentId: tc.environmentId, targetPlatform: tc.targetPlatform,
-              testUrl: tc.testUrl, requiredRole: tc.requiredRole,
-              testType: tc.testType ?? "功能测试", actualResult: tc.actualResult ?? "", passed: tc.passed ?? "未执行",
-              automation: tc.automation, reviewStatus: tc.reviewStatus, remark: tc.remark,
-              tester: tc.tester ?? "", testDate: tc.testDate ?? "",
-              createdAt: tc.createdAt, updatedAt: tc.updatedAt,
-            },
-          });
-        });
-      }
-    }, { skipStartDispatch: true });
+    return await runTask(projectId, "用例生成", () => aiApi.generateTestCases(projectId), () => refreshTestCases(projectId), {
+      skipStartDispatch: true,
+      onProgress: () => refreshTestCases(projectId),
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "用例生成失败";
     notifyTaskFailure("用例生成", projectId, msg);
@@ -349,23 +437,10 @@ export async function startGenerateScripts(projectId: string) {
     }
 
     toast.info("脚本生成已启动，完成后会在通知列表中提醒");
-    return await runTask(projectId, "脚本生成", () => aiApi.generateScripts(projectId), async () => {
-      const scripts = await scriptsApi.list(projectId);
-      if (_dispatch) {
-        _dispatch({ type: "CLEAR_SCRIPTS", payload: projectId });
-        scripts.forEach((s: any) => {
-          _dispatch!({
-            type: "ADD_SCRIPT",
-            payload: {
-              id: s.id, projectId: s.projectId, testCaseId: s.testCaseId,
-              caseCode: s.caseCode, module: s.module, title: s.title,
-              code: s.code, reviewStatus: s.reviewStatus,
-              createdAt: s.createdAt, updatedAt: s.updatedAt,
-            },
-          });
-        });
-      }
-    }, { skipStartDispatch: true });
+    return await runTask(projectId, "脚本生成", () => aiApi.generateScripts(projectId), () => refreshScripts(projectId), {
+      skipStartDispatch: true,
+      onProgress: () => refreshScripts(projectId),
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "脚本生成失败";
     notifyTaskFailure("脚本生成", projectId, msg);
@@ -385,8 +460,10 @@ export async function startGenerateDocs(projectId: string, templateId: string) {
       return { success: false, error: verify.error };
     }
 
-    toast.info("文档生成已启动，完成后会在通知列表中提醒");
-    return await runTask(projectId, "文档生成", () => aiApi.generateDocs(projectId, templateId), undefined, { skipStartDispatch: true });
+    return await runTask(projectId, "文档生成", () => aiApi.generateDocs(projectId, templateId), undefined, {
+      skipStartDispatch: true,
+      onStarted: () => toast.info("文档生成已启动，完成后会在通知列表中提醒"),
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "文档生成失败";
     notifyTaskFailure("文档生成", projectId, msg);

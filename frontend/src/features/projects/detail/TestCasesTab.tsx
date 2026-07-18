@@ -8,13 +8,11 @@ import { useConfigError } from "../../../shared/hooks/useConfigError";
 import { startGenerateTestCases } from "../../../shared/hooks/aiTaskManager";
 import { useUnsavedChanges } from "../../../shared/hooks/useUnsavedChanges";
 import { DataTable } from "../../../shared/components/DataTable";
-import { MenuSelect } from "../../../shared/components/MenuSelect";
 import { SectionHeader } from "../../../shared/components/SectionHeader";
 import { StatusPill } from "../../../shared/components/StatusPill";
 import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { Modal } from "../../../shared/components/Modal";
 import { TestCaseDetailModal } from "../../test-design/TestCaseDetailModal";
-import { exportManualTestCasesToExcel } from "../../../shared/utils/exportExcel";
 import { formatTestStepsForDisplay } from "../../../shared/utils/formatTestSteps";
 import type { Priority, TestCase } from "../../../shared/types/platform";
 import { formatProjectTime as formatTime, priorityTone, reviewTone } from "./projectDetail.config";
@@ -37,39 +35,30 @@ export function TestCasesTab({ projectId }: { projectId: string }) {
   const [editSteps, setEditSteps] = useState("");
   const [editExpected, setEditExpected] = useState("");
   const tcDirty = useUnsavedChanges("用例");
-  const [moduleFilter, setModuleFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
 
   const hasPrerequisite = testPoints.length > 0;
+  const invalidTPCount = testPoints.filter((tp) => (tp as any).validityStatus === "已失效").length;
   const unreviewedTPCount = testPoints.filter((tp) => tp.reviewStatus !== "已通过").length;
 
   const handleGenerate = async () => {
     if (!hasPrerequisite) { toast.warning("请先生成测试点"); return; }
+    if (invalidTPCount > 0) { toast.warning(`还有 ${invalidTPCount} 个测试点已失效，请先重新生成测试点`); return; }
     if (unreviewedTPCount > 0) { toast.warning(`还有 ${unreviewedTPCount} 个测试点未评审通过，请先完成测试点评审`); return; }
     if (testCases.length > 0 && !showGenerateConfirm) { setShowGenerateConfirm(true); return; }
     setShowGenerateConfirm(false);
     await startGenerateTestCases(projectId);
-    await refreshTestCases();
+    await refresh();
   };
-  const modules = useMemo(() => Array.from(new Set(testCases.map((tc) => tc.module))), [testCases]);
-  const filtered = useMemo(() => moduleFilter === "all" ? testCases : testCases.filter((tc) => tc.module === moduleFilter), [testCases, moduleFilter]);
-  const allSelected = filtered.length > 0 && filtered.every((tc) => selectedIds.has(tc.id));
-  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(filtered.map((tc) => tc.id)));
+  const allSelected = testCases.length > 0 && testCases.every((tc) => selectedIds.has(tc.id));
+  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(testCases.map((tc) => tc.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleReview = async (tc: any) => {
     const newStatus = tc.reviewStatus === "已通过" ? "待评审" : "已通过";
     try { await testCasesApi.update(tc.id, { reviewStatus: newStatus } as any); } catch {}
     dispatch({ type: "UPDATE_TEST_CASE", payload: { ...tc, reviewStatus: newStatus } });
-    await refreshTestCases();
-  };
-  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState(false);
-  const batchDelete = async () => {
-    for (const id of selectedIds) { try { await testCasesApi.delete(id); } catch {} }
-    selectedIds.forEach((id) => dispatch({ type: "DELETE_TEST_CASE", payload: id }));
-    toast.success(`已删除 ${selectedIds.size} 条用例`);
-    setSelectedIds(new Set());
     await refreshTestCases();
   };
   const batchApprove = async () => {
@@ -100,21 +89,36 @@ export function TestCasesTab({ projectId }: { projectId: string }) {
 
   const handleExportAll = () => {
     if (testCases.length === 0) { toast.warning("暂无测试用例，请先生成用例"); return; }
-    exportManualTestCasesToExcel(testCases, project?.name || "未命名项目", "all");
-    toast.success(`已导出 ${testCases.length} 条测试用例`);
+    exportTestCases("all", `${project?.name || "未命名项目"}-全部测试用例.xlsx`, testCases.length);
   };
 
   const handleExportManual = () => {
     if (testCases.length === 0) { toast.warning("暂无测试用例，请先生成用例"); return; }
     const manualCases = testCases.filter((tc) => tc.automation !== "是");
     if (manualCases.length === 0) { toast.warning("所有用例均标记为自动化，暂无可导出的手动用例"); return; }
-    exportManualTestCasesToExcel(manualCases, project?.name || "未命名项目", "manual");
-    toast.success(`已导出 ${manualCases.length} 条手动测试用例`);
+    exportTestCases("manual", `${project?.name || "未命名项目"}-手动测试用例.xlsx`, manualCases.length);
+  };
+
+  const exportTestCases = async (type: "all" | "manual", fileName: string, count: number) => {
+    try {
+      const blob = await testCasesApi.export(projectId, type);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`已导出 ${count} 条测试用例`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "导出失败");
+    }
   };
 
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="用例生成" description="从测试点生成可执行用例，AI 在生成时自动进行质量自检。"
+      <SectionHeader title="用例生成" description="从测试点生成可执行用例，AI 在生成时自动进行质量自检。" meta={<>共 <strong>{testCases.length}</strong> 条用例</>}
         actions={<>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
@@ -123,13 +127,11 @@ export function TestCasesTab({ projectId }: { projectId: string }) {
               <button className="ghost-button" type="button" onClick={handleExportManual} disabled={generating}><Download size={13} /> 导出手动用例</button>
               <button className="primary-button" type="button" onClick={handleGenerate} disabled={generating}>{generating ? <><Loader2 size={13} className="animate-spin" /> 生成中...</> : <><WandSparkles size={13} /> 生成用例</>}</button>
             </div>
-            <span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{testCases.length}</strong> 条用例</span>
           </div>
         </>} />
-      {modules.length > 0 && <div className="filter-bar"><span className="filter-label">模块筛选</span><MenuSelect className="filter-menu-select" size="compact" value={moduleFilter} options={[{ value: "all", label: "全部模块" }, ...modules.map((m) => ({ value: m, label: m }))]} onChange={setModuleFilter} /></div>}
       <section className="work-panel">
-        {initialLoading && filtered.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : filtered.length === 0 ? <div className="empty-state"><p>暂无测试用例</p></div> : (
-          <DataTable rows={filtered} getRowKey={(r) => r.id} columns={[
+        {initialLoading && testCases.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : testCases.length === 0 ? <div className="empty-state"><p>暂无测试用例</p></div> : (
+          <DataTable rows={testCases} getRowKey={(r) => r.id} columns={[
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "caseCode", label: "用例编号", render: (r) => r.caseCode },
             { key: "module", label: "模块", render: (r) => r.module },
@@ -143,6 +145,7 @@ export function TestCasesTab({ projectId }: { projectId: string }) {
             { key: "steps", label: "测试步骤", align: "left", lineClamp: 2, render: (r) => <span className="test-steps-preview" title={r.steps}>{formatTestStepsForDisplay(r.steps)}</span> },
             { key: "expectedResult", label: "预期结果", align: "left", lineClamp: 2, render: (r) => <span title={r.expectedResult}>{r.expectedResult}</span> },
             { key: "reviewStatus", label: "评审", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus}</StatusPill></button> },
+            { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <span title={r.invalidReason || ""}><StatusPill tone={r.validityStatus === "已失效" ? "amber" : "green"}>{r.validityStatus || "有效"}</StatusPill></span> },
             { key: "automation", label: "是否自动化", align: "center", render: (r) => <StatusPill tone={r.automation === "是" ? "green" : "slate"}>{r.automation === "是" ? "是" : "否"}</StatusPill> },
             { key: "createdAt", label: "生成时间", render: (r) => formatTime(r.createdAt) },
             { key: "updatedAt", label: "更新时间", render: (r) => formatTime(r.updatedAt) },
@@ -150,7 +153,6 @@ export function TestCasesTab({ projectId }: { projectId: string }) {
               <div className="inline-actions">
                 <button className="text-button" type="button" onClick={() => setDetailCase(r)}>查看</button>
                 <button className="text-button" type="button" onClick={() => { setEditCase(r); setEditTitle(r.title); setEditSteps(r.steps); setEditExpected(r.expectedResult); }}>编辑</button>
-
               </div>
             )},
           ]} />

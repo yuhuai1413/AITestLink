@@ -12,7 +12,7 @@ export function DocManageTab({ projectId }: { projectId: string }) {
   const { files, refresh, loading } = useProjectData(projectId);
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="项目文档" description="项目已上传的文档列表。" actions={<span style={{ color: "var(--muted)", fontSize: 12 }}>共 <strong style={{ color: "var(--text)" }}>{files.length}</strong> 个文件</span>} />
+      <SectionHeader title="项目文档" description="项目已上传的文档列表。" meta={<>共 <strong>{files.length}</strong> 个文件</>} />
       <section className="work-panel">
         {files.length === 0 ? <div className="empty-state"><p>暂无文档</p></div> : (
           <DataTable rows={files} getRowKey={(r) => r.id} columns={[

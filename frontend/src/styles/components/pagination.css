@@ -109,6 +109,16 @@
   transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
 }
 
+.pagination__goto-input[type="number"] {
+  appearance: textfield;
+}
+
+.pagination__goto-input[type="number"]::-webkit-outer-spin-button,
+.pagination__goto-input[type="number"]::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
 .pagination__goto-input:hover {
   border-color: var(--input-border-hover);
 }
