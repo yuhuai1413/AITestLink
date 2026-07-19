@@ -28,12 +28,13 @@ router = APIRouter()
 
 DEFAULT_CONFIGS = [
     {"config_key": "parse-requirements", "name": "需求解析", "ai_node": ["需求解析"], "description": "从需求文档中提取模块、功能点和业务规则", "display_order": 1},
-    {"config_key": "system-recognition", "name": "系统识别", "ai_node": ["系统识别"], "description": "结合需求范围识别被测系统页面、元素、导航和定位策略", "display_order": 2},
-    {"config_key": "generate-test-points", "name": "测试点生成", "ai_node": ["生成测试点"], "description": "根据需求生成覆盖多种场景的测试点", "display_order": 3},
-    {"config_key": "generate-test-cases", "name": "用例生成", "ai_node": ["生成测试用例"], "description": "根据测试点生成详细测试用例", "display_order": 4},
-    {"config_key": "generate-scripts", "name": "脚本生成", "ai_node": ["生成脚本"], "description": "自动生成自动化测试脚本", "display_order": 5},
-    {"config_key": "execute-scripts", "name": "执行脚本", "ai_node": ["执行脚本"], "description": "执行自动化测试脚本", "display_order": 6},
-    {"config_key": "generate-docs", "name": "文档生成", "ai_node": ["文档生成"], "description": "自动生成测试文档", "display_order": 7},
+    {"config_key": "reverse-requirements", "name": "AI反推需求", "ai_node": ["AI反推需求"], "description": "基于环境配置、账号和系统识别结果反推可测试需求", "display_order": 2},
+    {"config_key": "system-recognition", "name": "系统识别", "ai_node": ["系统识别"], "description": "结合需求范围识别被测系统页面、元素、导航和定位策略", "display_order": 3},
+    {"config_key": "generate-test-points", "name": "测试点生成", "ai_node": ["生成测试点"], "description": "根据需求生成覆盖多种场景的测试点", "display_order": 4},
+    {"config_key": "generate-test-cases", "name": "用例生成", "ai_node": ["生成测试用例"], "description": "根据测试点生成详细测试用例", "display_order": 5},
+    {"config_key": "generate-scripts", "name": "脚本生成", "ai_node": ["生成脚本"], "description": "自动生成自动化测试脚本", "display_order": 6},
+    {"config_key": "execute-scripts", "name": "执行脚本", "ai_node": ["执行脚本"], "description": "执行自动化测试脚本", "display_order": 7},
+    {"config_key": "generate-docs", "name": "文档生成", "ai_node": ["文档生成"], "description": "自动生成测试文档", "display_order": 8},
 ]
 
 
@@ -208,31 +209,45 @@ async def _ensure_user_configs(db: AsyncSession, user_id: str):
         select(ModelConfig).where(ModelConfig.user_id == user_id)
     )
     user_configs = {c.config_key: c for c in result.scalars().all()}
+    parse_config = user_configs.get("parse-requirements")
 
     changed = False
     for config in DEFAULT_CONFIGS:
         if config["config_key"] not in user_configs:
             # 新用户只创建模型连接配置；提示词始终在运行时读取管理员配置。
             config_id = f"{user_id}_{config['config_key']}"
+            source_config = parse_config if config["config_key"] == "reverse-requirements" else None
             db.add(ModelConfig(
                 id=config_id,
                 user_id=user_id,
                 config_key=config["config_key"],
                 name=config["name"],
                 ai_node=json.dumps(config["ai_node"], ensure_ascii=False),
-                provider="",
-                model_name="",
-                api_key="",
-                endpoint="",
+                provider=source_config.provider if source_config else "",
+                model_name=source_config.model_name if source_config else "",
+                api_key=source_config.api_key if source_config else "",
+                endpoint=source_config.endpoint if source_config else "",
                 description=config["description"],
                 enabled=True,
                 display_order=config["display_order"],
                 prompt="",
             ))
             changed = True
-        elif user_configs[config["config_key"]].display_order != config["display_order"]:
-            user_configs[config["config_key"]].display_order = config["display_order"]
-            changed = True
+        else:
+            existing = user_configs[config["config_key"]]
+            expected_ai_node = json.dumps(config["ai_node"], ensure_ascii=False)
+            if existing.display_order != config["display_order"]:
+                existing.display_order = config["display_order"]
+                changed = True
+            if existing.name != config["name"]:
+                existing.name = config["name"]
+                changed = True
+            if existing.ai_node != expected_ai_node:
+                existing.ai_node = expected_ai_node
+                changed = True
+            if existing.description != config["description"]:
+                existing.description = config["description"]
+                changed = True
 
     if changed:
         await db.commit()

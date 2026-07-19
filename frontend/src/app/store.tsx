@@ -83,10 +83,28 @@ type Action =
   | { type: "CLEAR_TEST_CASES"; payload: string }
   | { type: "START_ACTIVE_AI_TASK"; payload: string }
   | { type: "STOP_ACTIVE_AI_TASK"; payload: string }
+  | {
+      type: "SET_DASHBOARD_DATA";
+      payload: {
+        projects: Project[];
+        requirements: Requirement[];
+        testPoints: TestPoint[];
+        testCases: TestCase[];
+      };
+    }
   | { type: "SET_PROJECTS"; payload: any[] };
 
 export function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case "SET_DASHBOARD_DATA":
+      return {
+        ...state,
+        projects: action.payload.projects,
+        requirements: action.payload.requirements,
+        testPoints: action.payload.testPoints,
+        testCases: action.payload.testCases,
+      };
+
     case "SET_PROJECTS":
       return { ...state, projects: action.payload };
 

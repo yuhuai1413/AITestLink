@@ -11,6 +11,16 @@
   color: var(--muted);
 }
 
+.empty-state__icon {
+  margin-bottom: 12px;
+  color: var(--muted);
+}
+
+.empty-state__hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .empty-state p {
   margin: 0 0 16px;
   font-size: 15px;

@@ -14,6 +14,7 @@ import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { Modal } from "../../../shared/components/Modal";
 import type { AutomationScript } from "../../../shared/types/platform";
 import { formatProjectTime as formatTime, reviewTone } from "./projectDetail.config";
+import { passFailTone, validityTone } from "../../../shared/utils/statusTone";
 
 // ═══════════════════════════════════════
 // 自动化脚本（只读）
@@ -42,7 +43,6 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
   const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(scripts.map((s) => s.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const normalizeTestStatus = (status?: string | null) => status === "通过" ? "通过" : status === "失败" ? "失败" : "未测试";
-  const testStatusTone = (status?: string | null) => normalizeTestStatus(status) === "通过" ? "green" : normalizeTestStatus(status) === "失败" ? "red" : "slate";
 
   const toggleReview = async (script: AutomationScript) => {
     const newStatus = (script as any).reviewStatus === "已通过" ? "待评审" : "已通过";
@@ -132,12 +132,12 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
               }},
               { key: "scriptType", label: "脚本类型", align: "center", render: (r) => r.scriptType },
               { key: "framework", label: "框架", align: "center", render: (r) => r.framework },
-              { key: "status", label: "测试状态", align: "center", render: (r) => <StatusPill tone={testStatusTone(r.status)}>{normalizeTestStatus(r.status)}</StatusPill> },
+              { key: "status", label: "测试状态", align: "center", render: (r) => <StatusPill tone={passFailTone(normalizeTestStatus(r.status))}>{normalizeTestStatus(r.status)}</StatusPill> },
               { key: "review", label: "评审", align: "center", render: (r) => {
                 const rev = (r as any).reviewStatus || "待评审";
                 return <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={rev === "已通过" ? "green" : "slate"}>{rev}</StatusPill></button>;
               }},
-              { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <span title={(r as any).invalidReason || ""}><StatusPill tone={(r as any).validityStatus === "已失效" ? "amber" : "green"}>{(r as any).validityStatus || "有效"}</StatusPill></span> },
+              { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <span title={(r as any).invalidReason || ""}><StatusPill tone={validityTone((r as any).validityStatus)}>{(r as any).validityStatus || "有效"}</StatusPill></span> },
               { key: "createdAt", label: "生成时间", align: "center", render: (r) => formatTime(r.createdAt) },
               { key: "updatedAt", label: "更新时间", align: "center", render: (r) => formatTime(r.updatedAt) },
               { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (

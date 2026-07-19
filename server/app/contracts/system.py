@@ -113,7 +113,6 @@ class DocTemplateCreate(BaseModel):
     description: str = ""
     template_file: str = Field(default="", alias="templateFile")
     prompt_template: str = Field(default="", alias="promptTemplate")
-    output_fields: str = Field(default="", alias="outputFields")
     display_order: int = Field(default=0, alias="displayOrder")
 
     model_config = {"populate_by_name": True}
@@ -124,7 +123,6 @@ class DocTemplateUpdate(BaseModel):
     description: str | None = None
     template_file: str | None = Field(default=None, alias="templateFile")
     prompt_template: str | None = Field(default=None, alias="promptTemplate")
-    output_fields: str | None = Field(default=None, alias="outputFields")
     display_order: int | None = Field(default=None, alias="displayOrder")
 
     model_config = {"populate_by_name": True}
@@ -143,7 +141,6 @@ class DocTemplateResponse(BaseModel):
     parse_error: str = Field(default="", alias="parseError")
     parsed_at: datetime | None = Field(default=None, alias="parsedAt")
     prompt_template: str = Field(alias="promptTemplate")
-    output_fields: str = Field(alias="outputFields")
     display_order: int = Field(alias="displayOrder")
     created_at: datetime
     updated_at: datetime

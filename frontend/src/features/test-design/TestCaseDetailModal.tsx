@@ -1,5 +1,6 @@
 import { Modal } from "../../shared/components/Modal";
 import { StatusPill } from "../../shared/components/StatusPill";
+import { priorityTone, reviewTone } from "../../shared/utils/statusTone";
 import type { TestCase } from "../../shared/types/platform";
 
 interface TestCaseDetailModalProps {
@@ -14,19 +15,6 @@ function formatTime(iso: string | undefined): string {
   if (isNaN(d.getTime())) return iso;
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-
-function priorityTone(p: string) {
-  if (p === "P0") return "red" as const;
-  if (p === "P1") return "amber" as const;
-  if (p === "P2") return "blue" as const;
-  return "slate" as const;
-}
-
-function reviewTone(s: string) {
-  if (s === "已通过") return "green" as const;
-  if (s === "需修改") return "red" as const;
-  return "amber" as const;
 }
 
 export function TestCaseDetailModal({ open, testCase, onClose }: TestCaseDetailModalProps) {

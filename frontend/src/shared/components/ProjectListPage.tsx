@@ -13,23 +13,12 @@ import { CreateProjectModal } from "../../features/projects/CreateProjectModal";
 import { EditProjectModal } from "../../features/projects/EditProjectModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import type { Project } from "../types/platform";
+import { priorityTone, projectDocStatusTone, projectTestStatusTone } from "../utils/statusTone";
 
 export type ProjectListMode = "projects" | "testCenter" | "documentCenter";
 
 interface ProjectListPageProps {
   mode: ProjectListMode;
-}
-
-function testStatusTone(status: string) {
-  if (status === "已测试") return "green" as const;
-  if (status === "测试中") return "blue" as const;
-  return "amber" as const;
-}
-
-function docStatusTone(status: string) {
-  if (status === "已完成") return "green" as const;
-  if (status === "生成中") return "blue" as const;
-  return "amber" as const;
 }
 
 export function ProjectListPage({ mode }: ProjectListPageProps) {
@@ -235,21 +224,21 @@ export function ProjectListPage({ mode }: ProjectListPageProps) {
                 label: "测试状态",
                 width: "10%",
                 align: "center" as const,
-                render: (row: Project) => <StatusPill tone={testStatusTone(row.testStatus)}>{row.testStatus}</StatusPill>,
+                render: (row: Project) => <StatusPill tone={projectTestStatusTone(row.testStatus)}>{row.testStatus}</StatusPill>,
               }] : []),
               ...(mode !== "testCenter" ? [{
                 key: "docStatus",
                 label: "文档状态",
                 width: "10%",
                 align: "center" as const,
-                render: (row: Project) => <StatusPill tone={docStatusTone(row.docStatus)}>{row.docStatus}</StatusPill>,
+                render: (row: Project) => <StatusPill tone={projectDocStatusTone(row.docStatus)}>{row.docStatus}</StatusPill>,
               }] : []),
               {
                 key: "priority",
                 label: "优先级",
                 width: "8%",
                 align: "center",
-                render: (row) => <StatusPill tone={row.priority === "高" ? "red" : row.priority === "中" ? "amber" : "green"}>{row.priority}</StatusPill>,
+                render: (row) => <StatusPill tone={priorityTone(row.priority)}>{row.priority}</StatusPill>,
               },
               {
                 key: "cases",

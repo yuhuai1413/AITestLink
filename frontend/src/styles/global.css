@@ -1,4 +1,42 @@
-@layer components {
+@import "./components/sidebar.css";
+@import "./components/topbar.css";
+@import "./components/buttons.css";
+@import "./components/metric-card.css";
+@import "./components/data-table.css";
+@import "./components/status-pill.css";
+@import "./components/hero-panel.css";
+@import "./components/work-panel.css";
+@import "./components/modal.css";
+@import "./components/forms.css";
+@import "./components/search-results.css";
+@import "./components/detail-view.css";
+@import "./components/tab-bar.css";
+@import "./components/model-config.css";
+@import "./components/user-menu.css";
+@import "./components/edit-tabs.css";
+@import "./components/dashboard.css";
+@import "./components/confirm-dialog.css";
+@import "./components/toast.css";
+@import "./components/animations.css";
+@import "./components/login-visual.css";
+@import "./components/search-form.css";
+@import "./components/pagination.css";
+@import "./components/data-panel.css";
+@import "./components/info-grid.css";
+@import "./components/filter-bar.css";
+@import "./components/empty-state.css";
+@import "./components/batch-bar.css";
+@import "./components/warning-list.css";
+@import "./components/roadmap.css";
+@import "./components/process-strip.css";
+@import "./components/timeline.css";
+@import "./components/help-modal.css";
+@import "./components/menu-select.css";
+@import "./components/personal-settings.css";
+@import "./components/result-detail.css";
+@import "./components/notification.css";
+@import "./components/utility.css";
+
 :root {
   color-scheme: light;
   font-family:
@@ -84,41 +122,4 @@ textarea {
 
 button {
   cursor: pointer;
-}
-
-@import "./components/sidebar.css";
-@import "./components/topbar.css";
-@import "./components/buttons.css";
-@import "./components/metric-card.css";
-@import "./components/data-table.css";
-@import "./components/status-pill.css";
-@import "./components/hero-panel.css";
-@import "./components/work-panel.css";
-@import "./components/modal.css";
-@import "./components/forms.css";
-@import "./components/search-results.css";
-@import "./components/detail-view.css";
-@import "./components/tab-bar.css";
-@import "./components/model-config.css";
-@import "./components/user-menu.css";
-@import "./components/edit-tabs.css";
-@import "./components/dashboard.css";
-@import "./components/confirm-dialog.css";
-@import "./components/toast.css";
-@import "./components/animations.css";
-@import "./components/login-visual.css";
-@import "./components/search-form.css";
-@import "./components/pagination.css";
-@import "./components/data-panel.css";
-@import "./components/overview-grid.css";
-@import "./components/info-grid.css";
-@import "./components/filter-bar.css";
-@import "./components/empty-state.css";
-@import "./components/batch-bar.css";
-@import "./components/warning-list.css";
-@import "./components/roadmap.css";
-@import "./components/process-strip.css";
-@import "./components/timeline.css";
-@import "./components/help-modal.css";
-@import "./components/utility.css";
 }

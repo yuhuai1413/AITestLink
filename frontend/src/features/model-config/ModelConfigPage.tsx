@@ -16,6 +16,7 @@ import { providerModels } from "./modelConfig.constants";
 
 const nodeColors: Record<string, string> = {
   "需求解析": "green",
+  "AI反推需求": "green",
   "系统识别": "purple",
   "生成测试点": "blue",
   "生成测试用例": "blue",

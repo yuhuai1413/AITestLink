@@ -7,20 +7,8 @@ import { SectionHeader } from "../../shared/components/SectionHeader";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { exportManualTestCasesToExcel } from "../../shared/utils/exportExcel";
 import { TestCaseEditModal } from "./TestCaseEditModal";
-import type { Priority, ReviewStatus, TestCase, TestPoint } from "../../shared/types/platform";
-
-function priorityTone(priority: Priority) {
-  if (priority === "P0") return "red" as const;
-  if (priority === "P1") return "amber" as const;
-  if (priority === "P2") return "blue" as const;
-  return "slate" as const;
-}
-
-function reviewTone(status: ReviewStatus) {
-  if (status === "已通过") return "green" as const;
-  if (status === "需修改") return "red" as const;
-  return "amber" as const;
-}
+import { priorityTone, reviewTone } from "../../shared/utils/statusTone";
+import type { TestCase, TestPoint } from "../../shared/types/platform";
 
 export function TestDesignPage() {
   const { state } = useStore();

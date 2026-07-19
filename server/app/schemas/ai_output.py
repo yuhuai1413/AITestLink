@@ -258,6 +258,7 @@ class SystemRecognitionOutput(_AIOutputBase):
 
 OUTPUT_SCHEMAS: dict[str, type[_AIOutputBase]] = {
     "需求解析": RequirementOutput,
+    "AI反推需求": RequirementOutput,
     "系统识别": SystemRecognitionOutput,
     "测试点生成": TestPointOutput,
     "用例生成": TestCaseOutput,

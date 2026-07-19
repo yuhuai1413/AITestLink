@@ -7,7 +7,6 @@ import { DocFusionTab } from "./detail/DocFusionTab";
 import { DocManageTab } from "./detail/DocManageTab";
 import { ExecuteScriptsTab } from "./detail/ExecuteScriptsTab";
 import { FilesTab } from "./detail/FilesTab";
-import { OverviewTab } from "./detail/OverviewTab";
 import { RequirementsTab } from "./detail/RequirementsTab";
 import { ScriptsTab } from "./detail/ScriptsTab";
 import { SummaryTab } from "./detail/SummaryTab";
@@ -23,7 +22,6 @@ import {
 } from "./detail/projectDetail.config";
 
 const tabComponents: Record<TabKey, FC<{ projectId: string }>> = {
-  overview: OverviewTab,
   files: FilesTab,
   environment: EnvironmentPage,
   requirements: RequirementsTab,
@@ -63,15 +61,15 @@ export function ProjectDetailPage() {
   const { project, loading } = useProjectData(id);
   const prevIdRef = useRef<string | null | undefined>(null);
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
-    return getStoredProjectTab(id) ?? "overview";
+    return getStoredProjectTab(id) ?? "files";
   });
   const tabContentRef = useRef<HTMLDivElement>(null);
   const handleTabChange = (tab: TabKey) => { setActiveTab(tab); persistProjectTab(id, tab); };
 
-  // 仅在项目 ID 真正切换时重置到概览页，页面刷新时恢复已保存的 tab
+  // 仅在项目 ID 真正切换时重置到输入资料页，页面刷新时恢复已保存的 tab
   useEffect(() => {
     if (prevIdRef.current !== null && prevIdRef.current !== id) {
-      const nextTab = getStoredProjectTab(id) ?? "overview";
+      const nextTab = getStoredProjectTab(id) ?? "files";
       setActiveTab(nextTab);
       persistProjectTab(id, nextTab);
     }

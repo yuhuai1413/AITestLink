@@ -28,7 +28,6 @@ class DocTemplateService(BaseService):
             description=data.description,
             template_file=data.template_file,
             prompt_template=data.prompt_template,
-            output_fields=data.output_fields,
             display_order=data.display_order,
         )
         self.db.add(template)
@@ -61,7 +60,6 @@ class DocTemplateService(BaseService):
             "description": "description",
             "template_file": "template_file",
             "prompt_template": "prompt_template",
-            "output_fields": "output_fields",
             "display_order": "display_order",
         }
         for schema_key, db_key in field_map.items():

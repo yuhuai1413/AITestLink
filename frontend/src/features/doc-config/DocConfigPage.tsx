@@ -443,16 +443,6 @@ export function DocConfigPage() {
             </div>
             <div className="form-row">
               <label className="form-label">
-                输出字段（JSON 数组）
-                <input
-                  className="form-input"
-                  value={editingConfig.outputFields}
-                  onChange={(e) => { setEditingConfig({ ...editingConfig, outputFields: e.target.value }); docDirty.markDirty(); }}
-                />
-              </label>
-            </div>
-            <div className="form-row">
-              <label className="form-label">
                 模板填充说明
                 <textarea
                   className="form-textarea"

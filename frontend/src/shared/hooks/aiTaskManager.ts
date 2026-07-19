@@ -357,7 +357,7 @@ export async function startReverseRequirements(
       _dispatch({ type: "START_ACTIVE_AI_TASK", payload: `${projectId}:AI反推需求` });
     }
 
-    const verify = await verifyAIConfig(projectId, "需求解析");
+    const verify = await verifyAIConfig(projectId, "AI反推需求");
     if (!verify.ok) {
       if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:AI反推需求` });
       notifyTaskFailure("AI反推需求", projectId, `AI反推需求失败：${verify.error}`);

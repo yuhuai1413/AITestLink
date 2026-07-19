@@ -15,6 +15,65 @@
   gap: 12px;
 }
 
+.form-row--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.form-check-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.form-check-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: fit-content;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.form-field {
+  position: relative;
+}
+
+.form-input--with-action {
+  padding-right: 42px;
+}
+
+.form-input-action {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.form-input-action:hover {
+  background: var(--slate-soft);
+  color: var(--text);
+}
+
+.form-input-display {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  background: var(--surface-soft);
+}
+
 .form-label {
   display: grid;
   gap: 6px;
@@ -140,6 +199,11 @@ input[type="checkbox"] {
 
 @media (max-width: 1180px) {
   .form-row--3 {
+    grid-template-columns: 1fr;
+  }
+
+  .form-row--2,
+  .form-check-grid {
     grid-template-columns: 1fr;
   }
 }

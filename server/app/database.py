@@ -48,6 +48,17 @@ async def _migrate_sqlite_schema(conn):
                 columns.add(name)
         return columns
 
+    async def drop_columns(table: str, names: set[str]) -> None:
+        columns = {row[1] for row in (await conn.execute(text(f"PRAGMA table_info({table})"))).all()}
+        for name in names & columns:
+            try:
+                await conn.execute(text(f"ALTER TABLE {table} DROP COLUMN {name}"))
+            except Exception:
+                # Older SQLite versions may not support DROP COLUMN. The ORM no
+                # longer reads or writes the removed column, so startup should
+                # not fail because of a best-effort cleanup.
+                pass
+
     validity_additions = {
         "validity_status": "VARCHAR(50) DEFAULT '有效'",
         "invalid_reason": "TEXT DEFAULT ''",
@@ -222,6 +233,7 @@ async def _migrate_sqlite_schema(conn):
         "parsed_at": "DATETIME",
     }
     await ensure_columns("doc_templates", doc_template_additions)
+    await drop_columns("doc_templates", {"output_fields"})
 
     automation_tables = {
         row[0] for row in (await conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))).all()

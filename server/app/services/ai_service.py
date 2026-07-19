@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # 任务类型到配置key的映射
 TASK_CONFIG_MAP = {
     "需求解析": "parse-requirements",
+    "AI反推需求": "reverse-requirements",
     "系统识别": "system-recognition",
     "测试点生成": "generate-test-points",
     "用例生成": "generate-test-cases",
@@ -352,8 +353,8 @@ class AIService:
 反推上下文：
 {context_text}"""
 
-        response = await self._call_llm(user_prompt, "需求解析", user_id)
-        return validate_ai_output("需求解析", self._parse_json_response(response))
+        response = await self._call_llm(user_prompt, "AI反推需求", user_id)
+        return validate_ai_output("AI反推需求", self._parse_json_response(response))
 
     async def generate_test_points(self, requirements_text: str, user_id: str = "") -> list[dict]:
         """Generate test points from requirements."""

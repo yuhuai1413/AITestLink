@@ -22,8 +22,7 @@
   white-space: nowrap;
 }
 
-.search-form__input,
-.search-form__select {
+.search-form__input {
   height: 34px;
   padding: 0 12px;
   padding-right: 28px;
@@ -37,27 +36,16 @@
   transition: border-color 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease;
 }
 
-.search-form__input:hover,
-.search-form__select:hover {
+.search-form__input:hover {
   border-color: var(--input-border-hover);
   background: var(--surface);
 }
 
-.search-form__input:focus,
-.search-form__select:focus {
+.search-form__input:focus {
   outline: none;
   border-color: var(--input-border-focus);
   background: var(--surface);
   box-shadow: var(--input-shadow);
-}
-
-.search-form__select {
-  padding-right: 28px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  -webkit-appearance: none;
-  appearance: none;
 }
 
 .search-form__input::placeholder {

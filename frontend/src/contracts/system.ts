@@ -62,7 +62,6 @@ export interface DocConfig {
   parseError: string;
   parsedAt: string;
   promptTemplate: string;
-  outputFields: string;
   displayOrder: number;
   createdAt: string;
   updatedAt: string;

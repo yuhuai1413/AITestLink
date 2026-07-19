@@ -16,6 +16,22 @@ PROMPT_CATALOG: dict[str, str] = {
 module、feature、source、risk、rule、question。
 不要输出编号、Markdown、解释或额外字段。""",
 
+    "reverse-requirements": """你是系统需求反推助手。输入包含环境配置、测试账号、系统识别结果、页面/菜单/按钮/表单/表格证据，以及用户设置的反推范围和测试目标。请从真实系统现状反推出可进入「需求列表」的候选需求。
+
+规则：
+1. 只依据输入中明确出现的页面、菜单、按钮、表单字段、表格列、URL、角色、识别证据和反推约束，不得编造未观察到的业务流程、权限、阈值、接口或结果。
+2. 需求粒度控制在“可测试的功能点”；不要把每一个按钮、字段或表格列机械拆成独立需求。
+3. module 使用系统中的菜单、模块或页面名称；feature 使用用户可感知的功能行为。
+4. source 统一填写“系统识别反推”；如果能定位到具体菜单或页面，可附加页面路径，例如“系统识别反推：用户管理/账号列表”。
+5. risk 只能是高、中、低。账号、权限、敏感数据、删除、审核、状态流转通常为高或中风险；纯展示通常为低风险。
+6. rule 简洁描述前置条件、触发操作、系统处理和可验证结果；只能写输入中有证据支撑的内容。
+7. 不确定的业务规则、权限边界、状态流转、数据范围、异常提示、字段校验必须写入 question；没有问题填“无”。
+8. 当反推范围为增量、关键词或指定目标时，只输出范围相关需求；不要扩展到无关模块。
+
+只输出 JSON 数组。每项必须且只能包含：
+module、feature、source、risk、rule、question。
+不要输出编号、Markdown、解释或额外字段。""",
+
     "system-recognition": """你是自动化测试系统识别助手。输入包含需求范围、环境信息、登录页 DOM 摘要、登录后的系统 DOM 摘要和组件库线索。你的目标是把真实系统识别成后续脚本可用的页面对象、元素定位和导航计划。
 
 识别原则：
@@ -152,6 +168,7 @@ content 为 Markdown 字符串。不要输出 JSON 之外的解释。""",
 
 PROMPT_TEST_INPUTS: dict[str, str] = {
     "parse-requirements": "需求文档 test.md：用户输入已注册手机号和正确密码后可登录；密码错误时应提示登录失败。",
+    "reverse-requirements": '{"scope":"recognized","testTarget":"冒烟测试","writeMode":"append","environment":{"name":"Web测试环境","url":"https://test.example.com","roles":["管理员"]},"recognizedUI":{"menus":[{"title":"用户管理","children":[{"title":"账号列表"}]}],"pages":[{"pageName":"账号列表","buttons":["新增","编辑","删除"],"forms":[{"fields":["手机号","姓名","角色"]}],"tables":[{"columns":["手机号","姓名","角色","状态"]}]}]}}',
     "system-recognition": '{"scope":{"mode":"incremental","requirements":[{"requirementId":"req-test-1","module":"促销活动管理","feature":"活动申请转交","rule":"需要验证活动申请转交页面查询和列表展示"}]},"environment":{"name":"测试环境","webUrl":"https://test.example.com"},"loginPage":{"inputs":[{"placeholder":"请输入员工号","type":"text"},{"placeholder":"请输入密码","type":"password"}],"buttons":[{"text":"登录"}]},"appPage":{"componentHints":{"elementUI":true},"menus":[{"title":"促销活动管理","selectorHint":"span[title=\\"促销活动管理\\"]","children":[{"title":"活动申请转交","selectorHint":"span[title=\\"活动申请转交\\"]"}]}],"tables":[{"columns":["单据编号","申请人","状态"]}]}}',
     "generate-test-points": '[{"requirementId":"req-test-1","requirementCode":"REQ_001","module":"用户管理","feature":"账号登录","source":"test.md","risk":"中","rule":"正确凭据登录成功；错误密码提示失败","question":"无"}]',
     "generate-test-cases": '[{"testPointId":"tp-test-1","requirementId":"req-test-1","requirementCode":"REQ_001","requirementFeature":"账号登录","requirementRule":"正确凭据登录成功","module":"用户管理","type":"正常流程","title":"正确凭据登录成功","description":"输入已准备的有效账号密码并登录，验证进入首页","priority":"P0","automatable":true}]',

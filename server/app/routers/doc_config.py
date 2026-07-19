@@ -1,4 +1,3 @@
-import json
 import os
 from datetime import datetime, timezone
 
@@ -25,7 +24,6 @@ DEFAULT_TEMPLATES = [
         "description": "测试范围、策略、资源、进度安排",
         "template_file": "软件测试计划模板.docx",
         "prompt_template": "",
-        "output_fields": json.dumps(["封面信息", "测试概述", "测试策略", "测试环境", "测试资源", "风险分析", "准入准出标准", "交付物清单"], ensure_ascii=False),
         "display_order": 1,
     },
     {
@@ -34,7 +32,6 @@ DEFAULT_TEMPLATES = [
         "description": "测试环境、用例设计、执行方法",
         "template_file": "软件测试说明模板.docx",
         "prompt_template": "",
-        "output_fields": json.dumps(["封面信息", "测试说明概述", "测试环境说明", "测试用例设计说明", "测试执行方法", "测试数据准备", "缺陷管理流程", "测试进度安排"], ensure_ascii=False),
         "display_order": 2,
     },
     {
@@ -43,7 +40,6 @@ DEFAULT_TEMPLATES = [
         "description": "执行结果、缺陷统计、风险分析",
         "template_file": "软件测试报告模板.docx",
         "prompt_template": "",
-        "output_fields": json.dumps(["封面信息", "测试概述", "测试范围", "测试环境", "测试执行情况", "缺陷统计", "主要风险", "遗留问题", "测试结论", "后续建议"], ensure_ascii=False),
         "display_order": 3,
     },
     {
@@ -52,7 +48,6 @@ DEFAULT_TEMPLATES = [
         "description": "系统操作流程、功能说明",
         "template_file": "PC端操作手册模板.docx",
         "prompt_template": "",
-        "output_fields": json.dumps(["封面信息", "手册概述", "系统登录与注册", "功能模块操作说明", "常见问题解答", "联系方式"], ensure_ascii=False),
         "display_order": 4,
     },
     {
@@ -61,7 +56,6 @@ DEFAULT_TEMPLATES = [
         "description": "移动端操作流程、功能说明",
         "template_file": "APP端操作手册模板.docx",
         "prompt_template": "",
-        "output_fields": json.dumps(["封面信息", "手册概述", "APP安装与登录", "功能模块操作说明", "常见问题解答", "联系方式"], ensure_ascii=False),
         "display_order": 5,
     },
 ]
@@ -72,7 +66,6 @@ class DocTemplateSchema(BaseModel):
     name: str
     description: str
     promptTemplate: str
-    outputFields: str
 
 
 class DocTemplateUpdate(BaseModel):
@@ -92,7 +85,6 @@ def _to_dict(m: DocTemplate) -> dict:
         "parseError": m.parse_error or "",
         "parsedAt": m.parsed_at.isoformat() if m.parsed_at else "",
         "promptTemplate": m.prompt_template or "",
-        "outputFields": m.output_fields or "",
         "displayOrder": m.display_order,
         "createdAt": m.created_at.isoformat() if m.created_at else "",
         "updatedAt": m.updated_at.isoformat() if m.updated_at else "",
@@ -139,7 +131,6 @@ async def _ensure_user_templates(db: AsyncSession, user_id: str):
                 description=tpl["description"],
                 template_file=tpl["template_file"],
                 prompt_template=tpl["prompt_template"],
-                output_fields=tpl["output_fields"],
                 display_order=tpl["display_order"],
             ))
 
@@ -243,7 +234,6 @@ async def update_doc_configs(
             m.name = cfg.name
             m.description = cfg.description
             m.prompt_template = cfg.promptTemplate
-            m.output_fields = cfg.outputFields
 
     await db.commit()
     return {"ok": True, "count": len(data.configs)}

@@ -67,15 +67,15 @@ export function SummaryTab({ projectId }: { projectId: string }) {
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
       {/* 测试结论 */}
-      <div style={{ padding: 20, borderRadius: 8, background: isPass ? "#f0fdf4" : "#fef2f2", border: `1px solid ${isPass ? "#bbf7d0" : "#fecaca"}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+      <div className={isPass ? "summary-result" : "summary-result summary-result--failed"}>
+        <div className="summary-result__header">
           <StatusPill tone={isPass ? "green" : "red"}>{isPass ? "测试通过" : "测试未通过"}</StatusPill>
-          <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+          <span className="summary-result__text">
             用例通过率 <strong>{passRate}%</strong>（{passed}/{total}）
             {!isPass && passRate < 80 && `，低于 80% 阈值`}
           </span>
         </div>
-        {!isPass && <p style={{ margin: 0, fontSize: 12, color: "var(--text-secondary)" }}>存在 {failed} 条失败用例和 {unexecuted} 条未执行用例，建议排查后重新执行。</p>}
+        {!isPass && <p className="summary-result__hint">存在 {failed} 条失败用例和 {unexecuted} 条未执行用例，建议排查后重新执行。</p>}
       </div>
 
       {/* 核心指标 */}
@@ -89,24 +89,24 @@ export function SummaryTab({ projectId }: { projectId: string }) {
       </div>
 
       {/* 模块通过率 + 优先级通过率 并排 */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, flex: 1 }}>
+      <div className="panel-grid panel-grid--2">
         {/* 模块通过率 */}
-        <section className="work-panel" style={{ display: "flex", flexDirection: "column" }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>模块通过率</h3>
-          {initialLoading && modules.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : modules.length === 0 ? <div className="empty-state"><p>暂无数据</p></div> : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>
+        <section className="work-panel work-panel--column">
+          <h3 className="panel-title">模块通过率</h3>
+          {initialLoading && modules.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin text-muted" /><p className="text-muted">加载中...</p></div> : modules.length === 0 ? <div className="empty-state"><p>暂无数据</p></div> : (
+            <div className="ratio-list">
               {modules.map((m) => (
-                <div key={m.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ width: 80, fontSize: 13, flexShrink: 0, textAlign: "right", fontWeight: 500 }}>{m.name}</span>
-                  <div style={{ flex: 1, height: 12, background: "var(--line)", borderRadius: 999, overflow: "hidden", display: "flex" }}>
+                <div className="ratio-row" key={m.name}>
+                  <span className="ratio-row__name">{m.name}</span>
+                  <div className="ratio-row__bar">
                     {m.total > 0 && (
                       <>
-                        <div style={{ width: `${(m.passed / m.total) * 100}%`, height: "100%", background: "var(--green)", borderRadius: "5px 0 0 5px", transition: "width 0.3s" }} />
-                        <div style={{ width: `${(m.failed / m.total) * 100}%`, height: "100%", background: "var(--red)", transition: "width 0.3s" }} />
+                        <div className="ratio-row__pass" style={{ width: `${(m.passed / m.total) * 100}%` }} />
+                        <div className="ratio-row__fail" style={{ width: `${(m.failed / m.total) * 100}%` }} />
                       </>
                     )}
                   </div>
-                  <span style={{ width: 46, fontSize: 12, color: "var(--text-secondary)", textAlign: "right", flexShrink: 0 }}>{m.passed}/{m.total}</span>
+                  <span className="ratio-row__count">{m.passed}/{m.total}</span>
                   <StatusPill tone={toneForRate(m.rate)}>{m.rate}%</StatusPill>
                 </div>
               ))}
@@ -115,22 +115,22 @@ export function SummaryTab({ projectId }: { projectId: string }) {
         </section>
 
         {/* 优先级通过率 */}
-        <section className="work-panel" style={{ display: "flex", flexDirection: "column" }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, margin: "0 0 12px" }}>优先级通过率</h3>
-          {initialLoading && priorities.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : priorities.length === 0 ? <div className="empty-state"><p>暂无数据</p></div> : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1 }}>
+        <section className="work-panel work-panel--column">
+          <h3 className="panel-title">优先级通过率</h3>
+          {initialLoading && priorities.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin text-muted" /><p className="text-muted">加载中...</p></div> : priorities.length === 0 ? <div className="empty-state"><p>暂无数据</p></div> : (
+            <div className="ratio-list">
               {priorities.map((p) => (
-                <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ width: 80, fontSize: 13, flexShrink: 0, textAlign: "right", fontWeight: 500 }}>{p.name}</span>
-                  <div style={{ flex: 1, height: 12, background: "var(--line)", borderRadius: 999, overflow: "hidden", display: "flex" }}>
+                <div className="ratio-row" key={p.name}>
+                  <span className="ratio-row__name">{p.name}</span>
+                  <div className="ratio-row__bar">
                     {p.total > 0 && (
                       <>
-                        <div style={{ width: `${(p.passed / p.total) * 100}%`, height: "100%", background: "var(--green)", borderRadius: "5px 0 0 5px", transition: "width 0.3s" }} />
-                        <div style={{ width: `${(p.failed / p.total) * 100}%`, height: "100%", background: "var(--red)", transition: "width 0.3s" }} />
+                        <div className="ratio-row__pass" style={{ width: `${(p.passed / p.total) * 100}%` }} />
+                        <div className="ratio-row__fail" style={{ width: `${(p.failed / p.total) * 100}%` }} />
                       </>
                     )}
                   </div>
-                  <span style={{ width: 46, fontSize: 12, color: "var(--text-secondary)", textAlign: "right", flexShrink: 0 }}>{p.passed}/{p.total}</span>
+                  <span className="ratio-row__count">{p.passed}/{p.total}</span>
                   <StatusPill tone={toneForRate(p.rate)}>{p.rate}%</StatusPill>
                 </div>
               ))}

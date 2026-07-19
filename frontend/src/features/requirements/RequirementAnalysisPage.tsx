@@ -4,13 +4,8 @@ import { useStore } from "../../app/store";
 import { DataTable } from "../../shared/components/DataTable";
 import { SectionHeader } from "../../shared/components/SectionHeader";
 import { StatusPill } from "../../shared/components/StatusPill";
+import { riskTone } from "../../shared/utils/statusTone";
 import type { Requirement } from "../../shared/types/platform";
-
-function riskTone(risk: Requirement["risk"]) {
-  if (risk === "高") return "red" as const;
-  if (risk === "中") return "amber" as const;
-  return "green" as const;
-}
 
 export function RequirementAnalysisPage() {
   const { state } = useStore();

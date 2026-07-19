@@ -166,8 +166,8 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
     <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="执行脚本" description="按用例绑定的测试环境执行脚本，测试地址和账号通过环境变量注入。" meta={moduleFilter !== "all" ? <>显示 <strong>{filteredScripts.length}</strong> / 共 <strong>{scripts.length}</strong> 个脚本</> : <>共 <strong>{scripts.length}</strong> 个脚本</>}
         actions={<>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-            <div style={{ display: "flex", gap: 8 }}>
+          <div className="section-actions-stack">
+            <div className="section-actions-row">
               {modules.length > 1 ? <MenuSelect className="filter-menu-select" size="compact" value={moduleFilter} options={[{ value: "all", label: "全部模块" }, ...modules.map((m) => ({ value: m, label: m }))]} onChange={setModuleFilter} /> : null}
               <button className="primary-button" type="button" onClick={runAll} disabled={runningAll || loading}>
                 {runningAll ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
@@ -178,7 +178,7 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
         </>} />
       <section className="work-panel">
         {initialLoading && filteredScripts.length === 0 ? (
-          <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div>
+          <div className="empty-state"><Loader2 size={20} className="animate-spin text-muted" /><p className="empty-state__hint">加载中...</p></div>
         ) : filteredScripts.length === 0 ? (
           <div className="empty-state">
             <p>{scripts.length === 0 ? "暂无脚本，请先在「自动化脚本」页面生成脚本" : "当前筛选条件下暂无脚本"}</p>
@@ -186,11 +186,11 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
         ) : (
           <DataTable rows={filteredScripts} getRowKey={(r) => r.id} columns={[
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
-            { key: "scriptCode", label: "脚本编号", render: (r) => r.scriptCode || <span style={{ color: "var(--muted)" }}>-</span> },
+            { key: "scriptCode", label: "脚本编号", render: (r) => r.scriptCode || <span className="text-muted">-</span> },
             { key: "testCase", label: "关联用例", align: "left", lineClamp: 2, render: (r) => getTestCaseTitle(r.testCaseId) },
             { key: "testType", label: "测试类型", align: "center", render: (r) => {
               const tc = testCases.find((t) => t.id === r.testCaseId);
-              return tc ? (tc.testType || "功能测试") : <span style={{ color: "var(--muted)" }}>-</span>;
+              return tc ? (tc.testType || "功能测试") : <span className="text-muted">-</span>;
             }},
             { key: "targetPlatform", label: "测试端", align: "center", render: (r) => testCases.find((t) => t.id === r.testCaseId)?.targetPlatform || "-" },
             { key: "testUrl", label: "测试地址", align: "left", lineClamp: 2, render: (r) => testCases.find((t) => t.id === r.testCaseId)?.testUrl || "未配置" },
@@ -211,7 +211,7 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
               return <StatusPill tone={rev === "已通过" ? "green" : "slate"}>{rev}</StatusPill>;
             }},
             { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <span title={(r as any).invalidReason || ""}><StatusPill tone={(r as any).validityStatus === "已失效" ? "amber" : "green"}>{(r as any).validityStatus || "有效"}</StatusPill></span> },
-            { key: "executedAt", label: "执行时间", render: (r) => r.executedAt ? formatTime(r.executedAt) : <span style={{ color: "var(--muted)" }}>-</span> },
+            { key: "executedAt", label: "执行时间", render: (r) => r.executedAt ? formatTime(r.executedAt) : <span className="text-muted">-</span> },
             { key: "actions", label: "操作", width: "168px", sticky: "right" as const, align: "center", render: (r) => (
               <div className="inline-actions">
                 <button className="text-button" type="button" onClick={() => handleRun(r)} disabled={runningAll || runningId === r.id}>
@@ -238,28 +238,15 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
             { key: "code", label: "脚本代码" },
           ];
           return (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16, height: "100%", minHeight: 0 }}>
-              <div style={{ display: "flex", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
-                <div style={{ display: "flex", width: "100%" }}>
+            <div className="panel-stack scroll-fill">
+              <div className="result-tabs">
+                <div className="result-tabs__inner">
                   {tabs.map((tab) => (
                     <button
                       key={tab.key}
                       type="button"
                       onClick={() => setResultTab(tab.key)}
-                      style={{
-                        position: "relative",
-                        flex: 1,
-                        height: 38,
-                        padding: "0 14px",
-                        border: "none",
-                        borderBottom: resultTab === tab.key ? "2px solid var(--blue)" : "2px solid transparent",
-                        background: "transparent",
-                        cursor: "pointer",
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: resultTab === tab.key ? "var(--blue)" : "var(--muted)",
-                        transition: "background 0.18s ease, color 0.18s ease, border-color 0.18s ease",
-                      }}
+                      className={resultTab === tab.key ? "result-tabs__button result-tabs__button--active" : "result-tabs__button"}
                     >
                       {tab.label}
                     </button>
@@ -267,7 +254,7 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
                 </div>
               </div>
 
-              <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+              <div className="scroll-fill">
                 {resultTab === "info" && (
                   <div className="detail-grid">
                     <div className="detail-row"><span className="detail-label">脚本编号</span><span>{viewScript.scriptCode || "-"}</span></div>
@@ -278,18 +265,18 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
                     <div className="detail-row"><span className="detail-label">测试类型</span><span>{tc?.testType || "功能测试"}</span></div>
                     <div className="detail-row"><span className="detail-label">测试端</span><span>{tc?.targetPlatform || "-"}</span></div>
                     <div className="detail-row"><span className="detail-label">所需角色</span><span>{tc?.requiredRole || "无"}</span></div>
-                    <div className="detail-row detail-row--full"><span className="detail-label">测试地址</span><span style={{ overflowWrap: "anywhere" }}>{tc?.testUrl || "未配置"}</span></div>
+                    <div className="detail-row detail-row--full"><span className="detail-label">测试地址</span><span className="text-anywhere">{tc?.testUrl || "未配置"}</span></div>
                   </div>
                 )}
 
                 {resultTab === "code" && (
-                  <pre style={{ background: "#1e1e2e", color: "#cdd6f4", padding: 14, borderRadius: 10, fontSize: 12, lineHeight: 1.6, margin: 0, overflow: "auto", height: "100%", minHeight: 360 }}>
+                  <pre className="code-block code-block--tall">
                     {viewScript.code || "// 暂无代码"}
                   </pre>
                 )}
 
                 {resultTab === "result" && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  <div className="panel-stack">
                     <div className="detail-grid">
                       <div className="detail-row"><span className="detail-label">执行状态</span><StatusPill tone={executionStatusTone(getExecutionStatus(viewScript))}>{getExecutionStatus(viewScript)}</StatusPill></div>
                       <div className="detail-row"><span className="detail-label">测试状态</span><StatusPill tone={statusTone(run?.status || viewScript.status)}>{normalizeTestStatus(run?.status || viewScript.status)}</StatusPill></div>
@@ -299,22 +286,22 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
                     </div>
 
                     <div>
-                      <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600 }}>标准输出</h4>
-                      <pre style={{ background: "#1e1e2e", color: "#cdd6f4", padding: 12, borderRadius: 8, fontSize: 12, lineHeight: 1.6, margin: 0, overflow: "auto", maxHeight: 220, whiteSpace: "pre-wrap" }}>
+                      <h4 className="panel-title">标准输出</h4>
+                      <pre className="code-block">
                         {run?.output?.trim() || "暂无 stdout 输出"}
                       </pre>
                     </div>
 
                     <div>
-                      <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600, color: run?.error ? "var(--red)" : "var(--text)" }}>错误输出</h4>
-                      <pre style={{ background: "#1e1e2e", color: run?.error ? "#f38ba8" : "#a6adc8", padding: 12, borderRadius: 8, fontSize: 12, lineHeight: 1.6, margin: 0, overflow: "auto", maxHeight: 220, whiteSpace: "pre-wrap" }}>
+                      <h4 className={run?.error ? "panel-title text-red" : "panel-title"}>错误输出</h4>
+                      <pre className={run?.error ? "code-block code-block--error" : "code-block code-block--muted"}>
                         {run?.error?.trim() || "暂无 stderr 输出"}
                       </pre>
                     </div>
 
                     <div>
-                      <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 600 }}>环境快照</h4>
-                      <pre style={{ background: "var(--surface-soft)", color: "var(--text)", padding: 12, borderRadius: 8, fontSize: 12, lineHeight: 1.6, margin: 0, overflow: "auto", maxHeight: 160, whiteSpace: "pre-wrap" }}>
+                      <h4 className="panel-title">环境快照</h4>
+                      <pre className="json-block">
                         {run?.environmentSnapshot || "暂无环境快照"}
                       </pre>
                     </div>

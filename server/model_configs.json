@@ -13,6 +13,17 @@
       "enabled": true
     },
     {
+      "id": "reverse-requirements",
+      "name": "AI反推需求",
+      "aiNode": "AI反推需求",
+      "provider": "小米-MiMo大模型平台",
+      "modelName": "mimo-v2.5",
+      "apiKey": "",
+      "endpoint": "https://api.xiaomimimo.com/v1",
+      "description": "基于环境配置、账号和系统识别结果反推可测试需求",
+      "enabled": true
+    },
+    {
       "id": "system-recognition",
       "name": "系统识别",
       "aiNode": "系统识别",

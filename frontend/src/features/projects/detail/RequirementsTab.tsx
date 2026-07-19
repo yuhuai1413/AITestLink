@@ -14,6 +14,7 @@ import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { Modal } from "../../../shared/components/Modal";
 import { MenuSelect } from "../../../shared/components/MenuSelect";
 import { formatProjectTime as formatTime, reviewTone } from "./projectDetail.config";
+import { riskTone, validityTone } from "../../../shared/utils/statusTone";
 
 // ═══════════════════════════════════════
 
@@ -198,21 +199,21 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
         ) : (
           <DataTable rows={requirements} getRowKey={(r) => r.id} columns={[
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
-            { key: "reqId", label: "需求编号", width: "12%", render: (r) => r.reqId || <span style={{ color: "var(--muted)" }}>-</span> },
+            { key: "reqId", label: "需求编号", width: "12%", render: (r) => r.reqId || <span className="text-muted">-</span> },
             { key: "module", label: "模块", width: "10%", render: (r) => r.module },
             { key: "feature", label: "功能点", width: "10%", align: "left", lineClamp: 2, render: (r) => r.feature },
             { key: "source", label: "来源", width: "10%", render: (r) => r.source },
-            { key: "risk", label: "风险", align: "center", render: (r) => <StatusPill tone={r.risk === "高" ? "red" : r.risk === "中" ? "amber" : "green"}>{r.risk}</StatusPill> },
+            { key: "risk", label: "风险", align: "center", render: (r) => <StatusPill tone={riskTone(r.risk)}>{r.risk}</StatusPill> },
             { key: "rule", label: "业务规则", width: "20%", align: "left", lineClamp: 2, render: (r) => <span title={r.rule}>{r.rule}</span> },
             { key: "question", label: "待确认问题", width: "20%", align: "left", lineClamp: 2, render: (r) => (
-              r.question ? <span title={r.question}>{r.question}</span> : <span style={{ color: "var(--muted)" }}>-</span>
+              r.question ? <span title={r.question}>{r.question}</span> : <span className="text-muted">-</span>
             ) },
             { key: "clarificationStatus", label: "确认状态", width: "8%", align: "center", render: (r) => {
               const status = getClarificationStatus(r);
               return <StatusPill tone={clarificationTone(status)}>{status}</StatusPill>;
             } },
-            { key: "reviewStatus", label: "评审", width: "8%", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={r.reviewStatus === "已通过" ? "green" : "slate"}>{r.reviewStatus || "待评审"}</StatusPill></button> },
-            { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <span title={r.invalidReason || ""}><StatusPill tone={r.validityStatus === "已失效" ? "amber" : "green"}>{r.validityStatus || "有效"}</StatusPill></span> },
+            { key: "reviewStatus", label: "评审", width: "8%", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus || "待评审"}</StatusPill></button> },
+            { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <span title={r.invalidReason || ""}><StatusPill tone={validityTone(r.validityStatus)}>{r.validityStatus || "有效"}</StatusPill></span> },
             { key: "createdAt", label: "生成时间", render: (r) => formatTime(r.createdAt) },
             { key: "updatedAt", label: "更新时间", render: (r) => formatTime(r.updatedAt) },
             { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
@@ -233,12 +234,12 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
             <div className="detail-row"><span className="detail-label">模块</span><span>{viewReq.module}</span></div>
             <div className="detail-row"><span className="detail-label">功能点</span><span>{viewReq.feature}</span></div>
             <div className="detail-row"><span className="detail-label">来源</span><span>{viewReq.source}</span></div>
-            <div className="detail-row"><span className="detail-label">风险等级</span><StatusPill tone={viewReq.risk === "高" ? "red" : viewReq.risk === "中" ? "amber" : "green"}>{viewReq.risk}</StatusPill></div>
+            <div className="detail-row"><span className="detail-label">风险等级</span><StatusPill tone={riskTone(viewReq.risk)}>{viewReq.risk}</StatusPill></div>
             <div className="detail-row detail-row--full"><span className="detail-label">业务规则</span><pre className="detail-pre">{viewReq.rule || "无"}</pre></div>
             <div className="detail-row detail-row--full"><span className="detail-label">待确认问题</span><pre className="detail-pre">{viewReq.question || "无"}</pre></div>
             <div className="detail-row"><span className="detail-label">确认状态</span><StatusPill tone={clarificationTone(getClarificationStatus(viewReq))}>{getClarificationStatus(viewReq)}</StatusPill></div>
             <div className="detail-row detail-row--full"><span className="detail-label">确认结论</span><pre className="detail-pre">{viewReq.clarificationAnswer || "无"}</pre></div>
-            <div className="detail-row"><span className="detail-label">评审状态</span><StatusPill tone={viewReq.reviewStatus === "已通过" ? "green" : "slate"}>{viewReq.reviewStatus || "待评审"}</StatusPill></div>
+            <div className="detail-row"><span className="detail-label">评审状态</span><StatusPill tone={reviewTone(viewReq.reviewStatus)}>{viewReq.reviewStatus || "待评审"}</StatusPill></div>
           </div>
         )}
       </Modal>
@@ -269,7 +270,7 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
             <div className="detail-row"><span className="detail-label">模块</span><span>{editReq.module}</span></div>
             <div className="detail-row"><span className="detail-label">功能点</span><span>{editReq.feature}</span></div>
             <div className="detail-row"><span className="detail-label">来源</span><span>{editReq.source}</span></div>
-            <div className="detail-row"><span className="detail-label">风险等级</span><StatusPill tone={editReq.risk === "高" ? "red" : editReq.risk === "中" ? "amber" : "green"}>{editReq.risk}</StatusPill></div>
+            <div className="detail-row"><span className="detail-label">风险等级</span><StatusPill tone={riskTone(editReq.risk)}>{editReq.risk}</StatusPill></div>
             <div className="detail-row detail-row--full"><span className="detail-label">业务规则</span><textarea className="form-textarea" style={{ flex: 1 }} rows={5} value={editRule} onChange={(e) => { setEditRule(e.target.value); reqDirty.markDirty(); }} /></div>
             {hasRealClarificationQuestion(editQuestion) && (
               <>

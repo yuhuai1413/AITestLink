@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import type { CSSProperties, MouseEvent, ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { MoreHorizontal, Plus, Server, Users } from "lucide-react";
 import { environmentApi, type EnvironmentConfig, type TestAccount, type UISnapshot } from "../../api/environment.api";
 import { Modal } from "../../shared/components/Modal";
@@ -7,6 +7,7 @@ import { SectionHeader } from "../../shared/components/SectionHeader";
 import { DataTable } from "../../shared/components/DataTable";
 import { ConfirmDialog } from "../../shared/components/ConfirmDialog";
 import { MenuSelect } from "../../shared/components/MenuSelect";
+import { StatusPill } from "../../shared/components/StatusPill";
 import { toast } from "sonner";
 import { EnvironmentAccountsModal } from "./EnvironmentAccountsModal";
 
@@ -242,9 +243,9 @@ export function EnvironmentPage({ projectId }: Props) {
         <div className="empty-state"><p>加载中...</p></div>
       ) : environments.length === 0 ? (
         <div className="empty-state">
-          <Server size={48} style={{ color: "var(--muted)", marginBottom: 12 }} />
+          <Server size={48} className="empty-state__icon" />
           <p>暂无环境配置</p>
-          <p style={{ fontSize: 13, color: "var(--muted)" }}>点击上方按钮创建测试环境</p>
+          <p className="empty-state__hint">点击上方按钮创建测试环境</p>
         </div>
       ) : (
         <section className="work-panel">
@@ -253,16 +254,16 @@ export function EnvironmentPage({ projectId }: Props) {
           getRowKey={(r) => r.id}
           columns={[
             { key: "name", label: "环境名称", width: "16%", align: "center", lineClamp: 2, render: (r) => <strong>{r.name}{r.isDefault ? `（默认${r.environmentType}）` : ""}</strong> },
-            { key: "environmentType", label: "类型", width: "8%", align: "center", render: (r) => <span className="status-pill status-pill--blue">{r.environmentType}</span> },
-            { key: "targetUrl", label: "测试入口", width: "26%", align: "left", lineClamp: 2, render: (r) => (r.environmentType === "APP" ? r.appUrl : r.webUrl) || <span style={{ color: "var(--muted)" }}>-</span> },
-            { key: "accounts", label: "账号数量", width: "10%", align: "center", render: (r) => <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Users size={14} /> {r.accounts?.length || 0}</span> },
+            { key: "environmentType", label: "类型", width: "8%", align: "center", render: (r) => <StatusPill tone="blue">{r.environmentType}</StatusPill> },
+            { key: "targetUrl", label: "测试入口", width: "26%", align: "left", lineClamp: 2, render: (r) => (r.environmentType === "APP" ? r.appUrl : r.webUrl) || <span className="text-muted">-</span> },
+            { key: "accounts", label: "账号数量", width: "10%", align: "center", render: (r) => <span className="inline-icon-text"><Users size={14} /> {r.accounts?.length || 0}</span> },
             { key: "captchaRequired", label: "验证码", width: "10%", align: "center", render: (r) => r.captchaRequired ? (r.captchaCode ? `固定 ${r.captchaCode}` : "需要") : (r.captchaCode ? `忽略/填 ${r.captchaCode}` : "不需要") },
             { key: "uiSnapshot", label: "系统识别", width: "12%", align: "center", render: (r) => {
-              if (r.environmentType === "APP") return <span style={{ color: "var(--muted)" }}>暂未支持</span>;
+              if (r.environmentType === "APP") return <span className="text-muted">暂未支持</span>;
               const snapshot = uiSnapshots[r.id];
-              if (recognizingId === r.id) return <span style={{ color: "var(--blue)" }}>识别中...</span>;
-              if (!snapshot) return <span style={{ color: "var(--muted)" }}>未识别</span>;
-              return <span title={snapshot.summary || snapshot.error} style={{ color: snapshot.status === "成功" ? "var(--green)" : "var(--red)" }}>{snapshot.status}</span>;
+              if (recognizingId === r.id) return <span className="text-blue">识别中...</span>;
+              if (!snapshot) return <span className="text-muted">未识别</span>;
+              return <span className={snapshot.status === "成功" ? "text-green" : "text-red"} title={snapshot.summary || snapshot.error}>{snapshot.status}</span>;
             } },
             { key: "timeout", label: "超时", width: "8%", align: "center", render: (r) => `${r.timeout}s` },
             { key: "createdAt", label: "创建时间", width: "15%", align: "center", render: (r) => formatTime(r.createdAt) },
@@ -351,12 +352,12 @@ export function EnvironmentPage({ projectId }: Props) {
             )}
           </div>
           <div className="form-row">
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <label className="form-label" style={{ gridAutoFlow: "column", justifyContent: "start", alignItems: "center", gap: 8 }}>
+            <div className="form-check-grid">
+              <label className="form-check-label">
                 <input type="checkbox" checked={envForm.isDefault} onChange={(e) => setEnvForm({ ...envForm, isDefault: e.target.checked })} />
                 设为默认{envForm.environmentType}测试环境
               </label>
-              <label className="form-label" style={{ gridAutoFlow: "column", justifyContent: "start", alignItems: "center", gap: 8 }}>
+              <label className="form-check-label">
                 <input type="checkbox" checked={envForm.captchaRequired} onChange={(e) => setEnvForm({ ...envForm, captchaRequired: e.target.checked })} />
                 登录/认证需要验证码
               </label>
@@ -367,15 +368,13 @@ export function EnvironmentPage({ projectId }: Props) {
               <input className="form-input" value={envForm.captchaCode} onChange={(e) => setEnvForm({ ...envForm, captchaCode: e.target.value })} placeholder="如：0000；无固定值可留空" />
             </label>
           </div>
-          <div className="form-row">
-            <div style={{ display: "flex", gap: 16 }}>
-              <label className="form-label" style={{ flex: 1 }}>超时时间(秒)
+          <div className="form-row form-row--2">
+              <label className="form-label">超时时间(秒)
                 <input className="form-input" type="number" value={envForm.timeout} onChange={(e) => setEnvForm({ ...envForm, timeout: e.target.value })} />
               </label>
-              <label className="form-label" style={{ flex: 1 }}>重试次数
+              <label className="form-label">重试次数
                 <input className="form-input" type="number" value={envForm.retryCount} onChange={(e) => setEnvForm({ ...envForm, retryCount: e.target.value })} />
               </label>
-            </div>
           </div>
           <div className="form-row">
             <label className="form-label">环境说明
@@ -467,31 +466,31 @@ function RecognitionDetailModal({ snapshot, onClose }: { snapshot: UISnapshot | 
   return (
     <Modal open={!!snapshot} onClose={onClose} title="系统识别详情" width={920} footer={<button className="primary-button" type="button" onClick={onClose}>关闭</button>}>
       {!snapshot ? null : (
-        <div className="page-stack" style={{ gap: 16 }}>
-          <section className="work-panel" style={{ padding: 14 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
+        <div className="panel-stack">
+          <section className="work-panel work-panel--compact">
+            <div className="panel-grid panel-grid--4">
               <DetailMetric label="状态" value={snapshot.status} tone={snapshot.status === "成功" ? "green" : "red"} />
               <DetailMetric label="识别模式" value={textOf(scope.mode ?? aiAnalysis.scopeMode, "full")} />
               <DetailMetric label="入口页面" value={textOf(loginPage.title)} />
               <DetailMetric label="当前页面" value={textOf(appPage.title)} />
             </div>
-            <p style={{ margin: "12px 0 0", color: snapshot.status === "成功" ? "var(--muted)" : "var(--red)", lineHeight: 1.6 }}>
+            <p className={snapshot.status === "成功" ? "summary-result__hint list-block" : "summary-result__hint list-block text-red"}>
               {snapshot.summary || snapshot.error || "暂无摘要"}
             </p>
           </section>
 
           <DetailSection title="识别过程">
             {trace.length === 0 ? <EmptyLine text="暂无过程日志。请重新执行一次识别以生成过程详情。" /> : (
-              <div style={{ display: "grid", gap: 8 }}>
+              <div className="log-block">
                 {trace.map((item, index) => (
-                  <div key={`${textOf(item.step)}-${index}`} style={{ display: "grid", gridTemplateColumns: "32px 110px 90px 1fr", gap: 10, alignItems: "start", padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 10, background: "var(--surface)" }}>
-                    <span style={{ color: "var(--muted)" }}>{index + 1}</span>
-                    <code style={{ fontSize: 12 }}>{textOf(item.step)}</code>
+                  <div className="trace-row" key={`${textOf(item.step)}-${index}`}>
+                    <span className="trace-row__index">{index + 1}</span>
+                    <code className="trace-row__step">{textOf(item.step)}</code>
                     <StatusText status={textOf(item.status)} />
                     <div>
-                      <div style={{ lineHeight: 1.5 }}>{textOf(item.message)}</div>
-                      {item.url ? <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{textOf(item.url)}</div> : null}
-                      {Object.keys(asRecord(item.data)).length > 0 ? <pre style={miniPreStyle}>{JSON.stringify(item.data, null, 2)}</pre> : null}
+                      <div className="trace-row__message">{textOf(item.message)}</div>
+                      {item.url ? <div className="trace-row__url">{textOf(item.url)}</div> : null}
+                      {Object.keys(asRecord(item.data)).length > 0 ? <pre className="json-block json-block--mini">{JSON.stringify(item.data, null, 2)}</pre> : null}
                     </div>
                   </div>
                 ))}
@@ -500,7 +499,7 @@ function RecognitionDetailModal({ snapshot, onClose }: { snapshot: UISnapshot | 
           </DetailSection>
 
           <DetailSection title="登录识别">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+            <div className="panel-grid panel-grid--3">
               <DetailMetric label="是否尝试登录" value={textOf(loginResult.attempted)} />
               <DetailMetric label="是否登录成功" value={textOf(loginResult.success)} tone={loginResult.success ? "green" : "red"} />
               <DetailMetric label="账号角色" value={textOf(loginResult.accountRole)} />
@@ -511,13 +510,13 @@ function RecognitionDetailModal({ snapshot, onClose }: { snapshot: UISnapshot | 
           <DetailSection title="AI 识别结果">
             <ListBlock title="相关模块" items={relevantModules.map((item) => `${textOf(item.name)}：${textOf(item.reason, "无说明")}（置信度 ${textOf(item.confidence, "0")}）`)} />
             <ListBlock title="导航计划" items={navigationPlan.map((item) => `${textOf(item.fromPage)} → ${textOf(item.toPage)}：${asArray<unknown>(item.steps).map((step) => textOf(step)).join(" / ")}`)} />
-            <div style={{ display: "grid", gap: 10 }}>
+            <div className="log-block">
               {pageObjects.length === 0 ? <EmptyLine text="暂无页面对象。可能是 AI 未配置、识别失败，或当前只完成了规则采集。" /> : pageObjects.map((page, index) => {
                 const elements = asArray<JsonRecord>(page.elements);
                 return (
-                  <div key={`${textOf(page.pageName)}-${index}`} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
-                    <div style={{ fontWeight: 700 }}>{textOf(page.pageName)}</div>
-                    <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>{asArray<unknown>(page.routeOrMenuPath).map((item) => textOf(item)).join(" / ") || textOf(page.purpose)}</div>
+                  <div className="detail-card" key={`${textOf(page.pageName)}-${index}`}>
+                    <div className="detail-card__value">{textOf(page.pageName)}</div>
+                    <div className="trace-row__url">{asArray<unknown>(page.routeOrMenuPath).map((item) => textOf(item)).join(" / ") || textOf(page.purpose)}</div>
                     <ListBlock title="元素" compact items={elements.map((element) => `${textOf(element.name)} [${textOf(element.type)}] ${textOf(element.selector, "无稳定定位")} - ${textOf(element.evidence, "无证据")}`)} />
                   </div>
                 );
@@ -526,7 +525,7 @@ function RecognitionDetailModal({ snapshot, onClose }: { snapshot: UISnapshot | 
           </DetailSection>
 
           <DetailSection title="规则采集结果">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+            <div className="panel-grid panel-grid--3">
               <DetailMetric label="菜单数" value={String(appMenus.length)} />
               <DetailMetric label="按钮数" value={String(appButtons.length)} />
               <DetailMetric label="表格数" value={String(appTables.length)} />
@@ -538,11 +537,11 @@ function RecognitionDetailModal({ snapshot, onClose }: { snapshot: UISnapshot | 
           <DetailSection title="问题与建议">
             <ListBlock title="未解决问题" items={unresolvedQuestions.map((item) => textOf(item))} emptyText="暂无未解决问题" />
             <ListBlock title="脚本生成建议" items={scriptGuidance.map((item) => textOf(item))} emptyText="暂无建议" />
-            {snapshot.error ? <pre style={errorPreStyle}>{snapshot.error}</pre> : null}
+            {snapshot.error ? <pre className="json-block json-block--error">{snapshot.error}</pre> : null}
           </DetailSection>
 
           <DetailSection title="原始 JSON">
-            <pre style={jsonPreStyle}>{JSON.stringify(root, null, 2)}</pre>
+            <pre className="json-block">{JSON.stringify(root, null, 2)}</pre>
           </DetailSection>
         </div>
       )}
@@ -602,8 +601,8 @@ function EnvironmentMoreMenu({
 
 function DetailSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="work-panel" style={{ padding: 14 }}>
-      <h3 style={{ fontSize: 15, margin: "0 0 12px" }}>{title}</h3>
+    <section className="work-panel work-panel--compact">
+      <h3 className="panel-title">{title}</h3>
       {children}
     </section>
   );
@@ -611,9 +610,9 @@ function DetailSection({ title, children }: { title: string; children: ReactNode
 
 function DetailMetric({ label, value, tone }: { label: string; value: string; tone?: "green" | "red" }) {
   return (
-    <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10, minWidth: 0 }}>
-      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontWeight: 700, color: tone === "green" ? "var(--green)" : tone === "red" ? "var(--red)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</div>
+    <div className="detail-card">
+      <div className="detail-card__label">{label}</div>
+      <div className={`detail-card__value${tone ? ` detail-card__value--${tone}` : ""}`}>{value}</div>
     </div>
   );
 }
@@ -621,16 +620,16 @@ function DetailMetric({ label, value, tone }: { label: string; value: string; to
 function StatusText({ status }: { status: string }) {
   const color = status === "success" ? "var(--green)" : status === "failed" ? "var(--red)" : status === "skipped" ? "var(--muted)" : "var(--blue)";
   const text = status === "success" ? "成功" : status === "failed" ? "失败" : status === "skipped" ? "跳过" : status === "running" ? "执行中" : status;
-  return <span style={{ color, fontWeight: 700 }}>{text}</span>;
+  return <span style={{ color }} className="detail-card__value">{text}</span>;
 }
 
 function ListBlock({ title, items, emptyText = "暂无数据", compact = false }: { title: string; items: string[]; emptyText?: string; compact?: boolean }) {
   return (
-    <div style={{ marginTop: compact ? 8 : 12 }}>
-      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>{title}</div>
+    <div className={compact ? "list-block list-block--compact" : "list-block"}>
+      <div className="list-block__title">{title}</div>
       {items.length === 0 ? <EmptyLine text={emptyText} /> : (
-        <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 4 }}>
-          {items.map((item, index) => <li key={`${item}-${index}`} style={{ lineHeight: 1.5 }}>{item}</li>)}
+        <ul className="list-block__list">
+          {items.map((item, index) => <li className="list-block__item" key={`${item}-${index}`}>{item}</li>)}
         </ul>
       )}
     </div>
@@ -638,30 +637,5 @@ function ListBlock({ title, items, emptyText = "暂无数据", compact = false }
 }
 
 function EmptyLine({ text }: { text: string }) {
-  return <div style={{ color: "var(--muted)", fontSize: 13 }}>{text}</div>;
+  return <div className="muted-empty">{text}</div>;
 }
-
-const miniPreStyle: CSSProperties = {
-  margin: "6px 0 0",
-  padding: 8,
-  borderRadius: 8,
-  background: "var(--background)",
-  overflow: "auto",
-  fontSize: 12,
-};
-
-const jsonPreStyle: CSSProperties = {
-  margin: 0,
-  maxHeight: 360,
-  overflow: "auto",
-  padding: 12,
-  borderRadius: 10,
-  background: "var(--background)",
-  fontSize: 12,
-};
-
-const errorPreStyle: CSSProperties = {
-  ...jsonPreStyle,
-  color: "var(--red)",
-  whiteSpace: "pre-wrap",
-};

@@ -20,7 +20,6 @@ class DocTemplate(Base):
     parse_error = Column(Text, default="")
     parsed_at = Column(DateTime, nullable=True)
     prompt_template = Column(Text, default="")
-    output_fields = Column(Text, default="")
     display_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

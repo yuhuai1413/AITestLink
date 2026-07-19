@@ -1,8 +1,7 @@
-import type { Priority } from "../../../shared/types/platform";
 import type { AITaskType } from "../../../shared/types/platform";
+export { priorityTone, reviewTone } from "../../../shared/utils/statusTone";
 
 export type ProjectDetailTabKey =
-  | "overview"
   | "files"
   | "requirements"
   | "testPoints"
@@ -15,7 +14,6 @@ export type ProjectDetailTabKey =
   | "environment";
 
 export const projectDetailTabs: { key: ProjectDetailTabKey; label: string }[] = [
-  { key: "overview", label: "概览" },
   { key: "files", label: "输入资料" },
   { key: "environment", label: "环境配置" },
   { key: "requirements", label: "需求列表" },
@@ -47,7 +45,7 @@ export function isProjectDetailTabKey(value: string | null | undefined): value i
 }
 
 export function getProjectTabFromTask(taskType: AITaskType): ProjectDetailTabKey {
-  return aiTaskTargetTabMap[taskType] ?? "overview";
+  return aiTaskTargetTabMap[taskType] ?? "files";
 }
 
 export function getStoredProjectTab(projectId: string | null | undefined): ProjectDetailTabKey | null {
@@ -67,17 +65,4 @@ export function formatProjectTime(iso?: string): string {
   if (Number.isNaN(date.getTime())) return iso;
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
-export function priorityTone(priority: Priority) {
-  if (priority === "P0") return "red" as const;
-  if (priority === "P1") return "amber" as const;
-  if (priority === "P2") return "blue" as const;
-  return "slate" as const;
-}
-
-export function reviewTone(status: string) {
-  if (status === "已通过") return "green" as const;
-  if (status === "需修改" || status === "已驳回") return "red" as const;
-  return "amber" as const;
 }

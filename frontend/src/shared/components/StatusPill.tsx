@@ -1,6 +1,8 @@
+export type StatusTone = "blue" | "green" | "amber" | "red" | "slate" | "purple";
+
 interface StatusPillProps {
   children: React.ReactNode;
-  tone?: "blue" | "green" | "amber" | "red" | "slate" | "purple";
+  tone?: StatusTone;
   className?: string;
 }
 

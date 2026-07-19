@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useRef, useCallback } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -34,6 +34,13 @@ const PROJECT_PRIORITY_COLORS: Record<string, string> = {
 const PRIORITY_COLORS: Record<string, string> = {
   P0: C.red, P1: C.amber, P2: C.blue, P3: C.slate,
 };
+
+const CHART_ANIMATION = {
+  isAnimationActive: true,
+  animationBegin: 0,
+  animationDuration: 900,
+  animationEasing: "ease-out",
+} as const;
 
 interface ChartDataItem {
   name: string;
@@ -76,6 +83,78 @@ function EmptyChart() {
   return <div className="dash-empty">暂无数据</div>;
 }
 
+function DashboardSkeleton() {
+  return (
+    <div className="dashboard">
+      <div className="dash-stats">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div className="dash-stat-card dash-skeleton-card" key={index}>
+            <span className="dash-skeleton dash-skeleton-icon" />
+            <div className="dash-stat-body">
+              <span className="dash-skeleton dash-skeleton-line dash-skeleton-line--sm" />
+              <span className="dash-skeleton dash-skeleton-line dash-skeleton-line--lg" />
+              <span className="dash-skeleton dash-skeleton-line dash-skeleton-line--md" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="dash-charts-row">
+        {["项目优先级分布", "用例优先级分布", "自动化覆盖率"].map((title, index) => (
+          <div className="dash-card dash-skeleton-card" key={title}>
+            <h3 className="dash-card-title">
+              <span className="dash-skeleton dash-skeleton-title" />
+            </h3>
+            <div className="dash-chart-wrap">
+              {index === 1 ? (
+                <div className="dash-skeleton-bars">
+                  {Array.from({ length: 4 }).map((_, barIndex) => (
+                    <span
+                      className="dash-skeleton dash-skeleton-bar"
+                      style={{ height: `${52 + barIndex * 18}px` }}
+                      key={barIndex}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="dash-skeleton-donut">
+                  <span className="dash-skeleton-donut-core" />
+                </div>
+              )}
+              <div className="dash-skeleton-legend">
+                {Array.from({ length: index === 1 ? 4 : 3 }).map((_, legendIndex) => (
+                  <span className="dash-skeleton dash-skeleton-legend-item" key={legendIndex} />
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="dash-card dash-card--fill">
+        <div className="dash-card-header">
+          <h3 className="dash-card-title">最近项目</h3>
+          <span className="dash-skeleton dash-skeleton-line dash-skeleton-line--button" />
+        </div>
+        <div className="dash-table-skeleton dash-table-skeleton--head">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <span className="dash-skeleton dash-skeleton-th" key={index} />
+          ))}
+        </div>
+        <div className="dash-table-skeleton">
+          {Array.from({ length: 7 }).map((_, index) => (
+            <div className="dash-skeleton-row" key={index}>
+              {Array.from({ length: 8 }).map((_, cellIndex) => (
+                <span className="dash-skeleton dash-skeleton-td" key={cellIndex} />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CenterLabel({ value }: { value: string }) {
   return (
     <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" style={{ fontSize: 26, fontWeight: 700, fill: "var(--text)" }}>
@@ -100,18 +179,19 @@ function Legend({ data }: { data: ChartDataItem[] }) {
 export function DashboardPage() {
   const { state, dispatch } = useStore();
   const navigate = useNavigate();
-  const loaded = useRef(false);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
 
   // 每次进入仪表盘时从 API 刷新数据
   useEffect(() => {
-    loaded.current = false;
+    let cancelled = false;
     const refresh = async () => {
+      const startedAt = performance.now();
       try {
         const projects = await projectsApi.list();
-        if (!projects || !Array.isArray(projects)) return;
-
-        // 清空旧数据再写入，避免重复
-        dispatch({ type: "SET_PROJECTS", payload: projects as any });
+        if (!projects || !Array.isArray(projects)) {
+          return;
+        }
+        if (cancelled) return;
 
         const loadByProject = async <T,>(loader: (id: string) => Promise<T[]>): Promise<T[]> => {
           const results = await Promise.allSettled(projects.map((p) => loader(p.id)));
@@ -127,20 +207,30 @@ export function DashboardPage() {
           loadByProject((id) => testPointsApi.list(id)),
           loadByProject((id) => testCasesApi.list(id)),
         ]);
+        if (cancelled) return;
 
-        // 先清空再写入
-        dispatch({ type: "CLEAR_REQUIREMENTS", payload: "__ALL__" });
-        dispatch({ type: "CLEAR_TEST_POINTS", payload: "__ALL__" });
-        dispatch({ type: "CLEAR_TEST_CASES", payload: "__ALL__" });
-
-        reqs.forEach((r: any) => dispatch({ type: "ADD_REQUIREMENT", payload: r }));
-        tps.forEach((tp: any) => dispatch({ type: "ADD_TEST_POINT", payload: tp }));
-        tcs.forEach((tc: any) => dispatch({ type: "ADD_TEST_CASE", payload: tc }));
-
-        loaded.current = true;
+        dispatch({
+          type: "SET_DASHBOARD_DATA",
+          payload: {
+            projects: projects as any,
+            requirements: reqs as any,
+            testPoints: tps as any,
+            testCases: tcs as any,
+          },
+        });
       } catch { /* 静默失败 */ }
+      finally {
+        const elapsed = performance.now() - startedAt;
+        const delay = Math.max(0, 520 - elapsed);
+        window.setTimeout(() => {
+          if (!cancelled) setDashboardLoading(false);
+        }, delay);
+      }
     };
     refresh();
+    return () => {
+      cancelled = true;
+    };
   }, [dispatch]);
 
   const stats = useMemo<DashboardStats>(() => {
@@ -196,6 +286,10 @@ export function DashboardPage() {
     { icon: Bot, label: "自动化覆盖", value: `${stats.autoRate}%`, sub: `适合自动化 ${stats.caseCount > 0 ? Math.round(stats.caseCount * stats.autoRate / 100) : 0} 条`, color: C.blue },
   ];
 
+  if (dashboardLoading) {
+    return <DashboardSkeleton />;
+  }
+
   return (
     <div className="dashboard">
       <div className="dash-stats">
@@ -209,7 +303,17 @@ export function DashboardPage() {
             {projectPriorityData.some((d) => d.value > 0) ? (
               <ResponsiveContainer width="100%" height={170}>
                 <PieChart>
-                  <Pie data={projectPriorityData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" stroke="none">
+                  <Pie
+                    data={projectPriorityData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    paddingAngle={3}
+                    dataKey="value"
+                    stroke="none"
+                    {...CHART_ANIMATION}
+                  >
                     {projectPriorityData.map((d, i) => <Cell key={i} fill={d.fill} />)}
                   </Pie>
                   <Tooltip content={<ChartTooltip />} />
@@ -230,7 +334,7 @@ export function DashboardPage() {
                   <XAxis dataKey="name" tick={{ fontSize: 12, fill: C.muted }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 12, fill: C.muted }} axisLine={false} tickLine={false} allowDecimals={false} />
                   <Tooltip content={<ChartTooltip />} />
-                  <Bar dataKey="value" name="用例数" radius={[6, 6, 0, 0]}>
+                  <Bar dataKey="value" name="用例数" radius={[6, 6, 0, 0]} {...CHART_ANIMATION}>
                     {priorityData.map((d, i) => <Cell key={i} fill={d.fill} />)}
                   </Bar>
                 </BarChart>
@@ -245,7 +349,18 @@ export function DashboardPage() {
             {autoDistributionData.some((d) => d.value > 0) ? (
               <ResponsiveContainer width="100%" height={170}>
                 <PieChart>
-                  <Pie data={autoDistributionData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" stroke="none" label={false}>
+                  <Pie
+                    data={autoDistributionData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    paddingAngle={3}
+                    dataKey="value"
+                    stroke="none"
+                    label={false}
+                    {...CHART_ANIMATION}
+                  >
                     {autoDistributionData.map((d, i) => <Cell key={i} fill={d.fill} />)}
                   </Pie>
                   <Tooltip content={<ChartTooltip />} />

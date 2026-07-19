@@ -725,7 +725,7 @@ async def reverse_requirements(
     db: AsyncSession = Depends(get_db),
 ):
     await verify_project_owner(db, project_id, user["sub"])
-    config_check = await check_config_for_task("需求解析", user["sub"])
+    config_check = await check_config_for_task("AI反推需求", user["sub"])
     if not config_check["configured"]:
         raise HTTPException(status_code=400, detail=config_check["message"])
 
