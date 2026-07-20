@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models.doc_gen_status import DocGenStatus
 from app.models.project import Project
 from app.routers.auth import get_current_user
+from app.services.export_format import format_api_datetime
 from app.utils import verify_project_owner
 
 router = APIRouter()
@@ -33,7 +34,7 @@ async def get_doc_gen_status(
     return {
         s.template_id: {
             "status": s.status,
-            "generatedAt": s.generated_at.isoformat() if s.generated_at else None,
+            "generatedAt": format_api_datetime(s.generated_at) or None,
         }
         for s in statuses
     }

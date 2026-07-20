@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.services.export_format import format_api_datetime
+
 
 PLACEHOLDER_RE = re.compile(r"\[[^\[\]\n]{1,80}\]|\{\{[^{}\n]{1,120}\}\}")
 
@@ -105,7 +107,7 @@ def parse_docx_template(path: str | Path) -> dict[str, Any]:
         "version": 1,
         "fileName": file_path.name,
         "fileHash": file_hash,
-        "parsedAt": datetime.now(timezone.utc).isoformat(),
+        "parsedAt": format_api_datetime(datetime.now(timezone.utc)),
         "paragraphCount": len(doc.paragraphs),
         "tableCount": len(doc.tables),
         "placeholders": unique_placeholders,

@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.models.user import User
+from app.services.export_format import format_api_datetime
 from app.services.base import BaseService
 from app.contracts.system import LoginRequest, RegisterRequest, UserUpdate
 
@@ -224,7 +225,7 @@ class AuthService(BaseService):
                 "avatar": f"{settings.BASE_URL}{u.avatar}" if u.avatar and not u.avatar.startswith("http") else (u.avatar or ""),
                 "is_active": u.is_active,
                 "is_admin": u.is_admin or False,
-                "created_at": u.created_at.isoformat() if u.created_at else "",
+                "created_at": format_api_datetime(u.created_at),
             }
             for u in users
         ]

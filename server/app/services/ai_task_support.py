@@ -93,6 +93,8 @@ def friendly_error(err: Exception, task_type: str = "") -> str:
         return "模型返回数据结构异常，请稍后重试"
     if "配置不存在" in message or "模型配置" in message or "请先" in message:
         return message
+    if "自动化脚本生成已停止" in message or "脚本生成质量不满足执行要求" in message:
+        return message[:1800]
 
     label = task_type or "任务"
     return f"{label}失败：{message[:200]}" if message else f"{label}失败：未知错误，请稍后重试"

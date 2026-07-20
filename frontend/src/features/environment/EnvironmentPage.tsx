@@ -10,13 +10,10 @@ import { MenuSelect } from "../../shared/components/MenuSelect";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { toast } from "sonner";
 import { EnvironmentAccountsModal } from "./EnvironmentAccountsModal";
+import { formatDateTime } from "../../shared/utils/dateTime";
 
 function formatTime(iso: string | undefined): string {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return formatDateTime(iso);
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -33,6 +30,58 @@ function textOf(value: unknown, fallback = "-"): string {
   if (typeof value === "string" && value.trim()) return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return fallback;
+}
+
+function compactText(value: unknown, fallback = "-"): string {
+  if (typeof value === "string" && value.trim()) return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return value.map((item) => compactText(item, "")).filter(Boolean).join(" / ") || fallback;
+  if (value && typeof value === "object") {
+    try { return JSON.stringify(value); } catch { return fallback; }
+  }
+  return fallback;
+}
+
+function hasMeaningfulText(value: unknown): boolean {
+  return typeof value === "string" && value.trim() !== "" && value.trim() !== "-";
+}
+
+function visibleTextField(item: JsonRecord, keys: string[]): string {
+  for (const key of keys) {
+    const value = item[key];
+    if (hasMeaningfulText(value)) return String(value).trim();
+  }
+  return "";
+}
+
+function isVisible(item: JsonRecord): boolean {
+  return item.visible !== false;
+}
+
+function meaningfulLoginInput(item: JsonRecord): boolean {
+  return isVisible(item) && (hasMeaningfulText(item.placeholder) || hasMeaningfulText(item.name) || hasMeaningfulText(item.id) || hasMeaningfulText(item.type));
+}
+
+function meaningfulButton(item: JsonRecord): boolean {
+  const text = visibleTextField(item, ["text", "name", "ariaLabel", "title"]);
+  if (!text || !isVisible(item)) return false;
+  return !/^el-carousel|carousel|swiper|轮播/.test(String(item.className || "").toLowerCase());
+}
+
+function meaningfulMenu(item: JsonRecord): boolean {
+  return hasMeaningfulText(item.title) || hasMeaningfulText(item.text) || hasMeaningfulText(item.name);
+}
+
+function meaningfulTable(item: JsonRecord): boolean {
+  return asArray(item.columns).some((column) => hasMeaningfulText(column));
+}
+
+function meaningfulPageObject(page: JsonRecord): boolean {
+  return hasMeaningfulText(page.pageName) || asArray(page.elements).length > 0 || asArray(page.routeOrMenuPath).length > 0;
+}
+
+function meaningfulElement(element: JsonRecord): boolean {
+  return hasMeaningfulText(element.name) || hasMeaningfulText(element.selector) || hasMeaningfulText(element.evidence);
 }
 
 interface Props {
@@ -446,6 +495,7 @@ export function EnvironmentPage({ projectId }: Props) {
 }
 
 function RecognitionDetailModal({ snapshot, onClose }: { snapshot: UISnapshot | null; onClose: () => void }) {
+  const [activeTab, setActiveTab] = useState<"basic" | "result" | "trace" | "raw">("basic");
   const root = asRecord(snapshot?.snapshot);
   const trace = asArray<JsonRecord>(root.recognitionTrace);
   const loginPage = asRecord(root.loginPage);
@@ -462,87 +512,124 @@ function RecognitionDetailModal({ snapshot, onClose }: { snapshot: UISnapshot | 
   const appMenus = asArray<JsonRecord>(appPage.menus);
   const appButtons = asArray<JsonRecord>(appPage.buttons);
   const appTables = asArray<JsonRecord>(appPage.tables);
+  const loginButtons = asArray<JsonRecord>(loginPage.buttons);
+  const loginUrl = textOf(loginPage.url);
+  const appUrl = textOf(appPage.url);
+  const effectiveLoginInputs = loginInputs.filter(meaningfulLoginInput);
+  const effectiveLoginButtons = loginButtons.filter(meaningfulButton);
+  const effectiveMenus = appMenus.filter(meaningfulMenu);
+  const effectiveButtons = appButtons.filter(meaningfulButton);
+  const effectiveTables = appTables.filter(meaningfulTable);
+  const effectivePageObjects = pageObjects.filter(meaningfulPageObject);
+
+  useEffect(() => {
+    if (snapshot) setActiveTab("basic");
+  }, [snapshot?.id]);
 
   return (
-    <Modal open={!!snapshot} onClose={onClose} title="系统识别详情" width={920} footer={<button className="primary-button" type="button" onClick={onClose}>关闭</button>}>
+    <Modal open={!!snapshot} onClose={onClose} title="系统识别详情" width={760} height="84vh" bodyOverflow="hidden" footer={<button className="primary-button" type="button" onClick={onClose}>关闭</button>}>
       {!snapshot ? null : (
-        <div className="panel-stack">
-          <section className="work-panel work-panel--compact">
-            <div className="panel-grid panel-grid--4">
-              <DetailMetric label="状态" value={snapshot.status} tone={snapshot.status === "成功" ? "green" : "red"} />
-              <DetailMetric label="识别模式" value={textOf(scope.mode ?? aiAnalysis.scopeMode, "full")} />
-              <DetailMetric label="入口页面" value={textOf(loginPage.title)} />
-              <DetailMetric label="当前页面" value={textOf(appPage.title)} />
+        <div className="recognition-modal-layout">
+          <div className="result-tabs recognition-tabs">
+            <div className="result-tabs__inner">
+              <button className={`result-tabs__button${activeTab === "basic" ? " result-tabs__button--active" : ""}`} type="button" onClick={() => setActiveTab("basic")}>基本信息</button>
+              <button className={`result-tabs__button${activeTab === "result" ? " result-tabs__button--active" : ""}`} type="button" onClick={() => setActiveTab("result")}>识别结果</button>
+              <button className={`result-tabs__button${activeTab === "trace" ? " result-tabs__button--active" : ""}`} type="button" onClick={() => setActiveTab("trace")}>过程日志</button>
+              <button className={`result-tabs__button${activeTab === "raw" ? " result-tabs__button--active" : ""}`} type="button" onClick={() => setActiveTab("raw")}>原始数据</button>
             </div>
-            <p className={snapshot.status === "成功" ? "summary-result__hint list-block" : "summary-result__hint list-block text-red"}>
-              {snapshot.summary || snapshot.error || "暂无摘要"}
-            </p>
-          </section>
+          </div>
 
-          <DetailSection title="识别过程">
-            {trace.length === 0 ? <EmptyLine text="暂无过程日志。请重新执行一次识别以生成过程详情。" /> : (
-              <div className="log-block">
-                {trace.map((item, index) => (
-                  <div className="trace-row" key={`${textOf(item.step)}-${index}`}>
-                    <span className="trace-row__index">{index + 1}</span>
-                    <code className="trace-row__step">{textOf(item.step)}</code>
-                    <StatusText status={textOf(item.status)} />
-                    <div>
-                      <div className="trace-row__message">{textOf(item.message)}</div>
-                      {item.url ? <div className="trace-row__url">{textOf(item.url)}</div> : null}
-                      {Object.keys(asRecord(item.data)).length > 0 ? <pre className="json-block json-block--mini">{JSON.stringify(item.data, null, 2)}</pre> : null}
-                    </div>
-                  </div>
-                ))}
+          <div className="scroll-fill recognition-modal-scroll">
+            {activeTab === "basic" ? (
+              <div className="panel-stack">
+                <div className="detail-grid">
+                  <div className="detail-row"><span className="detail-label">识别状态</span><StatusPill tone={snapshot.status === "成功" ? "green" : "red"}>{snapshot.status || "-"}</StatusPill></div>
+                  <div className="detail-row"><span className="detail-label">识别模式</span><span>{textOf(scope.mode ?? aiAnalysis.scopeMode, "full")}</span></div>
+                  <div className="detail-row detail-row--full"><span className="detail-label">识别摘要</span><pre className={`detail-pre${snapshot.status === "成功" ? "" : " text-red"}`}>{snapshot.summary || snapshot.error || "暂无摘要"}</pre></div>
+                  <div className="detail-row"><span className="detail-label">入口页面</span><span>{textOf(loginPage.title)}</span></div>
+                  <div className="detail-row"><span className="detail-label">登录后页面</span><span>{textOf(appPage.title)}</span></div>
+                  <div className="detail-row detail-row--full"><span className="detail-label">入口地址</span><span className="text-anywhere">{loginUrl}</span></div>
+                  <div className="detail-row detail-row--full"><span className="detail-label">当前地址</span><span className="text-anywhere">{appUrl}</span></div>
+                  <div className="detail-row"><span className="detail-label">尝试登录</span><span>{textOf(loginResult.attempted)}</span></div>
+                  <div className="detail-row"><span className="detail-label">登录结果</span><StatusPill tone={loginResult.success ? "green" : "red"}>{loginResult.success ? "成功" : "失败/未确认"}</StatusPill></div>
+                  <div className="detail-row"><span className="detail-label">账号角色</span><span>{textOf(loginResult.accountRole)}</span></div>
+                  <div className="detail-row"><span className="detail-label">有效采集</span><span>菜单 {effectiveMenus.length} / 按钮 {effectiveButtons.length} / 表格 {effectiveTables.length}</span></div>
+                </div>
+
+                <DetailSection title="登录页字段">
+                  <ListBlock
+                    title="输入框"
+                    items={effectiveLoginInputs.map((item) => `${visibleTextField(item, ["placeholder", "name", "id"]) || "无字段名"} / ${textOf(item.type, "text")}`)}
+                    emptyText="未识别到可用输入框"
+                  />
+                  <ListBlock
+                    title="按钮"
+                    items={effectiveLoginButtons.map((item) => visibleTextField(item, ["text", "name", "ariaLabel", "title"]))}
+                    emptyText="未识别到可用按钮"
+                  />
+                </DetailSection>
               </div>
-            )}
-          </DetailSection>
+            ) : null}
 
-          <DetailSection title="登录识别">
-            <div className="panel-grid panel-grid--3">
-              <DetailMetric label="是否尝试登录" value={textOf(loginResult.attempted)} />
-              <DetailMetric label="是否登录成功" value={textOf(loginResult.success)} tone={loginResult.success ? "green" : "red"} />
-              <DetailMetric label="账号角色" value={textOf(loginResult.accountRole)} />
-            </div>
-            <ListBlock title="入口页输入框" items={loginInputs.map((item) => `${textOf(item.placeholder, "无 placeholder")} / ${textOf(item.type, "text")} / ${item.visible ? "可见" : "不可见"}`)} />
-          </DetailSection>
-
-          <DetailSection title="AI 识别结果">
-            <ListBlock title="相关模块" items={relevantModules.map((item) => `${textOf(item.name)}：${textOf(item.reason, "无说明")}（置信度 ${textOf(item.confidence, "0")}）`)} />
-            <ListBlock title="导航计划" items={navigationPlan.map((item) => `${textOf(item.fromPage)} → ${textOf(item.toPage)}：${asArray<unknown>(item.steps).map((step) => textOf(step)).join(" / ")}`)} />
-            <div className="log-block">
-              {pageObjects.length === 0 ? <EmptyLine text="暂无页面对象。可能是 AI 未配置、识别失败，或当前只完成了规则采集。" /> : pageObjects.map((page, index) => {
-                const elements = asArray<JsonRecord>(page.elements);
-                return (
-                  <div className="detail-card" key={`${textOf(page.pageName)}-${index}`}>
-                    <div className="detail-card__value">{textOf(page.pageName)}</div>
-                    <div className="trace-row__url">{asArray<unknown>(page.routeOrMenuPath).map((item) => textOf(item)).join(" / ") || textOf(page.purpose)}</div>
-                    <ListBlock title="元素" compact items={elements.map((element) => `${textOf(element.name)} [${textOf(element.type)}] ${textOf(element.selector, "无稳定定位")} - ${textOf(element.evidence, "无证据")}`)} />
+            {activeTab === "result" ? (
+              <div className="panel-stack">
+                <DetailSection title="AI 结构化识别">
+                  <ListBlock title="相关模块" items={relevantModules.map((item) => `${textOf(item.name)}：${textOf(item.reason, "无说明")}（置信度 ${textOf(item.confidence, "0")}）`)} emptyText="暂无相关模块" />
+                  <ListBlock title="导航计划" items={navigationPlan.map((item) => `${textOf(item.fromPage)} → ${textOf(item.toPage)}：${asArray<unknown>(item.steps).map((step) => compactText(step, "")).filter(Boolean).join(" / ") || "无步骤"}`)} emptyText="暂无导航计划" />
+                  <div className="recognition-card-list">
+                    {effectivePageObjects.length === 0 ? <EmptyLine text="暂无有效页面对象。请确认系统识别是否成功登录，并检查模型配置中的「系统识别」节点。" /> : effectivePageObjects.map((page, index) => {
+                      const elements = asArray<JsonRecord>(page.elements).filter(meaningfulElement);
+                      return (
+                        <div className="detail-card recognition-page-card" key={`${textOf(page.pageName)}-${index}`}>
+                          <div className="detail-card__value">{textOf(page.pageName)}</div>
+                          <div className="trace-row__url">{asArray<unknown>(page.routeOrMenuPath).map((item) => compactText(item, "")).filter(Boolean).join(" / ") || textOf(page.purpose)}</div>
+                          <ListBlock title="元素" compact items={elements.map((element) => `${textOf(element.name)} [${textOf(element.type)}] ${textOf(element.selector, "无稳定定位")} - ${textOf(element.evidence, "无证据")}`)} emptyText="暂无元素" />
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-          </DetailSection>
+                </DetailSection>
 
-          <DetailSection title="规则采集结果">
-            <div className="panel-grid panel-grid--3">
-              <DetailMetric label="菜单数" value={String(appMenus.length)} />
-              <DetailMetric label="按钮数" value={String(appButtons.length)} />
-              <DetailMetric label="表格数" value={String(appTables.length)} />
-            </div>
-            <ListBlock title="菜单" items={appMenus.slice(0, 20).map((item) => `${textOf(item.title)} ${textOf(item.selectorHint, "")}`)} />
-            <ListBlock title="表格" items={appTables.map((item) => `列：${asArray<unknown>(item.columns).map((column) => textOf(column)).join(" / ") || "未识别到表头"}`)} />
-          </DetailSection>
+                <DetailSection title="规则采集结果">
+                  <ListBlock title="菜单" items={effectiveMenus.slice(0, 30).map((item) => `${visibleTextField(item, ["title", "text", "name"])} ${textOf(item.selectorHint, "")}`.trim())} emptyText="未采集到有效菜单" />
+                  <ListBlock title="按钮" items={effectiveButtons.slice(0, 30).map((item) => visibleTextField(item, ["text", "name", "ariaLabel", "title"]))} emptyText="未采集到有效按钮" />
+                  <ListBlock title="表格" items={effectiveTables.map((item) => `列：${asArray<unknown>(item.columns).map((column) => compactText(column, "")).filter(Boolean).join(" / ")}`)} emptyText="未采集到有效表格" />
+                </DetailSection>
 
-          <DetailSection title="问题与建议">
-            <ListBlock title="未解决问题" items={unresolvedQuestions.map((item) => textOf(item))} emptyText="暂无未解决问题" />
-            <ListBlock title="脚本生成建议" items={scriptGuidance.map((item) => textOf(item))} emptyText="暂无建议" />
-            {snapshot.error ? <pre className="json-block json-block--error">{snapshot.error}</pre> : null}
-          </DetailSection>
+                <DetailSection title="问题与建议">
+                  <ListBlock title="未解决问题" items={unresolvedQuestions.map((item) => compactText(item))} emptyText="暂无未解决问题" />
+                  <ListBlock title="脚本生成建议" items={scriptGuidance.map((item) => compactText(item))} emptyText="暂无建议" />
+                </DetailSection>
+              </div>
+            ) : null}
 
-          <DetailSection title="原始 JSON">
-            <pre className="json-block">{JSON.stringify(root, null, 2)}</pre>
-          </DetailSection>
+            {activeTab === "trace" ? (
+              <DetailSection title="识别过程">
+                {trace.length === 0 ? <EmptyLine text="暂无过程日志。请重新执行一次识别以生成过程详情。" /> : (
+                  <div className="log-block">
+                    {trace.map((item, index) => (
+                      <div className="trace-row recognition-trace-row" key={`${textOf(item.step)}-${index}`}>
+                        <span className="trace-row__index">{index + 1}</span>
+                        <code className="trace-row__step">{textOf(item.step)}</code>
+                        <StatusText status={textOf(item.status)} />
+                        <div>
+                          <div className="trace-row__message">{textOf(item.message)}</div>
+                          {item.url ? <div className="trace-row__url text-anywhere">{textOf(item.url)}</div> : null}
+                          {Object.keys(asRecord(item.data)).length > 0 ? <pre className="json-block json-block--mini">{JSON.stringify(item.data, null, 2)}</pre> : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </DetailSection>
+            ) : null}
+
+            {activeTab === "raw" ? (
+              <DetailSection title="原始 JSON">
+                <pre className="json-block recognition-json-block">{JSON.stringify(root, null, 2)}</pre>
+              </DetailSection>
+            ) : null}
+          </div>
         </div>
       )}
     </Modal>

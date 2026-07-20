@@ -11,6 +11,7 @@ from app.schemas.environment_config import (
     EnvironmentConfigCreate, EnvironmentConfigUpdate,
     TestAccountCreate, TestAccountUpdate
 )
+from app.services.export_format import format_api_datetime
 from app.utils import decrypt_value, encrypt_value, verify_project_owner
 
 
@@ -95,8 +96,8 @@ class EnvironmentService:
                     "captchaCode": config.captcha_code or "",
                     "notes": config.notes or "",
                     "isDefault": bool(config.is_default),
-                    "createdAt": config.created_at.isoformat() if config.created_at else "",
-                    "updatedAt": config.updated_at.isoformat() if config.updated_at else "",
+                    "createdAt": format_api_datetime(config.created_at),
+                    "updatedAt": format_api_datetime(config.updated_at),
                     "accounts": [
                         {
                             "id": acc.id,
@@ -108,8 +109,8 @@ class EnvironmentService:
                             "hasPassword": bool(acc.password),
                             "role": acc.role or "",
                             "notes": acc.notes or "",
-                            "createdAt": acc.created_at.isoformat() if acc.created_at else "",
-                            "updatedAt": acc.updated_at.isoformat() if acc.updated_at else "",
+                            "createdAt": format_api_datetime(acc.created_at),
+                            "updatedAt": format_api_datetime(acc.updated_at),
                         }
                         for acc in accounts
                     ],
@@ -167,8 +168,8 @@ class EnvironmentService:
                 "notes": config.notes or "",
                 "isDefault": bool(config.is_default),
                 "accounts": [],
-                "createdAt": config.created_at.isoformat() if config.created_at else "",
-                "updatedAt": config.updated_at.isoformat() if config.updated_at else "",
+                "createdAt": format_api_datetime(config.created_at),
+                "updatedAt": format_api_datetime(config.updated_at),
             }
 
     async def update(self, config_id: str, data: EnvironmentConfigUpdate, user_id: str) -> dict | None:
@@ -402,8 +403,8 @@ class EnvironmentService:
                 "hasPassword": True,
                 "role": account.role or "",
                 "notes": account.notes or "",
-                "createdAt": account.created_at.isoformat() if account.created_at else "",
-                "updatedAt": account.updated_at.isoformat() if account.updated_at else "",
+                "createdAt": format_api_datetime(account.created_at),
+                "updatedAt": format_api_datetime(account.updated_at),
             }
 
     async def update_account(self, account_id: str, data: TestAccountUpdate, user_id: str) -> dict | None:
@@ -449,8 +450,8 @@ class EnvironmentService:
                 "hasPassword": bool(account.password),
                 "role": account.role or "",
                 "notes": account.notes or "",
-                "createdAt": account.created_at.isoformat() if account.created_at else "",
-                "updatedAt": account.updated_at.isoformat() if account.updated_at else "",
+                "createdAt": format_api_datetime(account.created_at),
+                "updatedAt": format_api_datetime(account.updated_at),
             }
 
     async def delete_account(self, account_id: str, user_id: str) -> bool:

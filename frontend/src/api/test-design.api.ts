@@ -18,6 +18,18 @@ export const testPointsApi = {
       method: "POST",
       body: JSON.stringify({ ids, status }),
     }),
+  export: async (projectId: string) => {
+    const response = await fetch(`${API_BASE}/projects/${projectId}/test-points/export`, {
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      let detail = text;
+      try { detail = JSON.parse(text).detail || text; } catch {}
+      throw new Error(detail || "导出失败");
+    }
+    return response.blob();
+  },
 };
 
 export const testCasesApi = {

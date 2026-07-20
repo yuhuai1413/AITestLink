@@ -8,6 +8,7 @@ import { useStore } from "../../app/store";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { ChartTooltip } from "../../shared/components/ChartTooltip";
 import { projectsApi, requirementsApi, testPointsApi, testCasesApi } from "../../api/client";
+import { formatDateTime } from "../../shared/utils/dateTime";
 import {
   FolderOpen, FileText, ShieldCheck, ArrowRight, Bot,
 } from "lucide-react";
@@ -276,7 +277,7 @@ export function DashboardPage() {
   }, [state.testCases]);
 
   const recentProjects = useMemo(() =>
-    [...state.projects].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 10),
+    [...state.projects].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
   [state.projects]);
 
   const cards: { icon: LucideIcon; label: string; value: string | number; sub: string; color: string }[] = [
@@ -418,7 +419,7 @@ export function DashboardPage() {
                   </td>
                   <td>{p.caseCount}</td>
                   <td>{p.passRate}%</td>
-                  <td>{(() => { const d = new Date(p.createdAt); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`; })()}</td>
+                  <td>{formatDateTime(p.createdAt)}</td>
                 </tr>
               ))}
               {recentProjects.length === 0 && (

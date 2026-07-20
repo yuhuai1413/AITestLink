@@ -1,4 +1,5 @@
 """Tests for Test Points API endpoints."""
+from io import BytesIO
 
 
 def test_list_test_points(client, api_test_point, auth_headers):
@@ -90,3 +91,27 @@ def test_test_point_all_types(client, api_project, auth_headers):
         }, headers=auth_headers)
         assert response.status_code == 201
         assert response.json()["type"] == tp_type
+
+
+def test_export_test_points_xlsx_has_readable_table_style(client, api_test_point, auth_headers):
+    response = client.get(f"/api/projects/{api_test_point.project_id}/test-points/export", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(BytesIO(response.content))
+    sheet = workbook["测试点"]
+    assert sheet["A1"].value == "API测试项目 - 测试点"
+    assert sheet["A3"].value == "序号"
+    assert sheet["B3"].value == "测试点编号"
+    assert sheet["F3"].value == "描述"
+    assert sheet["A4"].alignment.horizontal == "center"
+    assert sheet["F4"].alignment.wrap_text is True
+    assert sheet["F4"].alignment.vertical == "center"
+    assert "T" not in sheet["L4"].value
+    assert "+00:00" not in sheet["L4"].value
+    assert len(sheet["L4"].value) == 19
+    assert sheet.freeze_panes == "A4"
+    assert sheet.auto_filter.ref.startswith("A3:")

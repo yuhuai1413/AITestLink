@@ -2,6 +2,7 @@ import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 const MENU_SELECT_OPEN_EVENT = "aitestlink:menu-select-open";
+const MENU_SELECT_CLOSE_ANIMATION_MS = 180;
 
 export interface MenuSelectOption<T extends string> {
   value: T;
@@ -30,10 +31,43 @@ export function MenuSelect<T extends string>({
   required = false,
 }: MenuSelectProps<T>) {
   const [open, setOpen] = useState(false);
+  const [renderMenu, setRenderMenu] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(`menu-select-${Math.random().toString(36).slice(2)}`);
+  const closeTimerRef = useRef<number | null>(null);
   const selected = options.find((option) => option.value === value);
+
+  useEffect(() => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+
+    if (open) {
+      setRenderMenu(true);
+      setClosing(false);
+      return;
+    }
+
+    if (renderMenu) {
+      setClosing(true);
+      setActiveIndex(null);
+      closeTimerRef.current = window.setTimeout(() => {
+        setRenderMenu(false);
+        setClosing(false);
+        closeTimerRef.current = null;
+      }, MENU_SELECT_CLOSE_ANIMATION_MS);
+    }
+
+    return () => {
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+    };
+  }, [open, renderMenu]);
 
   useEffect(() => {
     const closeOtherMenus = (event: Event) => {
@@ -75,9 +109,9 @@ export function MenuSelect<T extends string>({
         <span>{selected?.label || placeholder}</span>
         <ChevronDown size={15} className={open ? "menu-select__chevron menu-select__chevron--open" : "menu-select__chevron"} />
       </button>
-      {open ? (
+      {renderMenu ? (
         <div
-          className="menu-select__menu"
+          className={closing ? "menu-select__menu menu-select__menu--closing" : "menu-select__menu"}
           onClick={(event) => event.stopPropagation()}
           onMouseLeave={() => setActiveIndex(null)}
         >

@@ -18,9 +18,9 @@ from app.services.ai_input_builder import (
     validate_reference_values,
     validate_references,
 )
-from app.services.ai_task_support import normalize_automation
 from app.services.data_lineage_service import VALID, cascade_delete_test_case, cascade_delete_test_point
 from app.services.environment_service import EnvironmentService
+from app.services.script_generation_quality import review_generated_case_automation
 from app.contracts.test_design import TestPointUpdate, TestCaseUpdate
 
 
@@ -183,9 +183,11 @@ class TestDesignService(BaseService):
         environment_context = await EnvironmentService(self.db).get_generation_context(project_id, user_id)
 
         generated: list[dict] = []
+        point_payloads_by_id: dict[str, dict] = {}
         for payload in test_point_batches(test_points, requirements_by_id, environment_context):
             batch_items = await self.ai_service.generate_test_cases(payload, user_id)
             payload_items = json.loads(payload)
+            point_payloads_by_id.update({item["testPointId"]: item for item in payload_items})
             allowed_ids = {item["testPointId"] for item in payload_items}
             validate_references(batch_items, "testPointId", allowed_ids)
             validate_reference_values(
@@ -207,6 +209,10 @@ class TestDesignService(BaseService):
             point = next(value for value in test_points if value.id == item["testPointId"])
             requirement = requirements_by_id.get(point.requirement_id)
             case_code = await self._generate_case_code(project_id, point.module)
+            automation_value, automation_reason = review_generated_case_automation(
+                item,
+                point_payload=point_payloads_by_id.get(item["testPointId"]),
+            )
 
             tc = TestCase(
                 id=str(uuid.uuid4()),
@@ -227,7 +233,8 @@ class TestDesignService(BaseService):
                 test_url=item["testUrl"],
                 required_role=item["requiredRole"],
                 test_type=item.get("testType", "功能测试"),
-                automation=normalize_automation(item.get("automation")),
+                automation=automation_value,
+                remark=automation_reason,
             )
             self.db.add(tc)
             test_cases.append(tc)

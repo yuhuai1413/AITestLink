@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Sparkles, FileSearch, ListChecks, PlayCircle, ClipboardCheck, LayoutDashboard } from "lucide-react";
+import { BarChart3, Code2, FileCheck2, FileSearch, FileText, ListChecks, ServerCog, Sparkles } from "lucide-react";
 
 import { Button } from "./components/Button";
 import { useTypeCycle } from "./hooks/useTypeCycle";
@@ -11,9 +11,19 @@ import { CaptchaField, LoginBrandText, LoginField, LoginSerifText, LoginSubmitBu
 
 type MainTab = "login" | "register";
 
-const ROLE_TEXTS = ["需求解析", "测试设计", "用例生成", "自动化测试", "质量报告"];
+const KEY_FLOWS = [
+  { label: "环境配置", Icon: ServerCog },
+  { label: "需求分析", Icon: FileSearch },
+  { label: "测试点生成", Icon: ListChecks },
+  { label: "用例生成", Icon: FileCheck2 },
+  { label: "自动化脚本", Icon: Code2 },
+  { label: "数据汇总", Icon: BarChart3 },
+  { label: "文档生成", Icon: FileText },
+];
 
-const ORBIT_ICONS = [FileSearch, ListChecks, PlayCircle, ClipboardCheck, LayoutDashboard];
+const ROLE_TEXTS = KEY_FLOWS.map((item) => item.label);
+
+const ORBIT_ICONS = KEY_FLOWS.map((item) => item.Icon);
 
 const orbitPositions = ORBIT_ICONS.map((_, i) => {
   const angle = (i / ORBIT_ICONS.length) * 2 * Math.PI - Math.PI / 2;
@@ -115,7 +125,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
       {/* 手机端左上角 logo */}
       <div className="fixed top-0 left-0 z-50 md:hidden flex items-center gap-2.5 pl-5 pt-5 pr-4 pb-3">
         <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shadow-md shadow-primary/20">
-          <LogoMark size={22} />
+          <LogoMark size={30} />
         </div>
         <LoginBrandText className="text-xl font-bold text-foreground">AITestLink</LoginBrandText>
       </div>
@@ -153,7 +163,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   </svg>
                   <div className="absolute inset-0 animate-orb">
                     {ORBIT_ICONS.map((Icon, i) => (
-                      <div key={i} className={cn(loginStyles.orbitItem, "login-orbit-item")} style={{ left: orbitPositions[i].left + 1, top: orbitPositions[i].top + 1 }}>
+                      <div key={KEY_FLOWS[i].label} className={cn(loginStyles.orbitItem, "login-orbit-item")} style={{ left: orbitPositions[i].left + 1, top: orbitPositions[i].top + 1 }} title={KEY_FLOWS[i].label}>
                         <Icon className="w-5 h-5 text-white" />
                       </div>
                     ))}
@@ -169,9 +179,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               <div className="flex justify-center">
                 <div className="grid w-full max-w-[480px] xl:max-w-[560px] grid-cols-3 gap-2 xl:gap-3">
                   {[
-                    { label: "AI 需求解析", Icon: FileSearch },
-                    { label: "智能测试设计", Icon: ListChecks },
-                    { label: "自动化测试", Icon: PlayCircle },
+                    KEY_FLOWS[1],
+                    KEY_FLOWS[4],
+                    KEY_FLOWS[6],
                   ].map(({ label, Icon: PillIcon }) => (
                     <div key={label} className={cn(loginStyles.featurePill, "login-feature-pill")}>
                       <PillIcon className="w-4 h-4 xl:w-5 xl:h-5 text-violet-200" />
@@ -180,7 +190,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                   ))}
                 </div>
               </div>
-              <p className="text-center text-base xl:text-lg font-bold text-white/55 tracking-wide animate-stagger-4">专业测试设计 · AI 智能生成 · 质量闭环管理</p>
+              <p className="text-center text-base xl:text-lg font-bold text-white/55 tracking-wide animate-stagger-4">需求驱动 · 智能生成 · 自动化脚本 · 质量闭环</p>
             </div>
           </div>
         </div>
@@ -206,7 +216,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
           {/* 手机端特性标签 */}
           <div className="md:hidden grid grid-cols-3 gap-2 mb-4 w-full animate-stagger-5">
-            {[{ label: "AI 需求解析", Icon: FileSearch }, { label: "智能测试设计", Icon: ListChecks }, { label: "自动化测试", Icon: PlayCircle }].map(({ label, Icon: PillIcon }) => (
+            {[KEY_FLOWS[1], KEY_FLOWS[4], KEY_FLOWS[6]].map(({ label, Icon: PillIcon }) => (
               <div key={label} className="h-8 flex items-center justify-center gap-1.5 px-2 rounded-full text-[11px] font-semibold bg-primary/5 border border-primary/10 text-primary/70">
                 <PillIcon className="w-3 h-3 shrink-0" />
                 <span className="whitespace-nowrap">{label}</span>

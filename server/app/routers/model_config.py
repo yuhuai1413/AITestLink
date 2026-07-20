@@ -14,6 +14,7 @@ from app.prompts.prompt_catalog import PROMPT_TEST_INPUTS
 from app.routers.deps import get_current_user, require_admin, get_model_config_service
 from app.schemas.ai_output import validate_ai_output
 from app.services.ai_service import AIService
+from app.services.export_format import format_api_datetime
 from app.services.model_config_service import ModelConfigService
 from app.services.prompt_service import (
     create_prompt_version,
@@ -100,9 +101,7 @@ def _to_dict(m) -> dict:
 def _utc_iso(value: datetime | None) -> str | None:
     if not value:
         return None
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return format_api_datetime(value) or None
 
 
 def _classify_test_failure(status_code: int | None, message: str) -> str:
@@ -346,8 +345,8 @@ def _prompt_version_dict(item: PromptVersion) -> dict:
         "prompt": item.content,
         "status": item.status,
         "createdBy": item.created_by,
-        "createdAt": item.created_at.isoformat() if item.created_at else None,
-        "publishedAt": item.published_at.isoformat() if item.published_at else None,
+        "createdAt": format_api_datetime(item.created_at) or None,
+        "publishedAt": format_api_datetime(item.published_at) or None,
     }
 
 

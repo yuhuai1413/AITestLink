@@ -4,6 +4,7 @@ import type { EnvironmentConfig, TestAccount } from "../../api/environment.api";
 import { DataTable } from "../../shared/components/DataTable";
 import { Modal } from "../../shared/components/Modal";
 import { StatusPill } from "../../shared/components/StatusPill";
+import { formatDateTime } from "../../shared/utils/dateTime";
 
 interface EnvironmentAccountsModalProps {
   environment: EnvironmentConfig | null;
@@ -14,17 +15,7 @@ interface EnvironmentAccountsModalProps {
 }
 
 function formatTime(iso: string | undefined): string {
-  if (!iso) return "-";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  return formatDateTime(iso);
 }
 
 export function EnvironmentAccountsModal({
@@ -35,6 +26,11 @@ export function EnvironmentAccountsModal({
   onDelete,
 }: EnvironmentAccountsModalProps) {
   const accounts = environment?.accounts ?? [];
+  const environmentType = environment?.environmentType === "APP" ? "APP" : "Web";
+  const targetLabel = environmentType === "APP" ? "APP 端地址" : "PC 端地址";
+  const targetUrl = environmentType === "APP"
+    ? (environment?.appUrl || environment?.targetUrl || "")
+    : (environment?.webUrl || environment?.targetUrl || "");
 
   return (
     <Modal
@@ -50,21 +46,15 @@ export function EnvironmentAccountsModal({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) auto",
+              gridTemplateColumns: "minmax(0, 1fr) auto",
               gap: 12,
               alignItems: "stretch",
             }}
           >
             <div className="work-panel" style={{ padding: "14px 16px", minWidth: 0, display: "grid", gridTemplateColumns: "72px minmax(0, 1fr)", alignItems: "center", columnGap: 14 }}>
-              <div style={{ color: "var(--muted)", fontSize: 13 }}>Web 地址</div>
-              <div title={environment.webUrl || "未配置"} style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600, textAlign: "left" }}>
-                {environment.webUrl || "未配置"}
-              </div>
-            </div>
-            <div className="work-panel" style={{ padding: "14px 16px", minWidth: 0, display: "grid", gridTemplateColumns: "72px minmax(0, 1fr)", alignItems: "center", columnGap: 14 }}>
-              <div style={{ color: "var(--muted)", fontSize: 13 }}>APP 地址</div>
-              <div title={environment.appUrl || "未配置"} style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600, textAlign: "left" }}>
-                {environment.appUrl || "未配置"}
+              <div style={{ color: "var(--muted)", fontSize: 13 }}>{targetLabel}</div>
+              <div title={targetUrl || "未配置"} style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600, textAlign: "left" }}>
+                {targetUrl || "未配置"}
               </div>
             </div>
             <button className="primary-button" type="button" onClick={() => onAdd(environment.id)} style={{ alignSelf: "center" }}>

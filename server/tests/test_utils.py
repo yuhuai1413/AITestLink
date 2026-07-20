@@ -3,6 +3,7 @@ from datetime import datetime
 from unittest.mock import MagicMock
 
 from app.utils import model_to_dict
+from app.services.export_format import format_api_datetime, format_export_datetime
 
 
 class TestModelToDict:
@@ -53,8 +54,8 @@ class TestModelToDict:
         dt = datetime(2025, 1, 15, 10, 30, 0)
         obj = self._make_mock_model({"created_at": dt})
         result = model_to_dict(obj)
-        # datetime without timezone gets UTC timezone added, so format includes +00:00
-        assert result["createdAt"] == "2025-01-15T10:30:00+00:00"
+        # datetime without timezone gets treated as UTC and returned with explicit Z suffix
+        assert result["createdAt"] == "2025-01-15T10:30:00Z"
 
     def test_uuid_converted_to_string(self):
         """UUID-like values (with .hex attribute) should be stringified."""
@@ -90,3 +91,20 @@ class TestModelToDict:
         obj = self._make_mock_model({})
         result = model_to_dict(obj)
         assert result == {}
+
+
+class TestExportFormat:
+    def test_format_export_datetime_from_utc_iso(self):
+        assert format_export_datetime("2026-07-20T02:42:45.569075+00:00") == "2026-07-20 10:42:45"
+
+    def test_format_export_datetime_from_naive_db_datetime(self):
+        assert format_export_datetime(datetime(2026, 7, 20, 2, 42, 45)) == "2026-07-20 10:42:45"
+
+    def test_format_export_datetime_keeps_local_display_text(self):
+        assert format_export_datetime("2026-07-20 10:42:45") == "2026-07-20 10:42:45"
+
+    def test_format_api_datetime_from_naive_datetime(self):
+        assert format_api_datetime(datetime(2026, 7, 20, 2, 42, 45)) == "2026-07-20T02:42:45Z"
+
+    def test_format_export_datetime_keeps_unparseable_text(self):
+        assert format_export_datetime("待生成") == "待生成"

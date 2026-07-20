@@ -5,6 +5,7 @@ import uuid
 from sqlalchemy import select
 
 from app.models.automation_script import AutomationScript
+from app.services.export_format import format_api_datetime
 from app.models.test_case import TestCase
 from app.services.base import BaseService
 from app.services.ai_service import AIService
@@ -133,7 +134,7 @@ class AutomationService(BaseService):
             "status": "通过",
             "output": "脚本执行通过",
             "error": None,
-            "executedAt": self._now().isoformat(),
+            "executedAt": format_api_datetime(self._now()),
         }
 
     async def get_execution_history(self, script_id: str) -> list[dict]:
@@ -149,6 +150,6 @@ class AutomationService(BaseService):
             return [{
                 "scriptId": script_id,
                 "status": script.status,
-                "executedAt": script.executed_at.isoformat(),
+                "executedAt": format_api_datetime(script.executed_at),
             }]
         return []

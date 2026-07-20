@@ -37,7 +37,6 @@ from app.services.ai_input_builder import (
 from app.services.ai_task_support import (
     friendly_error as _friendly_error,
     module_counter as _module_counter,
-    normalize_automation as _normalize_automation,
     read_file_content as _read_file_content,
     to_eng_abbr as _to_eng_abbr,
     update_task_status as _update_task_status,
@@ -49,8 +48,10 @@ from app.services.data_lineage_service import (
     invalidate_after_test_cases,
     invalidate_after_test_points,
 )
+from app.services.document_vision_service import describe_requirement_images
 from app.services.environment_service import EnvironmentService
 from app.services.requirement_clarification import default_clarification_status, is_clarification_resolved
+from app.services.script_generation_quality import assert_cases_script_ready, generated_script_error_message, review_generated_case_automation
 from app.services.ui_recognition_service import UIRecognitionService
 from app.utils import model_to_dict
 from app.utils import verify_project_owner
@@ -253,6 +254,10 @@ async def run_parse_requirements(task_id: str, project_id: str, file_content: st
             for f in files:
                 f.parse_status = "解析中"
             await db.commit()
+
+            image_content = await describe_requirement_images(list(files), user_id)
+            if image_content:
+                file_content = f"{file_content}\n---\n{image_content}"
 
             logger.info(f"run_parse_requirements: file_content_len={len(file_content)}, user_id={user_id}")
             requirements = await ai_service.parse_requirements(file_content, user_id)
@@ -498,6 +503,8 @@ async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
                     tp_id = c["testPointId"]
                     matched_point = next(tp for tp in points if tp.id == tp_id)
                     requirement = requirements_by_id.get(matched_point.requirement_id)
+                    point_payload = next((item for item in payload_items if item["testPointId"] == tp_id), None)
+                    automation_value, automation_reason = review_generated_case_automation(c, point_payload=point_payload)
 
                     db.add(TestCase(
                         id=str(uuid.uuid4()),
@@ -518,7 +525,8 @@ async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
                         target_platform=c["targetPlatform"],
                         test_url=c["testUrl"],
                         required_role=c["requiredRole"],
-                        automation=_normalize_automation(c.get("automation")),
+                        automation=automation_value,
+                        remark=automation_reason,
                     ))
                 await db.commit()
                 await _update_task_progress(db, task_id, {
@@ -565,6 +573,7 @@ async def run_generate_scripts(task_id: str, project_id: str, user_id: str):
                 return
             validate_persisted_traceability(cases=test_cases)
             validate_case_runtime_fields(test_cases, for_automation=True)
+            assert_cases_script_ready(test_cases)
 
             ui_context = await UIRecognitionService(db).latest_context_by_project(project_id, user_id)
             scripts = []
@@ -596,6 +605,11 @@ async def run_generate_scripts(task_id: str, project_id: str, user_id: str):
                 )
                 batch_scripts = await ai_service.generate_automation_scripts(payload, user_id)
                 validate_references(batch_scripts, "testCaseId", batch_case_ids)
+                batch_cases_by_id = {item.id: item for item in test_cases if item.id in batch_case_ids}
+                for item in batch_scripts:
+                    quality_error = generated_script_error_message(item.get("code", ""), batch_cases_by_id[item["testCaseId"]])
+                    if quality_error:
+                        raise ValueError(quality_error)
                 scripts.extend(batch_scripts)
                 if batch_index == 1:
                     await invalidate_after_scripts(db, project_id, "自动化脚本已重新生成，执行结果已失效")
@@ -866,6 +880,12 @@ async def generate_scripts(
     unreviewed_count = sum(1 for item in automatable_cases if item.review_status != "已通过")
     if unreviewed_count:
         raise HTTPException(status_code=400, detail=f"还有 {unreviewed_count} 条适合自动化的用例未评审通过，请先完成用例评审")
+    try:
+        validate_persisted_traceability(cases=automatable_cases)
+        validate_case_runtime_fields(automatable_cases, for_automation=True)
+        assert_cases_script_ready(automatable_cases)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     # 检查配置
     config_check = await check_config_for_task("脚本生成", user["sub"])
     if not config_check["configured"]:

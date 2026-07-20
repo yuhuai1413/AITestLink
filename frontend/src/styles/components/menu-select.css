@@ -117,7 +117,7 @@
 .menu-select__chevron {
   flex: 0 0 auto;
   color: var(--muted);
-  transition: transform 0.16s ease;
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .menu-select__chevron--open {
@@ -137,12 +137,19 @@
   border-radius: var(--radius-l2);
   background: linear-gradient(180deg, rgba(91, 33, 182, 0.045), rgba(91, 33, 182, 0.025)), var(--surface);
   box-shadow: var(--shadow);
-  animation: menuSlideIn 0.16s ease;
+  transform-origin: top center;
+  animation: menuSelectOpen 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
   max-height: min(292px, calc(100vh - 160px));
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(91, 33, 182, 0.28) transparent;
+  will-change: opacity, transform, clip-path;
+}
+
+.menu-select__menu--closing {
+  pointer-events: none;
+  animation: menuSelectClose 0.16s cubic-bezier(0.45, 0, 0.55, 1) both;
 }
 
 .menu-select__menu::-webkit-scrollbar {
@@ -209,4 +216,45 @@
   background: transparent;
   color: var(--blue);
   font-weight: 700;
+}
+
+@keyframes menuSelectOpen {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scaleY(0.96);
+    clip-path: inset(0 0 100% 0 round var(--radius-l2));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+    clip-path: inset(0 0 0 0 round var(--radius-l2));
+  }
+}
+
+@keyframes menuSelectClose {
+  from {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+    clip-path: inset(0 0 0 0 round var(--radius-l2));
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scaleY(0.97);
+    clip-path: inset(0 0 100% 0 round var(--radius-l2));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-select__chevron,
+  .menu-select__hover,
+  .menu-select__item,
+  .menu-select__trigger,
+  .menu-field-input {
+    transition: none;
+  }
+
+  .menu-select__menu,
+  .menu-select__menu--closing {
+    animation-duration: 1ms;
+  }
 }

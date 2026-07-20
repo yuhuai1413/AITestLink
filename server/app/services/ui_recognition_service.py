@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.environment_config import EnvironmentConfig, TestAccount
 from app.models.requirement import Requirement
 from app.models.ui_snapshot import UISnapshot
+from app.services.export_format import format_api_datetime
 from app.services.ai_input_builder import requirement_records
 from app.services.ai_service import AIService
 from app.utils import decrypt_value, verify_project_owner
@@ -651,8 +652,8 @@ class UIRecognitionService:
             "summary": item.summary or "",
             "snapshot": snapshot,
             "error": item.error or "",
-            "createdAt": item.created_at.isoformat() if item.created_at else "",
-            "updatedAt": item.updated_at.isoformat() if item.updated_at else "",
+            "createdAt": format_api_datetime(item.created_at),
+            "updatedAt": format_api_datetime(item.updated_at),
         }
 
     def _add_trace(
@@ -673,5 +674,5 @@ class UIRecognitionService:
             "message": message,
             "url": url,
             "data": data or {},
-            "at": datetime.now(timezone.utc).isoformat(),
+            "at": format_api_datetime(datetime.now(timezone.utc)),
         })

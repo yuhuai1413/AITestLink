@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { useProjectData } from "../useProjectData";
 import { scriptsApi } from "../../../api/automation.api";
 import { DataTable } from "../../../shared/components/DataTable";
-import { MenuSelect } from "../../../shared/components/MenuSelect";
 import { SectionHeader } from "../../../shared/components/SectionHeader";
 import { StatusPill } from "../../../shared/components/StatusPill";
 import { Modal } from "../../../shared/components/Modal";
@@ -22,7 +21,6 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
   const [resultTab, setResultTab] = useState<"info" | "code" | "result">("info");
   const [runningId, setRunningId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [moduleFilter, setModuleFilter] = useState("all");
   const [runningAll, setRunningAll] = useState(false);
   const [executionRuns, setExecutionRuns] = useState<Record<string, ExecutionRun[]>>({});
 
@@ -47,10 +45,8 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
     return () => { cancelled = true; };
   }, [scripts]);
 
-  const modules = useMemo(() => Array.from(new Set(scripts.map((script) => testCases.find((tc) => tc.id === script.testCaseId)?.module).filter(Boolean) as string[])), [scripts, testCases]);
-  const filteredScripts = useMemo(() => moduleFilter === "all" ? scripts : scripts.filter((script) => testCases.find((tc) => tc.id === script.testCaseId)?.module === moduleFilter), [scripts, testCases, moduleFilter]);
-  const allSelected = filteredScripts.length > 0 && filteredScripts.every((s) => selectedIds.has(s.id));
-  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(filteredScripts.map((s) => s.id)));
+  const allSelected = scripts.length > 0 && scripts.every((s) => selectedIds.has(s.id));
+  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(scripts.map((s) => s.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const normalizeTestStatus = (status?: string | null) => {
     if (status === "通过") return "通过";
@@ -164,11 +160,10 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="执行脚本" description="按用例绑定的测试环境执行脚本，测试地址和账号通过环境变量注入。" meta={moduleFilter !== "all" ? <>显示 <strong>{filteredScripts.length}</strong> / 共 <strong>{scripts.length}</strong> 个脚本</> : <>共 <strong>{scripts.length}</strong> 个脚本</>}
+      <SectionHeader title="执行脚本" description="按用例绑定的测试环境执行脚本，测试地址和账号通过环境变量注入。" meta={<>共 <strong>{scripts.length}</strong> 个脚本</>}
         actions={<>
           <div className="section-actions-stack">
             <div className="section-actions-row">
-              {modules.length > 1 ? <MenuSelect className="filter-menu-select" size="compact" value={moduleFilter} options={[{ value: "all", label: "全部模块" }, ...modules.map((m) => ({ value: m, label: m }))]} onChange={setModuleFilter} /> : null}
               <button className="primary-button" type="button" onClick={runAll} disabled={runningAll || loading}>
                 {runningAll ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
                 {runningAll ? "执行中..." : "全部执行"}
@@ -177,14 +172,14 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
           </div>
         </>} />
       <section className="work-panel">
-        {initialLoading && filteredScripts.length === 0 ? (
+        {initialLoading && scripts.length === 0 ? (
           <div className="empty-state"><Loader2 size={20} className="animate-spin text-muted" /><p className="empty-state__hint">加载中...</p></div>
-        ) : filteredScripts.length === 0 ? (
+        ) : scripts.length === 0 ? (
           <div className="empty-state">
-            <p>{scripts.length === 0 ? "暂无脚本，请先在「自动化脚本」页面生成脚本" : "当前筛选条件下暂无脚本"}</p>
+            <p>暂无脚本，请先在「自动化脚本」页面生成脚本</p>
           </div>
         ) : (
-          <DataTable rows={filteredScripts} getRowKey={(r) => r.id} columns={[
+          <DataTable rows={scripts} getRowKey={(r) => r.id} columns={[
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "scriptCode", label: "脚本编号", render: (r) => r.scriptCode || <span className="text-muted">-</span> },
             { key: "testCase", label: "关联用例", align: "left", lineClamp: 2, render: (r) => getTestCaseTitle(r.testCaseId) },

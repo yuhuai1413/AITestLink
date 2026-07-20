@@ -106,3 +106,56 @@ class OpenAICompatibleClient:
             if not content:
                 logger.warning("LLM returned empty content: task=%s, keys=%s", task_type, list(message.keys()))
             return content
+
+    async def complete_with_images(
+        self,
+        *,
+        endpoint: str,
+        api_key: str,
+        model: str,
+        system_prompt: str,
+        user_prompt: str,
+        image_data_urls: list[str],
+        task_type: str,
+        max_tokens: int,
+    ) -> str:
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        content: list[dict] = [{"type": "text", "text": user_prompt}]
+        content.extend(
+            {"type": "image_url", "image_url": {"url": data_url}}
+            for data_url in image_data_urls
+        )
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content},
+            ],
+            "temperature": 0.1,
+            "max_tokens": max_tokens,
+        }
+
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            response = await client.post(
+                ensure_chat_endpoint(endpoint),
+                headers=headers,
+                json=payload,
+            )
+            logger.info("Vision LLM request: task=%s, status=%s, images=%s", task_type, response.status_code, len(image_data_urls))
+            if response.status_code != 200:
+                logger.error(
+                    "Vision LLM request failed: task=%s, status=%s, body=%s",
+                    task_type,
+                    response.status_code,
+                    response.text[:500],
+                )
+            response.raise_for_status()
+            data = response.json()
+            message = data["choices"][0]["message"]
+            result = message.get("content") or message.get("reasoning_content") or ""
+            if not result:
+                logger.warning("Vision LLM returned empty content: task=%s, keys=%s", task_type, list(message.keys()))
+            return result

@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from app.services.requirement_clarification import default_clarification_status
+from app.services.script_generation_quality import enrich_script_generation_records
 
 
 MAX_BATCH_CHARS = 12000
@@ -229,8 +230,11 @@ def test_case_batches(
     cases: Iterable[Any],
     ui_context_by_environment: dict[str, dict[str, Any]] | None = None,
 ) -> list[str]:
+    records = test_case_records(cases, ui_context_by_environment)
+    if ui_context_by_environment is not None:
+        records = enrich_script_generation_records(records)
     return _json_batches(
-        test_case_records(cases, ui_context_by_environment),
+        records,
         max_chars=SCRIPT_BATCH_CHARS,
         max_records=1,
     )

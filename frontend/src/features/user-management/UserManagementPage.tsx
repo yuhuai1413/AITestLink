@@ -7,6 +7,7 @@ import { ConfirmDialog } from "../../shared/components/ConfirmDialog";
 import { MenuSelect } from "../../shared/components/MenuSelect";
 import { Modal } from "../../shared/components/Modal";
 import { useUnsavedChanges } from "../../shared/hooks/useUnsavedChanges";
+import { formatDateTime } from "../../shared/utils/dateTime";
 
 export function UserManagementPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
@@ -267,17 +268,7 @@ export function UserManagementPage() {
               {
                 key: "created_at",
                 label: "创建时间",
-                render: (row) => {
-                  if (!row.created_at) return "-";
-                  const d = new Date(row.created_at);
-                  const y = d.getFullYear();
-                  const m = String(d.getMonth() + 1).padStart(2, "0");
-                  const day = String(d.getDate()).padStart(2, "0");
-                  const h = String(d.getHours()).padStart(2, "0");
-                  const min = String(d.getMinutes()).padStart(2, "0");
-                  const sec = String(d.getSeconds()).padStart(2, "0");
-                  return `${y}-${m}-${day} ${h}:${min}:${sec}`;
-                },
+                render: (row) => formatDateTime(row.created_at),
               },
               {
                 key: "actions",

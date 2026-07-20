@@ -27,4 +27,16 @@ export const requirementsApi = {
   update: (id: string, data: RequirementUpdate) =>
     request<Requirement>(`/requirements/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   delete: (id: string) => request<{ ok: boolean }>(`/requirements/${id}`, { method: "DELETE" }),
+  export: async (projectId: string) => {
+    const response = await fetch(`${API_BASE}/projects/${projectId}/requirements/export`, {
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      let detail = text;
+      try { detail = JSON.parse(text).detail || text; } catch {}
+      throw new Error(detail || "导出失败");
+    }
+    return response.blob();
+  },
 };

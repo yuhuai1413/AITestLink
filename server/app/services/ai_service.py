@@ -10,6 +10,7 @@ from app.config import settings
 from app.database import async_session
 from app.models.model_config import ModelConfig
 from app.schemas.ai_output import output_json_schema, validate_ai_object, validate_ai_output
+from app.services.export_format import format_api_datetime
 from app.services.llm_client import OpenAICompatibleClient, json_schema_response_format, supports_json_schema
 from app.services.prompt_service import get_published_prompt
 from app.utils import decrypt_value, ensure_chat_endpoint
@@ -134,9 +135,7 @@ async def check_config_for_task(task_type: str, user_id: str) -> dict:
 def _utc_iso(value: datetime | None) -> str | None:
     if not value:
         return None
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return format_api_datetime(value) or None
 
 
 def _is_config_level_failure(exc: Exception) -> bool:
@@ -334,7 +333,15 @@ class AIService:
                 parts.append(content[i:i + CHUNK_SIZE])
             doc_text = "".join(parts) + "\n\n【文档结束】"
 
-        user_prompt = f"请对以下文档内容进行专业的需求分析。\n\n注意区分需求文档和辅助文档，辅助文档中的关键测试数据（如账号、密码、部门信息等）请在「question」字段中标注，格式为：【辅助文档信息】xxx。\n\n文档内容：\n\n{doc_text}"
+        user_prompt = (
+            "请对以下文档内容进行专业的需求分析。\n\n"
+            "重点要求：\n"
+            "1. 认真识别真实业务需求，不要只粗略复制文档原句。\n"
+            "2. 权限边界、数据范围、状态条件、业务对象指代、异常提示、字段校验不清楚时，必须写入 question。\n"
+            "3. 如果出现“创建人A/用户A/部门A/非权限范围数据/指定状态的数据/已上传文件/审批人/跨部门数据”等表述，但文档未定义对象含义、来源或验证口径，必须在 question 中逐条提问。\n"
+            "4. 辅助文档中的账号、部门、样本数据等只作为【辅助文档信息】写入 question，不要当作待确认问题。\n\n"
+            f"文档内容：\n\n{doc_text}"
+        )
 
         response = await self._call_llm(user_prompt, "需求解析", user_id)
         return validate_ai_output("需求解析", self._parse_json_response(response))

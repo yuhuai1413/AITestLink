@@ -28,6 +28,7 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewScript, setViewScript] = useState<AutomationScript | null>(null);
+  const [scriptViewTab, setScriptViewTab] = useState<"basic" | "script">("basic");
   const [editScript, setEditScript] = useState<AutomationScript | null>(null);
   const [editCode, setEditCode] = useState("");
   const scriptDirty = useUnsavedChanges("脚本");
@@ -43,6 +44,7 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
   const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(scripts.map((s) => s.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const normalizeTestStatus = (status?: string | null) => status === "通过" ? "通过" : status === "失败" ? "失败" : "未测试";
+  const getRelatedTestCase = (script: AutomationScript | null) => script ? testCases.find((t) => t.id === script.testCaseId) : undefined;
 
   const toggleReview = async (script: AutomationScript) => {
     const newStatus = (script as any).reviewStatus === "已通过" ? "待评审" : "已通过";
@@ -142,7 +144,7 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
               { key: "updatedAt", label: "更新时间", align: "center", render: (r) => formatTime(r.updatedAt) },
               { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
                 <div className="inline-actions">
-                  <button className="text-button" type="button" onClick={() => setViewScript(r)}>查看</button>
+                  <button className="text-button" type="button" onClick={() => { setScriptViewTab("basic"); setViewScript(r); }}>查看</button>
                   <button className="text-button" type="button" onClick={() => { setEditScript(r); setEditCode(r.code); }}>编辑</button>
                 </div>
               )},
@@ -151,39 +153,70 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
       </section>
 
       {/* 查看脚本弹窗 */}
-      <Modal open={!!viewScript} onClose={() => setViewScript(null)} title={`脚本代码 - ${viewScript?.framework || ""}`} width={800} height="80vh">
-        {viewScript && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>
-            <div style={{ display: "flex", gap: 24, fontSize: 13, color: "var(--muted)" }}>
-              <span>脚本类型：{viewScript.scriptType}</span>
-              {(() => { const tc = testCases.find((t) => t.id === viewScript.testCaseId); return tc ? <span>测试类型：{tc.testType || "功能测试"}</span> : null; })()}
-              <span>生成时间：{formatTime(viewScript.createdAt)}</span>
-              <span>更新时间：{formatTime(viewScript.updatedAt)}</span>
+      <Modal open={!!viewScript} onClose={() => setViewScript(null)} title={`查看脚本 - ${viewScript?.scriptCode || viewScript?.framework || ""}`} width={960} height="88vh" bodyOverflow="hidden">
+        {viewScript && (() => {
+          const tc = getRelatedTestCase(viewScript);
+          const reviewStatus = (viewScript as any).reviewStatus || "待评审";
+          const validityStatus = (viewScript as any).validityStatus || "有效";
+          const tabs: { key: typeof scriptViewTab; label: string }[] = [
+            { key: "basic", label: "基本信息" },
+            { key: "script", label: "脚本信息" },
+          ];
+          return (
+            <div className="script-modal-layout">
+              <div className="result-tabs">
+                <div className="result-tabs__inner">
+                  {tabs.map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setScriptViewTab(tab.key)}
+                      className={scriptViewTab === tab.key ? "result-tabs__button result-tabs__button--active" : "result-tabs__button"}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="scroll-fill">
+                {scriptViewTab === "basic" ? (
+                  <div className="detail-grid script-modal-grid script-modal-grid--single">
+                    <div className="detail-row"><span className="detail-label">脚本编号</span><span>{viewScript.scriptCode || "-"}</span></div>
+                    <div className="detail-row"><span className="detail-label">关联用例</span><span className="text-anywhere">{tc ? `${tc.caseCode} · ${tc.title}` : "-"}</span></div>
+                    <div className="detail-row"><span className="detail-label">模块</span><span>{tc?.module || "-"}</span></div>
+                    <div className="detail-row"><span className="detail-label">测试类型</span><span>{tc?.testType || "功能测试"}</span></div>
+                    <div className="detail-row"><span className="detail-label">测试端</span><span>{tc?.targetPlatform || "-"}</span></div>
+                    <div className="detail-row"><span className="detail-label">所需角色</span><span>{tc?.requiredRole || "无"}</span></div>
+                    <div className="detail-row"><span className="detail-label">脚本类型</span><span>{viewScript.scriptType}</span></div>
+                    <div className="detail-row"><span className="detail-label">框架/语言</span><span>{viewScript.framework} / {viewScript.language}</span></div>
+                    <div className="detail-row"><span className="detail-label">测试状态</span><StatusPill tone={passFailTone(normalizeTestStatus(viewScript.status))}>{normalizeTestStatus(viewScript.status)}</StatusPill></div>
+                    <div className="detail-row"><span className="detail-label">评审状态</span><StatusPill tone={reviewTone(reviewStatus)}>{reviewStatus}</StatusPill></div>
+                    <div className="detail-row"><span className="detail-label">数据状态</span><StatusPill tone={validityTone(validityStatus)}>{validityStatus}</StatusPill></div>
+                    <div className="detail-row"><span className="detail-label">生成时间</span><span>{formatTime(viewScript.createdAt)}</span></div>
+                    <div className="detail-row"><span className="detail-label">更新时间</span><span>{formatTime(viewScript.updatedAt)}</span></div>
+                    <div className="detail-row detail-row--full script-modal-grid__full"><span className="detail-label">测试地址</span><span className="text-anywhere">{tc?.testUrl || "未配置"}</span></div>
+                    {(viewScript as any).invalidReason ? (
+                      <div className="detail-row detail-row--full script-modal-grid__full"><span className="detail-label">失效原因</span><span className="text-anywhere">{(viewScript as any).invalidReason}</span></div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <pre className="code-block code-block--tall script-code-block">
+                    {viewScript.code || "// 暂无代码"}
+                  </pre>
+                )}
+              </div>
             </div>
-            <pre style={{
-              background: "#1e1e2e",
-              color: "#cdd6f4",
-              padding: 16,
-              borderRadius: 8,
-              fontSize: 13,
-              lineHeight: 1.6,
-              overflow: "auto",
-              flex: 1,
-              margin: 0,
-            }}>
-              {viewScript.code || "// 暂无代码"}
-            </pre>
-          </div>
-        )}
+          );
+        })()}
       </Modal>
 
       {/* 编辑脚本弹窗 */}
       <Modal
         open={!!editScript}
         onClose={() => scriptDirty.requestClose(() => setEditScript(null))}
-        title={`编辑脚本 - ${editScript?.framework || ""}`}
-        width={800}
-        height="80vh"
+        title={`编辑脚本 - ${editScript?.scriptCode || editScript?.framework || ""}`}
+        width={980}
+        height="88vh"
         flushTop
         bodyOverflow="hidden"
         footer={<>
@@ -192,26 +225,11 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
         </>}
       >
         {editScript && (
-          <div style={{ height: "100%", minHeight: 0, display: "flex" }}>
+          <div className="script-modal-layout script-modal-layout--edit">
             <textarea
+              className="script-code-editor"
               value={editCode}
               onChange={(e) => { setEditCode(e.target.value); scriptDirty.markDirty(); }}
-              style={{
-                width: "100%",
-                flex: 1,
-                minHeight: 0,
-                background: "#1e1e2e",
-                color: "#cdd6f4",
-                padding: 16,
-                borderRadius: 0,
-                fontSize: 13,
-                lineHeight: 1.6,
-                border: "none",
-                outline: "none",
-                resize: "none",
-                fontFamily: "monospace",
-                boxSizing: "border-box",
-              }}
             />
           </div>
         )}

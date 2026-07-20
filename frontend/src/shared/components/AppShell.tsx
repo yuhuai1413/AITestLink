@@ -25,6 +25,7 @@ import { useNavHighlight } from "../hooks/useNavHighlight";
 import { notificationsApi } from "../../api/client";
 import { LogoMark } from "../../features/auth/components/LogoMark";
 import { TOKEN_KEY } from "../config/storage";
+import { formatDateTime } from "../utils/dateTime";
 import {
   getProjectTabFromTask,
   persistProjectTab,
@@ -206,7 +207,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
       <aside className={`sidebar ${collapsed ? "sidebar--collapsed" : ""}`}>
         <div className="sidebar__brand">
           <div className="brand-mark">
-            <LogoMark size={22} />
+            <LogoMark size={30} />
           </div>
           <div className="brand-text">
             <strong>AITestLink</strong>
@@ -362,7 +363,7 @@ export function AppShell({ activeView, onChangeView, children }: AppShellProps) 
                           <div className="notif-item__body">
                             <div className="notif-item__title">{n.taskType} · {n.projectName}</div>
                             <div className="notif-item__desc">{n.message}</div>
-                            <div className="notif-item__time">{new Date(n.createdAt).toLocaleString("zh-CN")}</div>
+                            <div className="notif-item__time">{formatDateTime(n.createdAt)}</div>
                           </div>
                           <button
                             className="notif-item__clear"

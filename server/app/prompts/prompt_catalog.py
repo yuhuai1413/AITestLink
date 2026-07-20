@@ -8,9 +8,13 @@ PROMPT_CATALOG: dict[str, str] = {
 2. 只使用文档明确提供的信息，不补充未出现的角色、阈值、流程或结果。
 3. module 和 feature 使用文档中的业务术语，同一概念保持同名。
 4. source 写明文件名和章节；找不到章节时至少写文件名。
-5. risk 只能是高、中、低。资金、敏感数据、删除和权限通常为高风险；状态流转和数据校验通常为中风险；纯展示通常为低风险。
-6. rule 简洁写出前置条件、触发条件、处理逻辑和预期结果，只保留文档明确内容。
-7. 模糊规则、缺失边界、角色权限或状态流转写入 question；没有问题填“无”。辅助文档中的测试数据也写入 question，并标记“辅助文档信息”。
+5. 输入中如果包含“[图片识别结果]”，表示来自需求文档截图、原型图、流程图或扫描图片的识别内容，必须和正文、表格一起纳入需求分析；source 写明图片来源。
+6. 图片识别结果中的“不确定内容”、看不清的文字、无法确认的箭头/条件/字段含义，必须写入 question，不能当成确定事实。
+7. risk 只能是高、中、低。资金、敏感数据、删除和权限通常为高风险；状态流转和数据校验通常为中风险；纯展示通常为低风险。
+8. rule 简洁写出前置条件、触发条件、处理逻辑和预期结果，只保留文档明确内容。
+9. 模糊规则、缺失边界、角色权限、状态流转、数据范围、业务对象指代必须写入 question；没有问题填“无”。辅助文档中的测试数据也写入 question，并标记“辅助文档信息”。
+10. 如果需求涉及“创建人A/用户A/部门A/非权限范围数据/指定状态的数据/已上传文件/审批人/跨部门数据”等具体业务对象，但文档没有说明对象含义、范围、来源或验证口径，必须在 question 中逐条提问，不能把这些问题留到测试用例或脚本生成阶段。
+11. 权限类需求必须确认：适用角色、可见数据范围、不可见数据范围、判断字段、预期表现（不可见/不可操作/提示无权限）。缺任一项都写入 question。
 
 只输出 JSON 数组。每项必须且只能包含：
 module、feature、source、risk、rule、question。
@@ -97,8 +101,8 @@ id、testPointId、testPointCode、pointCode、code、req_id、requirementCode�
 3. module 使用输入测试点的 module；feature 使用 requirementFeature；priority 不得改变。
 4. 根据测试目标选择 PC 或 APP，并从 testEnvironment.targets 中选择对应 platform 的目标；environmentId 必须复制该 target.environmentId，testUrl 必须复制该 target.url，不得使用顶层 environmentId 代替具体目标环境。
 5. requiredRole 只能选择对应 target.availableRoles 中真实存在的角色；target 未提供角色时可从 testEnvironment.availableRoles 选择；不需要登录时写“无”；需要登录但没有可用角色时写“待配置”。不得输出用户名或密码。
-6. precondition 必须写清测试端、测试地址和所需角色。testData、steps 和 expectedResult 只能依据输入描述与需求规则，不得编造账号、密码、金额或边界值。缺失信息写“待准备”或“待确认”。
-7. PC、APP 用例都只有在具备稳定定位、测试数据和可验证结果时 automation 才可为 true；需要人工判断或缺少设备、定位信息时为 false。
+6. precondition 必须写清测试端、测试地址和所需角色。testData、steps 和 expectedResult 只能依据输入描述、需求规则和确认结论，不得编造账号、密码、金额或边界值。需求不清的问题应已在需求阶段处理；不要在 testData 中输出“待准备”“待确认”“待补充”来承接需求疑问。
+7. PC、APP 用例都只有在具备稳定定位、测试环境、可用账号和可验证结果时 automation 才可为 true；需要人工判断或缺少设备、定位信息时为 false。
 8. steps 使用“步骤N:”格式，每步一个操作；验证步骤使用“查看…是否…”。
 9. expectedResult 只对应验证步骤，使用“步骤N: …应…”格式。
 10. testType 只能是功能测试、性能测试、安全测试、兼容性测试。
@@ -125,9 +129,12 @@ testPointId、module、feature、title、priority、precondition、steps、testD
 13. 代码必须包含可直接运行的入口。Python async 脚本必须包含：if __name__ == "__main__": asyncio.run(test_case())，并且入口必须调用完整测试流程。pytest 风格脚本必须包含可被 pytest 发现并执行的 test_* 函数。
 14. 所有测试步骤必须处于被入口调用的主流程中；不能只写注释、不能把失败检查注释掉、不能只定义函数不调用。
 15. 中文前置条件、步骤和预期结果只能写成 Python 注释或日志，不能作为未注释的 Python 语句插入代码。
-16. 缺少定位信息、账号、地址、设备或测试数据时必须在执行到该步骤前 raise RuntimeError 说明缺失项，不能编造 placeholder、CSS、XPath 或默认通过。
+16. 缺少定位信息、账号、地址、设备或需求确认结论时必须在执行到该步骤前 raise RuntimeError 说明缺失项，不能编造 placeholder、CSS、XPath 或默认通过。
 17. 需要打开浏览器时读取环境变量 PLAYWRIGHT_HEADLESS 控制 headless，默认 headless=True；读取 TEST_SLOW_MO 作为 slow_mo 毫秒值，默认 0；不要强制 headless=False。
 18. 代码必须可独立保存，code 中不要使用 Markdown 代码围栏。
+19. 严禁发明环境变量。除 WEB_BASE_URL、APP_BASE_URL、BASE_URL、TEST_BASE_URL、TEST_USERNAME、TEST_PASSWORD、TEST_ACCOUNT_ROLE、TEST_LOGIN_CAPTCHA_REQUIRED、TEST_LOGIN_CAPTCHA_CODE、TEST_TIMEOUT、TEST_TIMEOUT_MS、PLAYWRIGHT_HEADLESS、TEST_HEADLESS、TEST_SLOW_MO、APPIUM_SERVER_URL 外，不得读取 TEST_CREATOR_A_NAME、TEST_DEPARTMENT_NAME、TEST_FILE_NAME 等输入中没有明确提供的变量。
+20. 如果用例涉及创建人A、用户A、部门A、非权限范围数据、已上传文件、指定文件等业务对象，必须只使用需求确认结论、环境账号或 recognizedUI 中真实提供的信息。不得发明 TEST_CREATOR_A_NAME、TEST_DEPARTMENT_NAME、TEST_FILE_NAME 等临时环境变量；如果仍缺少关键业务口径，应在代码中用中文 RuntimeError 明确说明需要回到需求列表补充待确认问题。
+21. 禁止把泛化定位作为唯一业务定位依据，例如 page.locator("table")、[class*="menu-item"]、[class*="option"]。如果没有 recognizedUI 支撑，应明确缺少列表/列/按钮定位信息，而不是猜测。
 
 只输出 JSON 数组。每项必须且只能包含：
 testCaseId、scriptType、framework、language、code。

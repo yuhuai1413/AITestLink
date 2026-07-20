@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CheckCircle2, Loader2, Radar, WandSparkles } from "lucide-react";
+import { CheckCircle2, Download, Loader2, Radar, WandSparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useStore } from "../../../app/store";
 import { filesApi, requirementsApi } from "../../../api/client";
@@ -70,7 +70,7 @@ function clarificationTone(status: string): "green" | "amber" | "slate" {
 }
 
 export function RequirementsTab({ projectId }: { projectId: string }) {
-  const { files, requirements, refresh, loading, initialLoading } = useProjectData(projectId);
+  const { project, files, requirements, refresh, refreshRequirements, initialLoading } = useProjectData(projectId);
   const { state, dispatch } = useStore();
   const parsing = useMemo(() => state.activeAITasks.includes(`${projectId}:需求解析`), [state.activeAITasks, projectId]);
   const reversing = useMemo(() => state.activeAITasks.includes(`${projectId}:AI反推需求`), [state.activeAITasks, projectId]);
@@ -103,7 +103,7 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
     const newStatus = (r.reviewStatus === "已通过") ? "待评审" : "已通过";
     try {
       const updated = await requirementsApi.update(r.id, { reviewStatus: newStatus } as any);
-      dispatch({ type: "UPDATE_REQUIREMENT", payload: { ...r, ...updated } });
+      dispatch({ type: "UPDATE_REQUIREMENT", payload: updated });
     } catch (error) {
       toast.error(apiErrorMessage(error, "评审状态更新失败"));
       return;
@@ -121,7 +121,7 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
       if (r && r.reviewStatus !== "已通过") {
         try {
           const updated = await requirementsApi.update(r.id, { reviewStatus: "已通过" } as any);
-          dispatch({ type: "UPDATE_REQUIREMENT", payload: { ...r, ...updated } });
+          dispatch({ type: "UPDATE_REQUIREMENT", payload: updated });
         } catch (error) {
           toast.error(apiErrorMessage(error, "批量评审失败"));
           return;
@@ -173,6 +173,27 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
     await refresh();
   };
 
+  const handleExport = async () => {
+    if (requirements.length === 0) {
+      toast.warning("暂无需求数据，请先解析需求");
+      return;
+    }
+    try {
+      const blob = await requirementsApi.export(projectId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project?.name || "未命名项目"}-需求列表.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`已导出 ${requirements.length} 条需求`);
+    } catch (error) {
+      toast.error(apiErrorMessage(error, "导出失败"));
+    }
+  };
+
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="需求列表" description="从上传的文档中解析需求，支持查看和确认。" meta={<>共 <strong>{requirements.length}</strong> 条需求</>}
@@ -180,6 +201,7 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
               {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
+              <button className="ghost-button" type="button" onClick={handleExport} disabled={parsing || reversing}><Download size={13} /> 导出 Excel</button>
               <button className="ghost-button" type="button" onClick={() => setShowReverseModal(true)} disabled={reversing}>
                 {reversing ? <><Loader2 size={13} className="animate-spin" /> 反推中...</> : <><Radar size={13} /> AI 反推需求</>}
               </button>
@@ -256,7 +278,10 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
                 question: editQuestion,
                 clarificationAnswer: hasRealClarificationQuestion(editQuestion) ? editClarificationAnswer : "",
               } as any);
-              dispatch({ type: "UPDATE_REQUIREMENT", payload: { ...editReq, ...updatedReq } });
+              dispatch({ type: "UPDATE_REQUIREMENT", payload: updatedReq });
+              setEditReq(updatedReq);
+              if (viewReq?.id === updatedReq.id) setViewReq(updatedReq);
+              await refreshRequirements();
               toast.success("保存成功");
               reqDirty.markClean();
               setEditReq(null);

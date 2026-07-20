@@ -28,11 +28,12 @@ from app.services.ai_input_builder import (
 from app.services.ai_task_support import (
     friendly_error as _friendly_error,
     module_counter as _module_counter,
-    normalize_automation as _normalize_automation,
     to_eng_abbr as _to_eng_abbr,
 )
 from app.services.environment_service import EnvironmentService
+from app.services.document_vision_service import describe_requirement_images
 from app.services.requirement_clarification import default_clarification_status, is_clarification_resolved
+from app.services.script_generation_quality import assert_cases_script_ready, generated_script_error_message, review_generated_case_automation
 from app.services.ui_recognition_service import UIRecognitionService
 from app.schemas.ai_output import validate_ai_output
 from app.utils import verify_project_owner
@@ -169,10 +170,12 @@ async def _stream_generate_test_cases(task_id: str, project_id: str, user_id: st
             yield f"data: {json.dumps({'event': 'receiving'}, ensure_ascii=False)}\n\n"
 
             items: list[dict] = []
+            point_payloads_by_id: dict[str, dict] = {}
             for payload in test_point_batches(points, requirements_by_id, environment_context):
                 response_text = await ai_service._call_llm(payload, "用例生成", user_id, max_tokens=16000)
                 batch_items = validate_ai_output("用例生成", ai_service._parse_json_response(response_text))
                 payload_items = json.loads(payload)
+                point_payloads_by_id.update({item["testPointId"]: item for item in payload_items})
                 allowed_ids = {item["testPointId"] for item in payload_items}
                 validate_references(batch_items, "testPointId", allowed_ids)
                 validate_reference_values(
@@ -203,6 +206,10 @@ async def _stream_generate_test_cases(task_id: str, project_id: str, user_id: st
             for c in items:
                 matched_point = points_by_id[c["testPointId"]]
                 requirement = requirements_by_id.get(matched_point.requirement_id)
+                automation_value, automation_reason = review_generated_case_automation(
+                    c,
+                    point_payload=point_payloads_by_id.get(c["testPointId"]),
+                )
                 mod = matched_point.module
                 module_counter[mod] = module_counter.get(mod, 0) + 1
                 prefix = module_map.get(mod)
@@ -228,7 +235,8 @@ async def _stream_generate_test_cases(task_id: str, project_id: str, user_id: st
                     target_platform=c["targetPlatform"],
                     test_url=c["testUrl"],
                     required_role=c["requiredRole"],
-                    automation=_normalize_automation(c.get("automation")),
+                    automation=automation_value,
+                    remark=automation_reason,
                 ))
             await db.commit()
 
@@ -324,6 +332,10 @@ async def _stream_parse_requirements(project_id: str, user_id: str):
                 await db.commit()
                 yield f"data: {json.dumps({'event': 'error', 'message': '无法读取文件内容'})}\n\n"
                 return
+
+            image_content = await describe_requirement_images(list(files), user_id)
+            if image_content:
+                content_parts.append(image_content)
 
             file_content = "\n\n".join(content_parts)
             logger.info(f"stream_parse_requirements: file_content length={len(file_content)}")
@@ -424,6 +436,7 @@ async def _stream_generate_scripts(project_id: str, user_id: str):
                 return
             validate_persisted_traceability(cases=test_cases)
             validate_case_runtime_fields(test_cases, for_automation=True)
+            assert_cases_script_ready(test_cases)
 
             ui_context = await UIRecognitionService(db).latest_context_by_project(project_id, user_id)
             all_items: list[dict] = []
@@ -436,6 +449,11 @@ async def _stream_generate_scripts(project_id: str, user_id: str):
                     batch_items.extend(batch)
                 allowed_ids = {item["testCaseId"] for item in json.loads(payload)}
                 validate_references(batch_items, "testCaseId", allowed_ids)
+                batch_cases_by_id = {item.id: item for item in test_cases if item.id in allowed_ids}
+                for item in batch_items:
+                    quality_error = generated_script_error_message(item.get("code", ""), batch_cases_by_id[item["testCaseId"]])
+                    if quality_error:
+                        raise ValueError(quality_error)
                 all_items.extend(batch_items)
 
             from sqlalchemy import delete

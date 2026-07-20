@@ -1,4 +1,5 @@
 import type { TestCase } from "../types/platform";
+import { formatTimestampForFileName } from "./dateTime";
 import { formatTestStepsForDisplay } from "./formatTestSteps";
 
 export function exportManualTestCasesToExcel(
@@ -7,8 +8,7 @@ export function exportManualTestCasesToExcel(
   type: "manual" | "all" = "manual"
 ) {
   const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const timeStr = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}`;
+  const timeStr = formatTimestampForFileName(now);
   const fileName = type === "all"
     ? `${projectName}-全部测试用例-${timeStr}.xls`
     : `${projectName}-手动测试用例-${timeStr}.xls`;
@@ -228,7 +228,7 @@ function getSemanticClass(): string {
 
 function formatDateTime(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 function escapeHtml(s: string | null | undefined): string {

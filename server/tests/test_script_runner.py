@@ -111,6 +111,36 @@ async def test_case():
     assert 'get_by_placeholder("密码")' not in normalized
 
 
+def test_runner_rewrites_hard_login_placeholder_failures_to_helpers():
+    runner = LocalScriptRunner()
+    code = """
+import asyncio
+from playwright.async_api import async_playwright
+
+async def test_case():
+    username_input = page.get_by_placeholder("请输入员工号")
+    if await username_input.count() == 0:
+        raise RuntimeError("Login input with placeholder '请输入员工号' not found")
+    await username_input.fill(username)
+    password_input = page.get_by_placeholder("请输入密码")
+    if await password_input.count() == 0:
+        raise RuntimeError("Login input with placeholder '请输入密码' not found")
+    await password_input.fill(password)
+    login_button = page.get_by_text("登录", exact=True)
+    if await login_button.count() == 0:
+        raise RuntimeError("Login button with text '登录' not found")
+    await login_button.click()
+"""
+
+    normalized = runner._normalize_playwright_code(code, headed=True, slow_mo_ms=500)
+
+    assert "AITESTLINK_PLAYWRIGHT_HELPERS_V1" in normalized
+    assert 'await __aitestlink_fill_login_field(page, "username", username, required=True)' in normalized
+    assert 'await __aitestlink_fill_login_field(page, "password", password, required=True)' in normalized
+    assert "await __aitestlink_click_login(page)" in normalized
+    assert "Login input with placeholder" not in normalized
+
+
 def test_runner_normalizes_generic_menu_locators():
     runner = LocalScriptRunner()
     code = """
@@ -154,7 +184,22 @@ async def test_case():
 """)
 
     assert result.status == "失败"
-    assert "get_by_placeholder" in result.error or "Timeout" in result.error
     assert "失败摘要" in result.error
-    assert "用户名" in result.error
+    assert "Playwright 等待页面元素超时" in result.error
+    assert "Traceback" not in result.error
+    assert "原始错误" not in result.error
     assert "脚本执行器外层超时" not in result.error
+
+
+def test_runner_hides_traceback_and_humanizes_runtime_error():
+    result = _run("""
+async def test_case():
+    raise RuntimeError("Login input with placeholder '请输入员工号' not found")
+""")
+
+    assert result.status == "失败"
+    assert "失败摘要" in result.error
+    assert "登录页字段未就绪或定位不匹配" in result.error
+    assert "请输入员工号" in result.error
+    assert "Traceback" not in result.error
+    assert "原始错误" not in result.error

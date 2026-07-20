@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Modal } from "../../shared/components/Modal";
 import { statusLogsApi, ApiStatusLog } from "../../api/client";
 import { StatusPill } from "../../shared/components/StatusPill";
+import { formatDateTime } from "../../shared/utils/dateTime";
 
 interface StatusLogModalProps {
   open: boolean;
@@ -31,16 +32,7 @@ export function StatusLogModal({ open, onClose, projectId }: StatusLogModalProps
     return changeType === "auto" ? "自动" : "手动";
   };
 
-  const formatTime = (dateStr: string) => {
-    const d = new Date(dateStr);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    const h = String(d.getHours()).padStart(2, "0");
-    const min = String(d.getMinutes()).padStart(2, "0");
-    const sec = String(d.getSeconds()).padStart(2, "0");
-    return `${y}-${m}-${day} ${h}:${min}:${sec}`;
-  };
+  const formatTime = (dateStr: string) => formatDateTime(dateStr);
 
   return (
     <Modal open={open} onClose={onClose} title="状态变更日志" width={640}>

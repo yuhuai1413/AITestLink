@@ -13,6 +13,7 @@ import { useUnsavedChanges } from "../../shared/hooks/useUnsavedChanges";
 import { MultiSelectDropdown } from "./components/MultiSelectDropdown";
 import { AdminPromptModal, BatchEditModal } from "./components/ModelConfigModals";
 import { providerModels } from "./modelConfig.constants";
+import { formatDateTime } from "../../shared/utils/dateTime";
 
 const nodeColors: Record<string, string> = {
   "需求解析": "green",
@@ -47,13 +48,7 @@ const connectionText: Record<ApiModelConfig["connectionStatus"], string> = {
 };
 
 function formatTestTime(value: string | null | undefined): string {
-  if (!value) return "";
-  try {
-    const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value) ? value : `${value}Z`;
-    return new Date(normalized).toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" });
-  } catch {
-    return value;
-  }
+  return formatDateTime(value, "");
 }
 
 export function ModelConfigPage() {

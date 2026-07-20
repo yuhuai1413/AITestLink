@@ -18,6 +18,122 @@ PLAYWRIGHT_TIMEOUT_GRACE_SECONDS = 45
 PLAYWRIGHT_IMPORT_HINT = "Playwright 依赖未安装。请在后端环境执行：pip install playwright && python -m playwright install chromium"
 RUN_MARKER_START = "AITESTLINK_TEST_ENTRY_START"
 RUN_MARKER_DONE = "AITESTLINK_TEST_ENTRY_DONE"
+AITESTLINK_HELPER_MARKER = "AITESTLINK_PLAYWRIGHT_HELPERS_V1"
+
+
+PLAYWRIGHT_HELPER_CODE = r'''
+# AITESTLINK_PLAYWRIGHT_HELPERS_V1
+async def __aitestlink_wait_page_ready(page, timeout=15000):
+    try:
+        await page.wait_for_load_state("domcontentloaded", timeout=timeout)
+    except Exception:
+        pass
+    try:
+        await page.wait_for_load_state("networkidle", timeout=min(timeout, 8000))
+    except Exception:
+        pass
+
+
+async def __aitestlink_visible_locator(page, selectors, timeout=20000):
+    deadline = __import__("time").monotonic() + timeout / 1000
+    last_error = None
+    while __import__("time").monotonic() < deadline:
+        frames = [page] + list(getattr(page, "frames", []))
+        for frame in frames:
+            for selector in selectors:
+                locator = frame.locator(selector).first
+                try:
+                    if await locator.count() > 0 and await locator.is_visible(timeout=600):
+                        return locator
+                except Exception as exc:
+                    last_error = exc
+        await page.wait_for_timeout(300)
+    return None
+
+
+async def __aitestlink_collect_inputs(page):
+    items = []
+    try:
+        frames = [page] + list(getattr(page, "frames", []))
+        for index, frame in enumerate(frames):
+            try:
+                inputs = await frame.locator("input, textarea").evaluate_all(
+                    """els => els.slice(0, 20).map(el => ({
+                        tag: el.tagName.toLowerCase(),
+                        type: el.getAttribute('type') || '',
+                        placeholder: el.getAttribute('placeholder') || '',
+                        name: el.getAttribute('name') || '',
+                        id: el.id || '',
+                        visible: !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)
+                    }))"""
+                )
+                for item in inputs:
+                    item["frameIndex"] = index
+                    items.append(item)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return items[:30]
+
+
+async def __aitestlink_fill_login_field(page, field, value, required=True, timeout=22000):
+    await __aitestlink_wait_page_ready(page)
+    selectors = {
+        "username": [
+            "input[placeholder='请输入员工号']",
+            "input[placeholder*='员工号']",
+            "input[placeholder*='手机号']",
+            "input[placeholder*='登录账号']",
+            "input[placeholder*='账号']",
+            "input[placeholder*='用户名']",
+            "input[name*='user' i]",
+            "input[name*='account' i]",
+            "input[type='text']",
+            "input:not([type])",
+        ],
+        "password": [
+            "input[placeholder='请输入密码']",
+            "input[placeholder*='密码']",
+            "input[type='password']",
+        ],
+        "captcha": [
+            "input[placeholder='请输入验证码']",
+            "input[placeholder*='验证码']",
+            "input[placeholder*='校验码']",
+            "input[placeholder*='图形码']",
+        ],
+    }.get(field, [])
+    locator = await __aitestlink_visible_locator(page, selectors, timeout=timeout)
+    if not locator:
+        if not required:
+            return False
+        inputs = await __aitestlink_collect_inputs(page)
+        labels = {"username": "账号/员工号", "password": "密码", "captcha": "验证码"}
+        raise RuntimeError(
+            f"未找到可填写的{labels.get(field, '登录')}输入框。"
+            f"系统已等待登录页加载并尝试多个候选定位器，但当前页面没有匹配字段。"
+            f"当前页面输入框：{inputs}"
+        )
+    await locator.fill(str(value or ""))
+    return True
+
+
+async def __aitestlink_click_login(page, timeout=12000):
+    selectors = [
+        "button:has-text('登录')",
+        "[role='button']:has-text('登录')",
+        "input[type='submit']",
+        ".el-button:has-text('登录')",
+        "span:has-text('登录')",
+        "div:has-text('登录')",
+    ]
+    locator = await __aitestlink_visible_locator(page, selectors, timeout=timeout)
+    if not locator:
+        raise RuntimeError("未找到登录按钮。系统已尝试按钮、角色按钮、提交按钮和包含“登录”的可见元素。")
+    await locator.click()
+    return True
+'''
 
 
 @dataclass
@@ -204,9 +320,11 @@ class LocalScriptRunner:
         # Generated scripts sometimes force headed Chromium. Keep normal runs
         # headless, but allow explicit visual execution for local debugging.
         code = self._normalize_login_placeholder_locators(code)
+        code = self._normalize_login_hard_failures(code)
         code = self._normalize_menu_text_locators(code)
         if "playwright" not in code and "chromium.launch" not in code:
             return code
+        code = self._inject_playwright_helpers(code)
         if headed:
             slow_mo = max(0, min(int(slow_mo_ms or 0), 3000))
             code = self._force_playwright_launch_options(code, headless=False, slow_mo=slow_mo)
@@ -253,6 +371,84 @@ class LocalScriptRunner:
             rewrite_password,
             code,
         )
+
+    def _normalize_login_hard_failures(self, code: str) -> str:
+        """Replace brittle generated login snippets with guarded helpers.
+
+        The LLM often emits:
+            locator = page.get_by_placeholder("请输入员工号")
+            if await locator.count() == 0: raise RuntimeError(...)
+            await locator.fill(username)
+
+        On slow visual runs this fails before the login form is visible. The
+        helper waits for page readiness, tries multiple real-world selectors,
+        checks frames, and raises a Chinese diagnostic only after exhausting
+        candidates.
+        """
+        fields = [
+            ("username", r"请输入员工号|员工号|请输入手机号|手机号|登录账号|账号|请输入用户名|用户名"),
+            ("password", r"请输入密码|密码"),
+            ("captcha", r"请输入验证码|验证码|校验码|图形验证码|图形码"),
+        ]
+
+        for field, placeholder_pattern in fields:
+            code = self._rewrite_login_assignment_fill(code, field, placeholder_pattern)
+            code = self._rewrite_direct_placeholder_fill(code, field, placeholder_pattern)
+
+        code = self._rewrite_login_button_click(code)
+        return code
+
+    def _rewrite_login_assignment_fill(self, code: str, field: str, placeholder_pattern: str) -> str:
+        pattern = re.compile(
+            rf"(?P<indent>[ \t]*)(?P<var>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*page\.get_by_placeholder\((?P<quote>['\"])(?:{placeholder_pattern})(?P=quote)\)\s*\n"
+            rf"(?:(?P=indent)if\s+await\s+(?P=var)\.count\(\)\s*==\s*0:\s*\n"
+            rf"(?P=indent)[ \t]+raise\s+RuntimeError\([^\n]*\)\s*\n)?"
+            rf"(?P=indent)await\s+(?P=var)\.fill\((?P<value>[^)]*)\)",
+            re.MULTILINE,
+        )
+
+        def rewrite(match: re.Match[str]) -> str:
+            required = "False" if field == "captcha" else "True"
+            return (
+                f"{match.group('indent')}await __aitestlink_fill_login_field("
+                f"page, \"{field}\", {match.group('value').strip()}, required={required})"
+            )
+
+        return pattern.sub(rewrite, code)
+
+    def _rewrite_direct_placeholder_fill(self, code: str, field: str, placeholder_pattern: str) -> str:
+        pattern = re.compile(
+            rf"(?P<indent>[ \t]*)await\s+page\.get_by_placeholder\((?P<quote>['\"])(?:{placeholder_pattern})(?P=quote)\)\.fill\((?P<value>[^)]*)\)",
+            re.MULTILINE,
+        )
+
+        def rewrite(match: re.Match[str]) -> str:
+            required = "False" if field == "captcha" else "True"
+            return (
+                f"{match.group('indent')}await __aitestlink_fill_login_field("
+                f"page, \"{field}\", {match.group('value').strip()}, required={required})"
+            )
+
+        return pattern.sub(rewrite, code)
+
+    def _rewrite_login_button_click(self, code: str) -> str:
+        pattern = re.compile(
+            r"(?P<indent>[ \t]*)(?P<var>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*page\.get_by_(?:text|role)\([^\n]*登录[^\n]*\)\s*\n"
+            r"(?:(?P=indent)if\s+await\s+(?P=var)\.count\(\)\s*==\s*0:\s*\n"
+            r"(?P=indent)[ \t]+raise\s+RuntimeError\([^\n]*\)\s*\n)?"
+            r"(?P=indent)await\s+(?P=var)(?:\.first)?\.click\([^\n]*\)",
+            re.MULTILINE,
+        )
+        return pattern.sub(lambda match: f"{match.group('indent')}await __aitestlink_click_login(page)", code)
+
+    def _inject_playwright_helpers(self, code: str) -> str:
+        if AITESTLINK_HELPER_MARKER in code:
+            return code
+        insert_at = 0
+        matches = list(re.finditer(r"^(?:from\s+\S+\s+import\s+.*|import\s+.+)\s*$", code, re.MULTILINE))
+        if matches:
+            insert_at = matches[-1].end()
+        return f"{code[:insert_at]}\n{PLAYWRIGHT_HELPER_CODE}\n{code[insert_at:]}"
 
     def _normalize_menu_text_locators(self, code: str) -> str:
         """Rewrite broad AI-guessed menu locators to text/title based menu clicks."""
@@ -327,8 +523,8 @@ class LocalScriptRunner:
             return ""
         summary = self._error_summary(error)
         if not summary:
-            return error
-        return f"失败摘要：{summary}\n\n原始错误：\n{error}"
+            return "脚本执行失败。系统已隐藏底层技术堆栈，请在执行详情或服务端日志中排查原始异常。"
+        return f"失败摘要：{summary}"
 
     def _error_summary(self, error: str) -> str:
         if "get_by_placeholder" in error:
@@ -340,10 +536,31 @@ class LocalScriptRunner:
         if "RuntimeError" in error:
             lines = [line.strip() for line in error.splitlines() if line.strip()]
             runtime_line = next((line for line in reversed(lines) if "RuntimeError" in line), "")
-            return runtime_line or "脚本主动抛出了 RuntimeError。"
+            message = runtime_line.split("RuntimeError:", 1)[-1].strip() if runtime_line else ""
+            return self._humanize_runtime_error(message) or "脚本主动终止执行。"
         if "SyntaxError" in error:
             return "脚本存在 Python 语法错误，通常是生成脚本把中文步骤或非代码内容写进了代码主体。"
         return ""
+
+    def _humanize_runtime_error(self, message: str) -> str:
+        if not message:
+            return ""
+        lowered = message.lower()
+        if "login input" in lowered and "placeholder" in lowered and "not found" in lowered:
+            target = re.search(r"placeholder ['\"]([^'\"]+)['\"]", message)
+            label = target.group(1) if target else "登录输入框"
+            return (
+                f"登录页字段未就绪或定位不匹配：系统没有找到“{label}”。"
+                "执行器会先等待页面加载并尝试多个候选定位器；如果仍失败，请在系统识别结果中确认登录页字段是否可见。"
+            )
+        if "environment variable" in lowered:
+            missing = message.replace("environment variable", "环境变量")
+            return f"执行环境配置不完整：{missing}"
+        if "not found" in lowered:
+            return f"页面元素未找到：{message}"
+        if message.startswith("未找到") or message.startswith("找不到") or message.startswith("无法定位"):
+            return message
+        return message
 
     async def _resolve_python_executable(self, code: str) -> str | None:
         if "playwright" not in code:

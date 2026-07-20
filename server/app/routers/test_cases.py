@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.routers.deps import get_current_user, get_test_design_service, get_project_service
+from app.services.export_format import current_export_datetime
 from app.services.test_design_service import TestDesignService
 from app.services.project_service import ProjectService
 from app.schemas.test_case import TestCaseCreate, TestCaseUpdate
@@ -118,8 +119,7 @@ def _build_test_cases_xlsx(project_name: str, rows: list[dict], export_type: str
     ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
     ws.row_dimensions[1].height = 28
 
-    from datetime import datetime
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    generated_at = current_export_datetime()
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_col)
     ws["A2"] = f"导出时间：{generated_at}    用例数量：{len(rows)}"
     ws["A2"].font = Font(name="微软雅黑", size=10, color="64748b")

@@ -5,11 +5,9 @@ interface LogoMarkProps {
   className?: string;
 }
 
-export function LogoMark({ size = 36, className }: LogoMarkProps) {
-  const raw = useId();
-  const uid = raw.replace(/:/g, "");
-  const gid = `lg-grad-${uid}`;
-  const glid = `lg-glow-${uid}`;
+export function LogoMark({ size = 30, className }: LogoMarkProps) {
+  const id = useId().replace(/:/g, "");
+  const gradientId = `aitest-logo-gradient-${id}`;
 
   return (
     <svg
@@ -23,33 +21,55 @@ export function LogoMark({ size = 36, className }: LogoMarkProps) {
       focusable="false"
     >
       <defs>
-        <linearGradient id={gid} x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#312e81" />
-          <stop offset="50%" stopColor="#5b21b6" />
-          <stop offset="100%" stopColor="#8b5cf6" />
+        <linearGradient id={gradientId} x1="2" y1="2" x2="34" y2="34" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#312E81" />
+          <stop offset="54%" stopColor="#6D28D9" />
+          <stop offset="100%" stopColor="#8B5CF6" />
         </linearGradient>
-        <filter id={glid} x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#5b21b6" floodOpacity="0.3" />
-        </filter>
       </defs>
 
-      {/* 主体：圆角方形 + 渐变 */}
-      <rect x="1" y="1" width="34" height="34" rx="8" fill={`url(#${gid})`} filter={`url(#${glid})`} />
-      <rect x="1" y="1" width="34" height="34" rx="8" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="0.5" />
+      <circle cx="18" cy="18" r="18" fill={`url(#${gradientId})`} />
 
-      {/* AI 电路网络：三个互联节点 */}
-      <line x1="10" y1="14" x2="20" y2="9"  stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" />
-      <line x1="20" y1="9"  x2="26" y2="17" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" />
-      <line x1="26" y1="17" x2="10" y2="14" stroke="rgba(255,255,255,0.35)" strokeWidth="1.2" />
-      <circle cx="10" cy="14" r="2.3" fill="white" />
-      <circle cx="20" cy="9"  r="2.3" fill="white" />
-      <circle cx="26" cy="17" r="2.3" fill="white" />
-
-      {/* 测试验证勾 */}
+      {/* 测试工作台主体 */}
       <path
-        d="M13 21.5  L16.2 24.7  L23 17.2"
+        d="M9 10.8C9 9.2 10.3 8 11.9 8h12.2C25.7 8 27 9.2 27 10.8v10.1c0 1.6-1.3 2.9-2.9 2.9H11.9A2.9 2.9 0 0 1 9 20.9V10.8Z"
+        fill="white"
+        fillOpacity="0.94"
+      />
+      <path
+        d="M12.4 13.4h5.5M12.4 16.4h4.1M12.4 19.4h3.3"
+        stroke="#5B21B6"
+        strokeWidth="1.45"
+        strokeLinecap="round"
+      />
+
+      {/* 测试通过标识 */}
+      <path
+        d="m18.8 17.3 2.3 2.3 4.3-4.8"
+        stroke="#5B21B6"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* 自动化链路节点 */}
+      <path
+        d="M12.1 26.8h11.8"
         stroke="white"
-        strokeWidth="2.4"
+        strokeOpacity="0.7"
+        strokeWidth="1.35"
+        strokeLinecap="round"
+      />
+      <circle cx="12.1" cy="26.8" r="1.8" fill="white" fillOpacity="0.92" />
+      <circle cx="18" cy="26.8" r="1.8" fill="white" fillOpacity="0.72" />
+      <circle cx="23.9" cy="26.8" r="1.8" fill="white" fillOpacity="0.92" />
+
+      {/* 质量通过角标 */}
+      <circle cx="26.4" cy="10.6" r="4.3" fill="#22C55E" />
+      <path
+        d="m24.5 10.6 1.25 1.25 2.75-3.05"
+        stroke="white"
+        strokeWidth="1.35"
         strokeLinecap="round"
         strokeLinejoin="round"
       />

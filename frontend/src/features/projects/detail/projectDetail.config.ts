@@ -1,4 +1,5 @@
 import type { AITaskType } from "../../../shared/types/platform";
+import { formatDateTime } from "../../../shared/utils/dateTime";
 export { priorityTone, reviewTone } from "../../../shared/utils/statusTone";
 
 export type ProjectDetailTabKey =
@@ -60,9 +61,5 @@ export function persistProjectTab(projectId: string | null | undefined, tab: Pro
 }
 
 export function formatProjectTime(iso?: string): string {
-  if (!iso) return "-";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return formatDateTime(iso);
 }

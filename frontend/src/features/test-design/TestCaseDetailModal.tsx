@@ -1,6 +1,7 @@
 import { Modal } from "../../shared/components/Modal";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { priorityTone, reviewTone } from "../../shared/utils/statusTone";
+import { formatDateTime } from "../../shared/utils/dateTime";
 import type { TestCase } from "../../shared/types/platform";
 
 interface TestCaseDetailModalProps {
@@ -10,11 +11,7 @@ interface TestCaseDetailModalProps {
 }
 
 function formatTime(iso: string | undefined): string {
-  if (!iso) return "-";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return formatDateTime(iso);
 }
 
 export function TestCaseDetailModal({ open, testCase, onClose }: TestCaseDetailModalProps) {

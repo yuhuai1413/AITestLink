@@ -114,6 +114,39 @@ class TestAIServiceLLMCall:
         assert call_args[1]["json"]["max_tokens"] == 16000  # default max_tokens
         assert len(call_args[1]["json"]["messages"]) == 2
 
+    def test_vision_call_sends_image_content_blocks(self):
+        from app.services.llm_client import OpenAICompatibleClient
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": "图片来源：需求图\n识别内容：登录按钮"}}]
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.services.llm_client.httpx.AsyncClient", return_value=mock_client):
+            result = _run_async(OpenAICompatibleClient().complete_with_images(
+                endpoint="https://api.test.com/v1",
+                api_key="test-key",
+                model="vision-model",
+                system_prompt="识别图片",
+                user_prompt="请识别",
+                image_data_urls=["data:image/png;base64,abc"],
+                task_type="需求解析",
+                max_tokens=8000,
+            ))
+
+        assert "登录按钮" in result
+        payload = mock_client.post.call_args[1]["json"]
+        assert payload["messages"][1]["content"][0] == {"type": "text", "text": "请识别"}
+        assert payload["messages"][1]["content"][1]["type"] == "image_url"
+        assert payload["messages"][1]["content"][1]["image_url"]["url"] == "data:image/png;base64,abc"
+
     @patch("app.services.ai_service._get_config_for_task")
     def test_parse_requirements_calls_llm(self, mock_get_config):
         mock_get_config.return_value = {

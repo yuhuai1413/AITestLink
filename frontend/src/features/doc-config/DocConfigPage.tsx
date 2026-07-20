@@ -11,6 +11,7 @@ import { docConfigApi, type ApiDocConfig } from "../../api/client";
 import { getMeWithAdmin } from "../auth/api/auth";
 import { TOKEN_KEY } from "../../shared/config/storage";
 import { useUnsavedChanges } from "../../shared/hooks/useUnsavedChanges";
+import { formatDateTime } from "../../shared/utils/dateTime";
 
 const DOC_CATEGORY_MAP: Record<string, string> = {
   "tpl-plan": "测试计划",
@@ -297,11 +298,7 @@ export function DocConfigPage() {
               label: "上传时间",
               width: "15%",
               align: "center",
-              render: (row) => {
-                if (!row.updatedAt) return <span>-</span>;
-                const d = new Date(row.updatedAt);
-                return <span style={{ fontSize: 13 }}>{`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`}</span>;
-              },
+              render: (row) => <span style={{ fontSize: 13 }}>{formatDateTime(row.updatedAt)}</span>,
             },
             {
               key: "actions",

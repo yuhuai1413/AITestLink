@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CheckCircle2, Loader2, WandSparkles } from "lucide-react";
+import { CheckCircle2, Download, Loader2, WandSparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useStore } from "../../../app/store";
 import { testPointsApi } from "../../../api/client";
@@ -19,7 +19,7 @@ import { formatProjectTime as formatTime, priorityTone, reviewTone } from "./pro
 // ═══════════════════════════════════════
 
 export function TestPointsTab({ projectId }: { projectId: string }) {
-  const { testPoints, files, requirements, refresh, refreshTestPoints, loading, initialLoading } = useProjectData(projectId);
+  const { project, testPoints, files, requirements, refresh, refreshTestPoints, loading, initialLoading } = useProjectData(projectId);
   const { state, dispatch } = useStore();
   const generating = useMemo(() => state.activeAITasks.includes(`${projectId}:测试点生成`), [state.activeAITasks, projectId]);
   const { showConfigError, dialog: configErrorDialog } = useConfigError();
@@ -83,6 +83,27 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
     }
   };
 
+  const handleExport = async () => {
+    if (testPoints.length === 0) {
+      toast.warning("暂无测试点，请先生成测试点");
+      return;
+    }
+    try {
+      const blob = await testPointsApi.export(projectId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project?.name || "未命名项目"}-测试点.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(`已导出 ${testPoints.length} 个测试点`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "导出失败");
+    }
+  };
+
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
       <SectionHeader title="测试点生成" description="AI 从文档中提取测试点，支持评审。" meta={<>共 <strong>{testPoints.length}</strong> 个测试点</>}
@@ -90,6 +111,7 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
               {selectedIds.size > 0 && <button className="ghost-button" type="button" onClick={() => setShowBatchApproveConfirm(true)}><CheckCircle2 size={13} /> 评审通过（{selectedIds.size}）</button>}
+              <button className="ghost-button" type="button" onClick={handleExport} disabled={generating}><Download size={13} /> 导出 Excel</button>
               <button className="primary-button" type="button" onClick={handleGenerate} disabled={generating}>{generating ? <><Loader2 size={13} className="animate-spin" /> 生成中...</> : <><WandSparkles size={13} /> 生成测试点</>}</button>
             </div>
           </div>

@@ -1,12 +1,13 @@
 import base64
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
+from app.services.export_format import format_api_datetime
 
 
 def model_to_dict(obj) -> dict:
@@ -15,9 +16,7 @@ def model_to_dict(obj) -> dict:
     for column in obj.__table__.columns:
         value = getattr(obj, column.name)
         if isinstance(value, datetime):
-            if value.tzinfo is None:
-                value = value.replace(tzinfo=timezone.utc)
-            value = value.isoformat()
+            value = format_api_datetime(value)
         elif hasattr(value, "hex"):
             value = str(value)
         camel = "".join(

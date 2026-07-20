@@ -100,12 +100,9 @@ export function useAPISync(enabled = true) {
     }, [dispatch]),
 
     updateRequirement: useCallback(async (id: string, data: Record<string, unknown>) => {
-      await requirementsApi.update(id, data as Record<string, unknown>);
-      const localReq = state.requirements.find((r) => r.id === id);
-      if (localReq) {
-        dispatch({ type: "UPDATE_REQUIREMENT", payload: { ...localReq, ...data } });
-      }
-    }, [dispatch, state.requirements.length]),
+      const updated = await requirementsApi.update(id, data as Record<string, unknown>);
+      dispatch({ type: "UPDATE_REQUIREMENT", payload: apiToRequirement(updated) });
+    }, [dispatch]),
 
     updateTestPoint: useCallback(async (id: string, data: Record<string, unknown>) => {
       await testPointsApi.update(id, data as Record<string, unknown>);
@@ -226,6 +223,9 @@ function apiToRequirement(r: ApiRequirement): Requirement {
     clarificationStatus: r.clarificationStatus,
     clarificationAnswer: r.clarificationAnswer,
     reviewStatus: r.reviewStatus ?? "待评审",
+    validityStatus: (r as any).validityStatus ?? "有效",
+    invalidReason: (r as any).invalidReason ?? "",
+    invalidatedAt: (r as any).invalidatedAt ?? null,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   };

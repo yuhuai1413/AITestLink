@@ -1,10 +1,16 @@
 /* ─── Dashboard ─── */
 
+.content:has(.dashboard) {
+  overflow: hidden;
+}
+
 .dashboard {
   display: grid;
   gap: var(--sp-sm);
-  grid-template-rows: auto auto 1fr;
-  min-height: 100%;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .dash-stats {
@@ -189,26 +195,32 @@
 .dash-card--fill .dash-recent-table {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
 }
 
 .dash-recent-table {
-  overflow-x: auto;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .dash-recent-table table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 14px;
 }
 
 .dash-recent-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   text-align: center;
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 700;
   color: var(--muted);
   border-bottom: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .dash-recent-table td {

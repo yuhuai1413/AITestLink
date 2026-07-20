@@ -14,6 +14,7 @@ import { EditProjectModal } from "../../features/projects/EditProjectModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import type { Project } from "../types/platform";
 import { priorityTone, projectDocStatusTone, projectTestStatusTone } from "../utils/statusTone";
+import { formatDateTime } from "../utils/dateTime";
 
 export type ProjectListMode = "projects" | "testCenter" | "documentCenter";
 
@@ -258,16 +259,7 @@ export function ProjectListPage({ mode }: ProjectListPageProps) {
                 key: "date",
                 label: "创建时间",
                 width: "18%",
-                render: (row) => {
-                  const d = new Date(row.createdAt);
-                  const y = d.getFullYear();
-                  const m = String(d.getMonth() + 1).padStart(2, "0");
-                  const day = String(d.getDate()).padStart(2, "0");
-                  const h = String(d.getHours()).padStart(2, "0");
-                  const min = String(d.getMinutes()).padStart(2, "0");
-                  const sec = String(d.getSeconds()).padStart(2, "0");
-                  return `${y}-${m}-${day} ${h}:${min}:${sec}`;
-                },
+                render: (row) => formatDateTime(row.createdAt),
               },
               {
                 key: "actions",

@@ -20,7 +20,7 @@ export function DocManageTab({ projectId }: { projectId: string }) {
             { key: "type", label: "类型", render: (r) => r.fileType },
             { key: "size", label: "大小", render: (r) => r.size },
             { key: "parseStatus", label: "解析状态", align: "center", render: (r) => <StatusPill tone={r.parseStatus === "已完成" ? "green" : r.parseStatus === "解析中" ? "blue" : "slate"}>{r.parseStatus}</StatusPill> },
-            { key: "date", label: "上传时间", render: (r) => { const d = new Date(r.uploadedAt); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`; } },
+            { key: "date", label: "上传时间", render: (r) => formatTime(r.uploadedAt) },
           ]} />
         )}
       </section>

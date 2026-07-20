@@ -20,9 +20,11 @@ from app.services.ai_service import AIService, check_config_for_task
 from app.services.ai_input_builder import test_case_batches, validate_case_runtime_fields, validate_persisted_traceability, validate_references
 from app.services.environment_service import EnvironmentService
 from app.services.script_runner import LocalScriptRunner
+from app.services.script_generation_quality import assert_cases_script_ready, generated_script_error_message
 from app.services.script_quality import validate_script_covers_test_case
 from app.services.ui_recognition_service import UIRecognitionService
 from app.services.data_lineage_service import VALID, invalidate_after_scripts
+from app.services.export_format import format_api_datetime
 from app.utils import model_to_dict
 
 logger = logging.getLogger(__name__)
@@ -45,9 +47,9 @@ def _execution_result(run: ExecutionRun, script: AutomationScript) -> dict:
         "status": run.status,
         "output": run.output or "",
         "error": run.error or None,
-        "executedAt": run.finished_at.isoformat() if run.finished_at else "",
-        "startedAt": run.started_at.isoformat() if run.started_at else None,
-        "finishedAt": run.finished_at.isoformat() if run.finished_at else None,
+        "executedAt": format_api_datetime(run.finished_at),
+        "startedAt": format_api_datetime(run.started_at) or None,
+        "finishedAt": format_api_datetime(run.finished_at) or None,
         "durationSeconds": _duration_seconds(run),
     }
 
@@ -236,12 +238,22 @@ async def execute_script(
     script.status = "未测试"
     db.add(run)
     await db.commit()
+    script_code = script.code or ""
+    quality_error = generated_script_error_message(script_code, test_case) if script.generated_by_ai and _is_ui_automation_code(script_code) else ""
+    if quality_error:
+        result_status = "失败"
+        output = ""
+        error = quality_error
+    else:
+        result_status = ""
+        output = ""
+        error = ""
     coverage = validate_script_covers_test_case(script.code or "", test_case)
-    if script.generated_by_ai and not coverage.ok:
+    if not result_status and script.generated_by_ai and not coverage.ok:
         result_status = "失败"
         output = ""
         error = f"脚本覆盖校验失败：{coverage.error}"
-    else:
+    elif not result_status:
         try:
             result = await script_runner.run_python(
                 code=script.code or "",
@@ -316,6 +328,7 @@ async def generate_scripts(
     try:
         validate_persisted_traceability(cases=test_cases)
         validate_case_runtime_fields(test_cases, for_automation=True)
+        assert_cases_script_ready(test_cases)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -331,6 +344,11 @@ async def generate_scripts(
             batch_scripts = await ai_service.generate_automation_scripts(payload, user["sub"])
             allowed_ids = {item["testCaseId"] for item in json.loads(payload)}
             validate_references(batch_scripts, "testCaseId", allowed_ids)
+            batch_cases_by_id = {item.id: item for item in test_cases if item.id in allowed_ids}
+            for item in batch_scripts:
+                quality_error = generated_script_error_message(item.get("code", ""), batch_cases_by_id[item["testCaseId"]])
+                if quality_error:
+                    raise ValueError(quality_error)
             ai_scripts.extend(batch_scripts)
 
         await invalidate_after_scripts(db, project_id, "自动化脚本已重新生成，执行结果已失效")
@@ -354,6 +372,9 @@ async def generate_scripts(
             db.add(script)
             scripts.append(script)
         await db.commit()
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         await db.rollback()
         logger.exception("AI script generation failed")
@@ -386,6 +407,11 @@ def _generate_template_scripts(project_id: str, test_cases: list, db: AsyncSessi
         db.add(script)
         scripts.append(script)
     return scripts
+
+
+def _is_ui_automation_code(code: str) -> bool:
+    lowered = code.lower()
+    return "playwright" in lowered or "appium" in lowered or "page." in lowered or "driver." in lowered
 
 
 def _generate_playwright_script(tc: TestCase) -> str:

@@ -11,6 +11,7 @@ import { StatusPill } from "../../../shared/components/StatusPill";
 import { Modal } from "../../../shared/components/Modal";
 import { formatTestStepsForDisplay } from "../../../shared/utils/formatTestSteps";
 import { formatProjectTime as formatTime, priorityTone, reviewTone } from "./projectDetail.config";
+import { validityTone } from "../../../shared/utils/statusTone";
 
 // ═══════════════════════════════════════
 // 数据融合（上传手动结果 + 合并展示）
@@ -124,6 +125,7 @@ export function DocFusionTab({ projectId }: { projectId: string }) {
               return matched ? <StatusPill tone="green">通过</StatusPill> : actual ? <StatusPill tone="red">未通过</StatusPill> : <StatusPill tone="slate">未执行</StatusPill>;
             }},
             { key: "reviewStatus", label: "评审状态", align: "center", render: (r) => <StatusPill tone={r.reviewStatus === "已通过" ? "green" : "slate"}>{r.reviewStatus || "待评审"}</StatusPill> },
+            { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <span title={r.invalidReason || ""}><StatusPill tone={validityTone(r.validityStatus)}>{r.validityStatus || "有效"}</StatusPill></span> },
             { key: "automation", label: "是否自动化", align: "center", render: (r) => r.automation === "是" ? "是" : "否" },
             { key: "testTime", label: "测试时间", render: (r) => <span>{getScriptTime(r)}</span> },
             { key: "actions", label: "操作", width: "100px", sticky: "right" as const, align: "center", render: (r) => (
@@ -153,6 +155,7 @@ export function DocFusionTab({ projectId }: { projectId: string }) {
               <div className="detail-row detail-row--full"><span className="detail-label">预期结果</span><pre className="detail-pre">{viewCase.expectedResult || "-"}</pre></div>
               <div className="detail-row detail-row--full"><span className="detail-label">实测结果</span><pre className="detail-pre">{viewActual || "-"}</pre></div>
               <div className="detail-row"><span className="detail-label">是否通过</span>{matched ? <StatusPill tone="green">通过</StatusPill> : viewActual ? <StatusPill tone="red">未通过</StatusPill> : <StatusPill tone="slate">未执行</StatusPill>}</div>
+              <div className="detail-row"><span className="detail-label">数据状态</span><span title={viewCase.invalidReason || ""}><StatusPill tone={validityTone(viewCase.validityStatus)}>{viewCase.validityStatus || "有效"}</StatusPill></span></div>
               <div className="detail-row"><span className="detail-label">是否自动化</span><span>{viewCase.automation === "是" ? "是" : "否"}</span></div>
               <div className="detail-row"><span className="detail-label">测试时间</span><span>{getScriptTime(viewCase)}</span></div>
             </div>
@@ -179,6 +182,7 @@ export function DocFusionTab({ projectId }: { projectId: string }) {
             <div className="detail-row detail-row--full"><span className="detail-label">预期结果</span><span>{editCase.expectedResult || "-"}</span></div>
             <div className="detail-row detail-row--full"><span className="detail-label">实测结果</span><textarea className="form-textarea" style={{ flex: 1 }} rows={5} value={editActual} onChange={(e) => { setEditActual(e.target.value); execDirty.markDirty(); }} placeholder="输入实际测试结果" /></div>
             <div className="detail-row"><span className="detail-label">是否通过</span><StatusPill tone={editActual && editCase.expectedResult && editActual.trim() === editCase.expectedResult.trim() ? "green" : editActual ? "red" : "slate"}>{editActual && editCase.expectedResult && editActual.trim() === editCase.expectedResult.trim() ? "通过" : editActual ? "未通过" : "未执行"}</StatusPill></div>
+            <div className="detail-row"><span className="detail-label">数据状态</span><span title={editCase.invalidReason || ""}><StatusPill tone={validityTone(editCase.validityStatus)}>{editCase.validityStatus || "有效"}</StatusPill></span></div>
             <div className="detail-row"><span className="detail-label">是否自动化</span><span>{editCase.automation === "是" ? "是" : "否"}</span></div>
             <div className="detail-row"><span className="detail-label">测试时间</span><span>{getScriptTime(editCase)}</span></div>
 

@@ -1,4 +1,5 @@
 """Tests for Requirements API endpoints."""
+from io import BytesIO
 
 
 def test_list_requirements(client, api_requirement, auth_headers):
@@ -114,3 +115,27 @@ def test_requirements_filtered_by_project(client, api_project, api_requirement, 
     assert response.status_code == 200
     data = response.json()
     assert all(r["projectId"] == api_project.id for r in data)
+
+
+def test_export_requirements_xlsx_has_readable_table_style(client, api_requirement, auth_headers):
+    response = client.get(f"/api/projects/{api_requirement.project_id}/requirements/export", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(BytesIO(response.content))
+    sheet = workbook["需求列表"]
+    assert sheet["A1"].value == "API测试项目 - 需求列表"
+    assert sheet["A3"].value == "序号"
+    assert sheet["B3"].value == "需求编号"
+    assert sheet["G3"].value == "业务规则"
+    assert sheet["A4"].alignment.horizontal == "center"
+    assert sheet["G4"].alignment.wrap_text is True
+    assert sheet["G4"].alignment.vertical == "center"
+    assert "T" not in sheet["N4"].value
+    assert "+00:00" not in sheet["N4"].value
+    assert len(sheet["N4"].value) == 19
+    assert sheet.freeze_panes == "A4"
+    assert sheet.auto_filter.ref.startswith("A3:")

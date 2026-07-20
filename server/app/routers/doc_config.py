@@ -12,6 +12,7 @@ from app.database import get_db
 from app.models.doc_template import DocTemplate
 from app.routers.auth import get_current_user, require_admin
 from app.services.doc_template_parser import dumps_structure, parse_docx_template
+from app.services.export_format import format_api_datetime
 
 router = APIRouter()
 
@@ -83,11 +84,11 @@ def _to_dict(m: DocTemplate) -> dict:
         "templateStructure": m.template_structure or "",
         "parseStatus": m.parse_status or "未解析",
         "parseError": m.parse_error or "",
-        "parsedAt": m.parsed_at.isoformat() if m.parsed_at else "",
+        "parsedAt": format_api_datetime(m.parsed_at),
         "promptTemplate": m.prompt_template or "",
         "displayOrder": m.display_order,
-        "createdAt": m.created_at.isoformat() if m.created_at else "",
-        "updatedAt": m.updated_at.isoformat() if m.updated_at else "",
+        "createdAt": format_api_datetime(m.created_at),
+        "updatedAt": format_api_datetime(m.updated_at),
     }
 
 
@@ -284,5 +285,5 @@ async def upload_template_file(
         "templateHash": tpl.template_hash or "",
         "parseStatus": tpl.parse_status or "未解析",
         "parseError": tpl.parse_error or "",
-        "parsedAt": tpl.parsed_at.isoformat() if tpl.parsed_at else "",
+        "parsedAt": format_api_datetime(tpl.parsed_at),
     }

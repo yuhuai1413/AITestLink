@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.models.model_config import ModelConfig
 from app.services.base import BaseService
+from app.services.export_format import format_api_datetime
 from app.utils import encrypt_value, decrypt_value
 from app.contracts.system import ModelConfigCreate, ModelConfigUpdate
 
@@ -36,10 +37,7 @@ class ModelConfigService(BaseService):
             # 日期格式化
             from datetime import datetime
             if isinstance(value, datetime):
-                from datetime import timezone
-                if value.tzinfo is None:
-                    value = value.replace(tzinfo=timezone.utc)
-                value = value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                value = format_api_datetime(value)
 
             # 转换为 camelCase
             camel = "".join(
@@ -163,7 +161,7 @@ class ModelConfigService(BaseService):
                     "configId": config.id,
                     "name": config.name,
                     "connectionStatus": config.connection_status or "untested",
-                    "lastTestedAt": config.last_tested_at.isoformat() if config.last_tested_at else None,
+                    "lastTestedAt": format_api_datetime(config.last_tested_at) or None,
                     "lastTestMessage": config.last_test_message or "",
                     "message": "已配置" if is_configured else f"请先在模型配置页面设置「{config.name}」的模型数据",
                 }

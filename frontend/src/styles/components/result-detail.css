@@ -114,6 +114,96 @@
   color: #f38ba8;
 }
 
+.script-modal-layout {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.script-modal-layout--edit {
+  gap: 0;
+}
+
+.script-modal-grid {
+  grid-template-columns: 1fr;
+  gap: 4px;
+  padding: 0;
+}
+
+.script-modal-grid--single {
+  grid-template-columns: 1fr;
+}
+
+.script-modal-grid__full {
+  grid-column: 1 / -1;
+}
+
+.script-code-block {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  padding: 16px;
+  font-size: 13px;
+  border-radius: var(--radius-l3);
+}
+
+.script-code-editor {
+  box-sizing: border-box;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  resize: none;
+  border-radius: 0;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  padding: 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.script-code-editor:focus {
+  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.42);
+}
+
+.recognition-modal-layout {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.recognition-tabs {
+  flex-shrink: 0;
+}
+
+.recognition-modal-scroll {
+  padding: 14px 2px 2px;
+}
+
+.recognition-card-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.recognition-page-card {
+  background: var(--surface);
+}
+
+.recognition-trace-row {
+  grid-template-columns: 32px minmax(112px, 150px) 58px minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.recognition-json-block {
+  max-height: none;
+}
+
 .json-block {
   margin: 0;
   max-height: 360px;
@@ -160,10 +250,14 @@
 }
 
 .trace-row__step {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
   font-size: 12px;
 }
 
 .trace-row__message {
+  min-width: 0;
   line-height: 1.5;
 }
 
