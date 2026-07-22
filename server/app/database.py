@@ -1,8 +1,12 @@
+import logging
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # 根据数据库类型配置
 # SQLite 不支持连接池参数，PostgreSQL/MySQL 支持
@@ -36,6 +40,7 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
         if db_url.startswith("sqlite"):
             await _migrate_sqlite_schema(conn)
+        await _seed_default_admin(conn)
 
 
 async def _migrate_sqlite_schema(conn):
@@ -258,6 +263,31 @@ async def _migrate_sqlite_schema(conn):
         """))
     if "automation_scripts" in automation_tables:
         await conn.execute(text("UPDATE automation_scripts SET status = '未测试' WHERE status IN ('待执行', '执行中', '成功')"))
+
+
+async def _seed_default_admin(conn):
+    """Create a default admin account if no users exist."""
+    import hashlib
+    import uuid as _uuid
+    from datetime import datetime, timezone
+
+    result = await conn.execute(text("SELECT COUNT(*) FROM users"))
+    count = result.scalar()
+    if count and count > 0:
+        return
+
+    user_id = str(_uuid.uuid4())
+    phone = "13800000000"
+    password = "admin@123456"
+    password_hash = hashlib.sha256(password.encode()).hexdigest()
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+    await conn.execute(text(
+        "INSERT INTO users (id, phone, nickname, password_hash, is_admin, is_active, created_at, updated_at) "
+        "VALUES (:id, :phone, :nickname, :hash, 1, 1, :now, :now)"
+    ), {"id": user_id, "phone": phone, "nickname": "管理员", "hash": password_hash, "now": now})
+
+    logger.info("Seeded default admin account: phone=%s", phone)
 
 
 async def close_db():
