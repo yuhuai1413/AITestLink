@@ -26,9 +26,6 @@ export function TestCasesTab({ projectId }: { projectId: string }) {
   const { state, dispatch } = useStore();
   const generating = useMemo(() => state.activeAITasks.includes(`${projectId}:用例生成`), [state.activeAITasks, projectId]);
   const { showConfigError, dialog: configErrorDialog } = useConfigError();
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [isReceiving, setIsReceiving] = useState(false);
-  const [streamCount, setStreamCount] = useState(0);
   const [detailCase, setDetailCase] = useState<TestCase | null>(null);
   const [editCase, setEditCase] = useState<TestCase | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -136,14 +133,14 @@ export function TestCasesTab({ projectId }: { projectId: string }) {
             { key: "caseCode", label: "用例编号", render: (r) => r.caseCode },
             { key: "module", label: "模块", render: (r) => r.module },
             { key: "testType", label: "测试类型", render: (r) => r.testType || "功能测试" },
-            { key: "feature", label: "测试点", align: "left", lineClamp: 2, render: (r) => <span title={r.feature}>{r.feature}</span> },
-            { key: "title", label: "用例标题", align: "left", lineClamp: 2, render: (r) => <span title={r.title}>{r.title}</span> },
+            { key: "feature", label: "测试点", align: "left", lineClamp: 3, render: (r) => <span title={r.feature}>{r.feature}</span> },
+            { key: "title", label: "用例标题", align: "left", lineClamp: 3, render: (r) => <span title={r.title}>{r.title}</span> },
             { key: "targetPlatform", label: "测试端", width: "72px", align: "center", render: (r) => r.targetPlatform || "PC" },
-            { key: "testUrl", label: "测试地址", align: "left", lineClamp: 2, render: (r) => <span title={r.testUrl}>{r.testUrl || "未配置"}</span> },
+            { key: "testUrl", label: "测试地址", align: "left", lineClamp: 3, render: (r) => <span title={r.testUrl}>{r.testUrl || "未配置"}</span> },
             { key: "requiredRole", label: "角色", width: "100px", align: "center", render: (r) => r.requiredRole || "无" },
             { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
-            { key: "steps", label: "测试步骤", align: "left", lineClamp: 2, render: (r) => <span className="test-steps-preview" title={r.steps}>{formatTestStepsForDisplay(r.steps)}</span> },
-            { key: "expectedResult", label: "预期结果", align: "left", lineClamp: 2, render: (r) => <span title={r.expectedResult}>{r.expectedResult}</span> },
+            { key: "steps", label: "测试步骤", align: "left", lineClamp: 3, render: (r) => <span className="test-steps-preview" title={r.steps}>{formatTestStepsForDisplay(r.steps)}</span> },
+            { key: "expectedResult", label: "预期结果", align: "left", lineClamp: 3, render: (r) => <span title={r.expectedResult}>{r.expectedResult}</span> },
             { key: "reviewStatus", label: "评审", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus}</StatusPill></button> },
             { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <span title={r.invalidReason || ""}><StatusPill tone={r.validityStatus === "已失效" ? "amber" : "green"}>{r.validityStatus || "有效"}</StatusPill></span> },
             { key: "automation", label: "是否自动化", align: "center", render: (r) => <StatusPill tone={r.automation === "是" ? "green" : "slate"}>{r.automation === "是" ? "是" : "否"}</StatusPill> },

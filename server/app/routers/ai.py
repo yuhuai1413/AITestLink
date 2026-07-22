@@ -21,8 +21,6 @@ from app.models.environment_config import EnvironmentConfig, TestAccount
 from app.models.ui_snapshot import UISnapshot
 from app.routers.auth import get_current_user
 from app.routers.ai_documents import router as documents_router
-from app.routers.ai_streaming import router as streaming_router
-from app.routers.deps import get_current_user_sse
 from app.services.ai_service import AIService, check_config_for_task
 from app.services.ai_input_builder import (
     requirement_batches,
@@ -61,7 +59,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 router.include_router(documents_router)
-router.include_router(streaming_router)
 ai_service = AIService()
 
 

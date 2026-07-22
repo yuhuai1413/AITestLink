@@ -16,6 +16,7 @@ from app.contracts.document import RequirementUpdate
 from app.services.requirement_clarification import (
     CLARIFICATION_NOT_REQUIRED,
     CLARIFICATION_PENDING,
+    clarification_answer_quality_issues,
     default_clarification_status,
     is_clarification_resolved,
 )
@@ -218,7 +219,11 @@ class DocumentService(BaseService):
         req.confirmed = req.clarification_status in {"已确认", "无需确认"}
 
         if req.review_status == "已通过" and not is_clarification_resolved(req.question, req.clarification_status, req.clarification_answer):
-            raise HTTPException(status_code=400, detail="该需求还有待确认问题未处理，请先填写确认结论")
+            issues = clarification_answer_quality_issues(req.question, req.clarification_answer)
+            detail = "该需求还有待确认问题未处理，请先填写确认结论"
+            if issues:
+                detail = "确认结论仍不充分：" + "；".join(issues)
+            raise HTTPException(status_code=400, detail=detail)
 
         req.updated_at = self._now()
         await self.db.commit()

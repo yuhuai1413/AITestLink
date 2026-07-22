@@ -23,6 +23,8 @@ export function BatchEditModal({
   const [apiKey, setApiKey] = useState("");
   const [endpoint, setEndpoint] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const providerOptions = Object.keys(providerModels).map((p) => ({ value: p, label: p }));
+  const modelOptions = (providerModels[provider]?.models || []).map((m) => ({ value: m, label: m }));
 
   // 根据 API Key 自动判断 Base URL
   const detectBaseUrl = (key: string): string => {
@@ -41,6 +43,13 @@ export function BatchEditModal({
     if (!endpoint || endpoint.includes("xiaomimimo")) {
       const detected = detectBaseUrl(value);
       if (detected) setEndpoint(detected);
+    }
+  };
+
+  const handleProviderChange = (value: string) => {
+    setProvider(value);
+    if (!providerModels[value]?.models.includes(modelName)) {
+      setModelName("");
     }
   };
 
@@ -63,19 +72,19 @@ export function BatchEditModal({
       </>}
     >
       <form className="form-stack" onSubmit={handleSubmit}>
-        <div style={{ padding: "12px 16px", background: "var(--blue-soft)", borderRadius: 8, fontSize: 13, color: "var(--text)", marginBottom: 8 }}>
+        <div style={{ padding: "12px 16px", background: "var(--blue-soft)", borderRadius: "var(--radius-l2)", fontSize: 13, color: "var(--text)", marginBottom: 8 }}>
           将为选中的 <strong>{selectedCount}</strong> 个配置统一设置以下信息
         </div>
         <div className="form-row">
           <label className="form-label">
             供应商
-            <MenuSelect value={provider} options={[{ value: "", label: "请选择供应商" }, ...Object.keys(providerModels).map((p) => ({ value: p, label: p }))]} onChange={setProvider} required />
+            <MenuSelect value={provider} options={providerOptions} onChange={handleProviderChange} placeholder="请选择供应商" maxVisibleItems={7} required />
           </label>
         </div>
         <div className="form-row">
           <label className="form-label">
             模型名称
-            <MenuSelect value={modelName} options={[{ value: "", label: "请选择模型" }, ...(providerModels[provider]?.models || []).map((m) => ({ value: m, label: m }))]} onChange={setModelName} required />
+            <MenuSelect value={modelName} options={modelOptions} onChange={setModelName} placeholder="请选择模型" disabled={!provider} required />
           </label>
         </div>
         <div className="form-row">

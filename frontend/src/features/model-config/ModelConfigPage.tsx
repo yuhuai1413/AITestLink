@@ -77,6 +77,7 @@ export function ModelConfigPage() {
   const [promptTesting, setPromptTesting] = useState(false);
   const [adminPromptsLoading, setAdminPromptsLoading] = useState(false);
   const [editingPromptConfig, setEditingPromptConfig] = useState<ApiModelConfig | null>(null);
+  const providerOptions = useMemo(() => Object.keys(providerModels).map((p) => ({ value: p, label: p })), []);
 
   // 加载配置
   useEffect(() => {
@@ -442,7 +443,7 @@ export function ModelConfigPage() {
                 );
               },
             },
-            { key: "description", label: "说明", align: "left", width: "16%", lineClamp: 2, render: (row) => <span style={{ fontSize: 13 }}>{row.description}</span> },
+            { key: "description", label: "说明", align: "left", width: "16%", lineClamp: 3, render: (row) => <span style={{ fontSize: 13 }}>{row.description}</span> },
             { key: "provider", label: "供应商", width: "8%", render: (row) => <span className="provider-tag">{row.provider ? row.provider.split("-")[0] : "-"}</span> },
             { key: "modelName", label: "模型", width: "10%", render: (row) => row.modelName || "-" },
             {
@@ -455,7 +456,7 @@ export function ModelConfigPage() {
               key: "endpoint",
               label: "Base URL",
               width: "14%",
-              lineClamp: 2,
+              lineClamp: 3,
               render: (row) => {
                 const ep = row.endpoint;
                 if (!ep) return <span className="text-muted" style={{ fontSize: 12 }}>-</span>;
@@ -569,17 +570,29 @@ export function ModelConfigPage() {
             <div className="form-row">
               <label className="form-label">
                 供应商
-                <MenuSelect value={editingConfig.provider} options={[{ value: "", label: "请选择供应商" }, ...Object.keys(providerModels).map((p) => ({ value: p, label: p }))]} onChange={(value) => { setEditingConfig({ ...editingConfig, provider: value }); configDirty.markDirty(); }} />
+                <MenuSelect
+                  value={editingConfig.provider}
+                  options={providerOptions}
+                  placeholder="请选择供应商"
+                  onChange={(value) => {
+                    const models = providerModels[value]?.models || [];
+                    setEditingConfig({
+                      ...editingConfig,
+                      provider: value,
+                      modelName: models.includes(editingConfig.modelName) ? editingConfig.modelName : "",
+                    });
+                    configDirty.markDirty();
+                  }}
+                />
               </label>
             </div>
             <div className="form-row">
               <label className="form-label">
                 模型名称
                 <MenuSelect value={editingConfig.modelName} options={[
-                  { value: "", label: "请选择模型" },
                   ...(providerModels[editingConfig.provider]?.models || []).map((m) => ({ value: m, label: m })),
                   ...(editingConfig.modelName && !providerModels[editingConfig.provider]?.models?.includes(editingConfig.modelName) ? [{ value: editingConfig.modelName, label: editingConfig.modelName }] : []),
-                ]} onChange={(value) => { setEditingConfig({ ...editingConfig, modelName: value }); configDirty.markDirty(); }} />
+                ]} placeholder="请选择模型" disabled={!editingConfig.provider} onChange={(value) => { setEditingConfig({ ...editingConfig, modelName: value }); configDirty.markDirty(); }} />
               </label>
             </div>
             <div className="form-row">

@@ -109,13 +109,13 @@ export function DocFusionTab({ projectId }: { projectId: string }) {
           <DataTable rows={testCases} getRowKey={(r) => r.id} columns={[
             { key: "module", label: "模块", render: (r) => r.module },
             { key: "caseCode", label: "用例编号", render: (r) => r.caseCode },
-            { key: "feature", label: "测试点", align: "left", lineClamp: 2, render: (r) => <span title={r.feature}>{r.feature}</span> },
-            { key: "title", label: "用例标题", align: "left", lineClamp: 2, render: (r) => <span title={r.title}>{r.title}</span> },
+            { key: "feature", label: "测试点", align: "left", lineClamp: 3, render: (r) => <span title={r.feature}>{r.feature}</span> },
+            { key: "title", label: "用例标题", align: "left", lineClamp: 3, render: (r) => <span title={r.title}>{r.title}</span> },
             { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
             { key: "testType", label: "测试类型", align: "center", render: (r) => r.testType || "功能测试" },
-            { key: "steps", label: "测试步骤", align: "left", lineClamp: 2, render: (r) => <span className="test-steps-preview" title={r.steps}>{formatTestStepsForDisplay(r.steps)}</span> },
-            { key: "expectedResult", label: "预期结果", align: "left", lineClamp: 2, render: (r) => <span title={r.expectedResult}>{r.expectedResult}</span> },
-            { key: "actualResult", label: "实测结果", align: "left", lineClamp: 2, render: (r) => {
+            { key: "steps", label: "测试步骤", align: "left", lineClamp: 3, render: (r) => <span className="test-steps-preview" title={r.steps}>{formatTestStepsForDisplay(r.steps)}</span> },
+            { key: "expectedResult", label: "预期结果", align: "left", lineClamp: 3, render: (r) => <span title={r.expectedResult}>{r.expectedResult}</span> },
+            { key: "actualResult", label: "实测结果", align: "left", lineClamp: 3, render: (r) => {
               const display = r.actualResult || manualResults[r.caseCode] || "-";
               return <span style={{ fontSize: 12 }}>{display}</span>;
             }},

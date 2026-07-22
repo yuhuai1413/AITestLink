@@ -65,10 +65,6 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
     await refreshScripts();
   };
 
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [isReceiving, setIsReceiving] = useState(false);
-  const [streamCount, setStreamCount] = useState(0);
-
   const handleGenerate = async () => {
     if (!hasPrerequisite) { toast.warning("请先生成测试用例并标记适合自动化的用例"); return; }
     if (invalidTCCount > 0) { toast.warning(`还有 ${invalidTCCount} 条适合自动化的用例已失效，请先重新生成测试用例`); return; }
@@ -120,7 +116,7 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
             <DataTable rows={scripts} getRowKey={(r) => r.id} columns={[
               { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
               { key: "scriptCode", label: "脚本编号", render: (r) => r.scriptCode || <span style={{ color: "var(--muted)" }}>-</span> },
-              { key: "testCase", label: "关联用例", align: "left", lineClamp: 2, render: (r) => {
+              { key: "testCase", label: "关联用例", align: "left", lineClamp: 3, render: (r) => {
                 const tc = testCases.find((t) => t.id === r.testCaseId);
                 return tc ? <span title={`${tc.caseCode} ${tc.title}`}>{tc.caseCode} · {tc.title}</span> : <span style={{ color: "var(--muted)" }}>-</span>;
               }},
@@ -235,7 +231,7 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
         )}
       </Modal>
 
-      <ConfirmDialog open={showGenerateConfirm} title="重新生成脚本" message={`当前已有 ${existingScriptCount} 个脚本，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" confirmLoading={isStreaming} onConfirm={handleGenerate} onCancel={() => setShowGenerateConfirm(false)} />
+      <ConfirmDialog open={showGenerateConfirm} title="重新生成脚本" message={`当前已有 ${existingScriptCount} 个脚本，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" confirmLoading={generating} onConfirm={handleGenerate} onCancel={() => setShowGenerateConfirm(false)} />
       <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 个脚本标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
       {configErrorDialog}
       {scriptDirty.confirmDialog}

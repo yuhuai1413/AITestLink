@@ -302,9 +302,9 @@ export function EnvironmentPage({ projectId }: Props) {
           rows={environments}
           getRowKey={(r) => r.id}
           columns={[
-            { key: "name", label: "环境名称", width: "16%", align: "center", lineClamp: 2, render: (r) => <strong>{r.name}{r.isDefault ? `（默认${r.environmentType}）` : ""}</strong> },
+            { key: "name", label: "环境名称", width: "16%", align: "center", lineClamp: 3, render: (r) => <strong>{r.name}{r.isDefault ? `（默认${r.environmentType}）` : ""}</strong> },
             { key: "environmentType", label: "类型", width: "8%", align: "center", render: (r) => <StatusPill tone="blue">{r.environmentType}</StatusPill> },
-            { key: "targetUrl", label: "测试入口", width: "26%", align: "left", lineClamp: 2, render: (r) => (r.environmentType === "APP" ? r.appUrl : r.webUrl) || <span className="text-muted">-</span> },
+            { key: "targetUrl", label: "测试入口", width: "26%", align: "left", lineClamp: 3, render: (r) => (r.environmentType === "APP" ? r.appUrl : r.webUrl) || <span className="text-muted">-</span> },
             { key: "accounts", label: "账号数量", width: "10%", align: "center", render: (r) => <span className="inline-icon-text"><Users size={14} /> {r.accounts?.length || 0}</span> },
             { key: "captchaRequired", label: "验证码", width: "10%", align: "center", render: (r) => r.captchaRequired ? (r.captchaCode ? `固定 ${r.captchaCode}` : "需要") : (r.captchaCode ? `忽略/填 ${r.captchaCode}` : "不需要") },
             { key: "uiSnapshot", label: "系统识别", width: "12%", align: "center", render: (r) => {

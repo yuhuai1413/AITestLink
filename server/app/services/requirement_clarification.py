@@ -12,6 +12,28 @@ CLARIFICATION_STATUSES = {
     CLARIFICATION_NOT_REQUIRED,
 }
 
+_VAGUE_ANSWER_PATTERNS = (
+    "待确认",
+    "后续确认",
+    "后续补充",
+    "看情况",
+    "按实际",
+    "按实际情况",
+    "用户提供",
+    "客户提供",
+    "暂不明确",
+    "不确定",
+    "待定",
+    "todo",
+    "TODO",
+)
+
+_DOMAIN_KEYWORDS = (
+    "角色", "权限", "范围", "可见", "不可见", "不可操作", "无权限", "部门", "用户", "账号", "创建人",
+    "数据", "字段", "状态", "条件", "规则", "口径", "来源", "取值", "公式", "计算", "触发", "报价单", "合同", "指导价",
+    "文件", "审批", "提示", "页面", "按钮", "菜单", "列表", "结果", "预期", "校验",
+)
+
 _NO_QUESTION_VALUES = {
     "",
     "无",
@@ -47,6 +69,47 @@ def has_real_clarification_question(question: str | None) -> bool:
     return any(part not in _NO_QUESTION_VALUES and not is_auxiliary_doc_note(part) for part in parts)
 
 
+def clarification_answer_quality_issues(question: str | None, answer: str | None) -> list[str]:
+    """Return user-facing issues when a clarification answer is still not actionable.
+
+    This is intentionally deterministic. It catches clearly insufficient answers
+    early without adding another LLM call to the save/review path.
+    """
+    real_questions = [part for part in _question_parts(question) if part not in _NO_QUESTION_VALUES and not is_auxiliary_doc_note(part)]
+    if not real_questions:
+        return []
+
+    normalized_answer = (answer or "").strip()
+    if not normalized_answer:
+        return ["确认结论为空，请逐条回答待确认问题"]
+
+    lowered_answer = normalized_answer.lower()
+    vague_hits = [token for token in _VAGUE_ANSWER_PATTERNS if token.lower() in lowered_answer]
+    if vague_hits:
+        return [f"确认结论仍包含不明确表述：{', '.join(vague_hits[:3])}"]
+
+    compact_answer = re.sub(r"\s+", "", normalized_answer)
+    if len(compact_answer) < max(12, len(real_questions) * 8):
+        return ["确认结论过短，无法判断是否已回答清楚待确认问题"]
+
+    question_text = " ".join(real_questions)
+    question_keywords = [keyword for keyword in _DOMAIN_KEYWORDS if keyword in question_text]
+    uncovered = [keyword for keyword in question_keywords if keyword not in normalized_answer]
+    if question_keywords and len(uncovered) == len(question_keywords):
+        return ["确认结论没有覆盖待确认问题中的关键业务对象或判断口径"]
+
+    if len(real_questions) >= 2:
+        numbered_answer = bool(re.search(r"(^|[\n；;])\s*(\d+|[一二三四五六七八九十]+)[、.．)]", normalized_answer))
+        if not numbered_answer and len(compact_answer) < len(real_questions) * 16:
+            return ["存在多条待确认问题，请在确认结论中逐条说明"]
+
+    return []
+
+
+def is_clarification_answer_sufficient(question: str | None, answer: str | None) -> bool:
+    return not clarification_answer_quality_issues(question, answer)
+
+
 def default_clarification_status(
     question: str | None,
     confirmed: bool | None = None,
@@ -54,7 +117,7 @@ def default_clarification_status(
 ) -> str:
     if not has_real_clarification_question(question):
         return CLARIFICATION_NOT_REQUIRED
-    if (answer or "").strip():
+    if is_clarification_answer_sufficient(question, answer):
         return CLARIFICATION_CONFIRMED
     return CLARIFICATION_PENDING
 
@@ -67,7 +130,7 @@ def is_clarification_resolved(
     if not has_real_clarification_question(question):
         return True
     if (status or CLARIFICATION_PENDING) == CLARIFICATION_CONFIRMED:
-        return True
+        return is_clarification_answer_sufficient(question, answer)
     if (status or CLARIFICATION_PENDING) == CLARIFICATION_NOT_REQUIRED:
         return bool((answer or "").strip())
     return False

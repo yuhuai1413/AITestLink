@@ -258,7 +258,7 @@ export function DocConfigPage() {
               key: "name",
               label: "模板名称",
               width: "15%",
-              lineClamp: 2,
+              lineClamp: 3,
               render: (row) => <span style={{ fontSize: 14 }}>{row.name}</span>,
             },
             {
@@ -277,7 +277,7 @@ export function DocConfigPage() {
               label: "说明",
               width: "18%",
               align: "left",
-              lineClamp: 2,
+              lineClamp: 3,
               render: (row) => <span style={{ fontSize: 13 }}>{row.description || "-"}</span>,
             },
             {

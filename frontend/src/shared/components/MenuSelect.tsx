@@ -1,5 +1,5 @@
 import { ChevronDown } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 const MENU_SELECT_OPEN_EVENT = "aitestlink:menu-select-open";
 const MENU_SELECT_CLOSE_ANIMATION_MS = 180;
@@ -18,6 +18,7 @@ interface MenuSelectProps<T extends string> {
   className?: string;
   size?: "default" | "compact";
   required?: boolean;
+  maxVisibleItems?: number;
 }
 
 export function MenuSelect<T extends string>({
@@ -29,6 +30,7 @@ export function MenuSelect<T extends string>({
   className = "",
   size = "default",
   required = false,
+  maxVisibleItems,
 }: MenuSelectProps<T>) {
   const [open, setOpen] = useState(false);
   const [renderMenu, setRenderMenu] = useState(false);
@@ -112,6 +114,7 @@ export function MenuSelect<T extends string>({
       {renderMenu ? (
         <div
           className={closing ? "menu-select__menu menu-select__menu--closing" : "menu-select__menu"}
+          style={maxVisibleItems ? { "--menu-select-max-items": maxVisibleItems } as CSSProperties : undefined}
           onClick={(event) => event.stopPropagation()}
           onMouseLeave={() => setActiveIndex(null)}
         >

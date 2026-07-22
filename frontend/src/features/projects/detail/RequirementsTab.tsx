@@ -15,12 +15,18 @@ import { Modal } from "../../../shared/components/Modal";
 import { MenuSelect } from "../../../shared/components/MenuSelect";
 import { formatProjectTime as formatTime, reviewTone } from "./projectDetail.config";
 import { riskTone, validityTone } from "../../../shared/utils/statusTone";
+import {
+  CLARIFICATION_CONFIRMED,
+  CLARIFICATION_NOT_REQUIRED,
+  CLARIFICATION_PENDING,
+  clarificationAnswerQualityIssues,
+  getClarificationStatus,
+  hasRealClarificationQuestion,
+  isClarificationResolved,
+} from "../../../shared/utils/requirementClarification";
 
 // ═══════════════════════════════════════
 
-const CLARIFICATION_PENDING = "待确认";
-const CLARIFICATION_CONFIRMED = "已确认";
-const CLARIFICATION_NOT_REQUIRED = "无需确认";
 const reverseScopeOptions = [
   { value: "recognized", label: "仅已识别页面" },
   { value: "default", label: "默认环境可见功能" },
@@ -40,27 +46,6 @@ const reverseWriteModeOptions = [
 
 function apiErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
-}
-
-function hasRealClarificationQuestion(question?: string) {
-  const parts = (question || "")
-    .split(/[\n；;]+/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (parts.length === 0) return false;
-  const emptyValues = new Set(["无", "暂无", "无。", "暂无。", "无待确认问题", "无待确认问题。"]);
-  return parts.some((part) => !emptyValues.has(part) && !part.startsWith("【辅助文档信息】") && !part.startsWith("辅助文档信息"));
-}
-
-function getClarificationStatus(r: any) {
-  if (!hasRealClarificationQuestion(r.question)) return CLARIFICATION_NOT_REQUIRED;
-  if ((r.clarificationAnswer || "").trim()) return CLARIFICATION_CONFIRMED;
-  return CLARIFICATION_PENDING;
-}
-
-function isClarificationResolved(r: any) {
-  const status = getClarificationStatus(r);
-  return status === CLARIFICATION_CONFIRMED || status === CLARIFICATION_NOT_REQUIRED;
 }
 
 function clarificationTone(status: string): "green" | "amber" | "slate" {
@@ -223,11 +208,11 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "reqId", label: "需求编号", width: "12%", render: (r) => r.reqId || <span className="text-muted">-</span> },
             { key: "module", label: "模块", width: "10%", render: (r) => r.module },
-            { key: "feature", label: "功能点", width: "10%", align: "left", lineClamp: 2, render: (r) => r.feature },
+            { key: "feature", label: "功能点", width: "10%", align: "left", lineClamp: 3, render: (r) => r.feature },
             { key: "source", label: "来源", width: "10%", render: (r) => r.source },
             { key: "risk", label: "风险", align: "center", render: (r) => <StatusPill tone={riskTone(r.risk)}>{r.risk}</StatusPill> },
-            { key: "rule", label: "业务规则", width: "20%", align: "left", lineClamp: 2, render: (r) => <span title={r.rule}>{r.rule}</span> },
-            { key: "question", label: "待确认问题", width: "20%", align: "left", lineClamp: 2, render: (r) => (
+            { key: "rule", label: "业务规则", width: "20%", align: "left", lineClamp: 3, render: (r) => <span title={r.rule}>{r.rule}</span> },
+            { key: "question", label: "待确认问题", width: "20%", align: "left", lineClamp: 3, render: (r) => (
               r.question ? <span title={r.question}>{r.question}</span> : <span className="text-muted">-</span>
             ) },
             { key: "clarificationStatus", label: "确认状态", width: "8%", align: "center", render: (r) => {
@@ -273,6 +258,11 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
           <button className="primary-button" type="button" onClick={async () => {
             if (!editReq) return;
             try {
+              const clarificationIssues = hasRealClarificationQuestion(editQuestion) ? clarificationAnswerQualityIssues(editQuestion, editClarificationAnswer) : [];
+              if (clarificationIssues.length > 0) {
+                toast.warning(`确认结论仍不充分：${clarificationIssues.join("；")}`);
+                return;
+              }
               const updatedReq = await requirementsApi.update(editReq.id, {
                 rule: editRule,
                 question: editQuestion,
@@ -300,7 +290,7 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
             {hasRealClarificationQuestion(editQuestion) && (
               <>
                 <div className="detail-row detail-row--full"><span className="detail-label">待确认问题</span><textarea className="form-textarea" style={{ flex: 1 }} rows={5} value={editQuestion} onChange={(e) => { setEditQuestion(e.target.value); reqDirty.markDirty(); }} /></div>
-                <div className="detail-row detail-row--full"><span className="detail-label">确认结论</span><textarea className="form-textarea" style={{ flex: 1 }} rows={4} placeholder="填写用户确认后的结论，例如：部门需求仅覆盖销售部，财务部暂不纳入本次测试。" value={editClarificationAnswer} onChange={(e) => { setEditClarificationAnswer(e.target.value); reqDirty.markDirty(); }} /></div>
+                <div className="detail-row detail-row--full"><span className="detail-label">确认结论</span><div style={{ flex: 1, display: "grid", gap: 8 }}><textarea className="form-textarea" rows={4} placeholder="填写用户确认后的结论，例如：部门需求仅覆盖销售部，财务部暂不纳入本次测试。" value={editClarificationAnswer} onChange={(e) => { setEditClarificationAnswer(e.target.value); reqDirty.markDirty(); }} />{clarificationAnswerQualityIssues(editQuestion, editClarificationAnswer).length > 0 && <div className="field-hint field-hint--warning">{clarificationAnswerQualityIssues(editQuestion, editClarificationAnswer)[0]}</div>}</div></div>
               </>
             )}
             <div className="detail-row"><span className="detail-label">生成时间</span><span>{formatTime(editReq.createdAt)}</span></div>

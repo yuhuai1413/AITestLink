@@ -12,20 +12,32 @@ import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { Modal } from "../../../shared/components/Modal";
 import { TOKEN_KEY } from "../../../shared/config/storage";
 import { API_BASE } from "../../../shared/config/deploy";
+import { getClarificationStatus } from "../../../shared/utils/requirementClarification";
 import { formatProjectTime as formatTime } from "./projectDetail.config";
+
+type PrerequisiteKey = "files" | "requirements" | "testPoints" | "testCases" | "scripts" | "traceability";
+
+type PrerequisiteItem = {
+  label: string;
+  ready: boolean;
+  optional?: boolean;
+  summary: string;
+  detail: string;
+  blockers: string[];
+};
 
 // ═══════════════════════════════════════
 // 文档生成（模板 + 生成 + 下载）
 // ═══════════════════════════════════════
 
 export function DocGenerateTab({ projectId }: { projectId: string }) {
-  const { files, requirements, testPoints, testCases, refresh, loading, initialLoading } = useProjectData(projectId);
+  const { files, requirements, testPoints, testCases, scripts, refresh, loading, initialLoading } = useProjectData(projectId);
   const templates = [
-    { id: "tpl-plan", name: "软件测试计划", desc: "测试范围、策略、资源、进度安排", needs: ["files"] },
-    { id: "tpl-spec", name: "软件测试说明", desc: "测试环境、用例设计、执行方法", needs: ["files", "testCases"] },
-    { id: "tpl-report", name: "软件测试报告", desc: "执行结果、缺陷统计、风险分析", needs: ["testCases"] },
-    { id: "tpl-pc", name: "PC端操作手册", desc: "系统操作流程、功能说明", needs: ["files"] },
-    { id: "tpl-app", name: "APP端操作手册", desc: "移动端操作流程、功能说明", needs: ["files"] },
+    { id: "tpl-plan", name: "软件测试计划", desc: "测试范围、策略、资源、进度安排", needs: ["files", "requirements", "testPoints", "traceability"] },
+    { id: "tpl-spec", name: "软件测试说明", desc: "测试环境、用例设计、执行方法", needs: ["files", "requirements", "testPoints", "testCases", "traceability"] },
+    { id: "tpl-report", name: "软件测试报告", desc: "执行结果、缺陷统计、风险分析", needs: ["requirements", "testPoints", "testCases", "scripts", "traceability"] },
+    { id: "tpl-pc", name: "PC端操作手册", desc: "系统操作流程、功能说明", needs: ["files", "requirements"] },
+    { id: "tpl-app", name: "APP端操作手册", desc: "移动端操作流程、功能说明", needs: ["files", "requirements"] },
   ];
   const [generating, setGenerating] = useState<string | null>(null);
   const [statusMap, setStatusMap] = useState<Record<string, { status: string; generatedAt: string | null }>>({});
@@ -33,6 +45,7 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [reGenerateId, setReGenerateId] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [prereqDetailId, setPrereqDetailId] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -44,22 +57,149 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
   }, [projectId]);
 
   const getTemplateStatus = (tpl: typeof templates[0]): string => {
-    // 数据库状态未加载完，显示加载中
     if (!statusLoaded || initialLoading) return "加载中";
     const stored = statusMap[tpl.id];
-    if (stored) return stored.status;
-    // 数据库没有记录时，根据数据计算初始状态
-    if (tpl.needs.includes("files") && files.length === 0) return "数据不足";
-    if (tpl.needs.includes("testCases") && testCases.length === 0) return "数据不足";
-    return "待生成";
+    if (stored?.status === "生成中" || stored?.status === "已生成") return stored.status;
+    if (!isReady(tpl.needs)) return "数据不足";
+    return stored?.status || "待生成";
+  };
+
+  const countInvalid = (items: Array<{ validityStatus?: string }>) => items.filter((item) => item.validityStatus === "已失效").length;
+  const countUnreviewed = (items: Array<{ reviewStatus?: string }>) => items.filter((item) => item.reviewStatus !== "已通过").length;
+  const countValid = (items: Array<{ validityStatus?: string }>) => items.length - countInvalid(items);
+  const countReviewed = (items: Array<{ reviewStatus?: string }>) => items.length - countUnreviewed(items);
+  const parsedFileCount = files.filter((item) => item.parseStatus === "已完成").length;
+  const parseFailedFileCount = files.filter((item) => item.parseStatus === "失败").length;
+  const clarificationPendingCount = requirements.filter((item) => getClarificationStatus(item) === "待确认").length;
+  const pointsWithRequirementCount = testPoints.filter((item) => Boolean(item.requirementId)).length;
+  const casesWithPointCount = testCases.filter((item) => Boolean(item.testPointId)).length;
+  const casesWithRequirementCount = testCases.filter((item) => Boolean(item.requirementId)).length;
+  const automatableCaseCount = testCases.filter((item) => item.automation === "是").length;
+  const scriptLinkedCaseIds = new Set(scripts.map((item) => item.testCaseId).filter(Boolean));
+  const scriptCoveredCaseCount = testCases.filter((item) => scriptLinkedCaseIds.has(item.id)).length;
+  const scriptReviewedCount = scripts.filter((item) => item.reviewStatus === "已通过").length;
+  const scriptInvalidCount = countInvalid(scripts);
+  const scriptPassCount = scripts.filter((item) => item.status === "通过" || item.status === "成功").length;
+  const scriptExecutedCount = scripts.filter((item) => Boolean(item.executedAt) || item.status === "通过" || item.status === "失败" || item.status === "成功").length;
+  const traceabilityReady = requirements.length > 0 && testPoints.length > 0 && testCases.length > 0 && pointsWithRequirementCount === testPoints.length && casesWithPointCount === testCases.length && casesWithRequirementCount === testCases.length;
+
+  const prerequisiteState: Record<PrerequisiteKey, PrerequisiteItem> = {
+    files: {
+      label: "输入资料",
+      ready: files.length > 0,
+      summary: files.length > 0 ? `${files.length} 个文件` : "未上传",
+      detail: files.length > 0 ? `已解析 ${parsedFileCount} 个，解析失败 ${parseFailedFileCount} 个` : "缺少需求、说明或模板依据",
+      blockers: [
+        ...(files.length === 0 ? ["未上传输入资料"] : []),
+        ...(parseFailedFileCount > 0 ? [`${parseFailedFileCount} 个文件解析失败`] : []),
+      ],
+    },
+    requirements: {
+      label: "需求列表",
+      ready: requirements.length > 0 && countInvalid(requirements) === 0 && countUnreviewed(requirements) === 0 && clarificationPendingCount === 0,
+      summary: requirements.length > 0 ? `${requirements.length} 条需求` : "未生成",
+      detail: requirements.length > 0 ? `有效 ${countValid(requirements)} 条，已通过 ${countReviewed(requirements)} 条，待确认 ${clarificationPendingCount} 条` : "需先完成需求解析或 AI 反推",
+      blockers: [
+        ...(requirements.length === 0 ? ["没有需求数据"] : []),
+        ...(countInvalid(requirements) > 0 ? [`${countInvalid(requirements)} 条需求已失效`] : []),
+        ...(countUnreviewed(requirements) > 0 ? [`${countUnreviewed(requirements)} 条需求未评审通过`] : []),
+        ...(clarificationPendingCount > 0 ? [`${clarificationPendingCount} 条需求存在待确认问题`] : []),
+      ],
+    },
+    testPoints: {
+      label: "测试点",
+      ready: testPoints.length > 0 && countInvalid(testPoints) === 0 && countUnreviewed(testPoints) === 0,
+      summary: testPoints.length > 0 ? `${testPoints.length} 个测试点` : "未生成",
+      detail: testPoints.length > 0 ? `有效 ${countValid(testPoints)} 个，已通过 ${countReviewed(testPoints)} 个，关联需求 ${pointsWithRequirementCount} 个` : "需先根据需求生成测试点",
+      blockers: [
+        ...(testPoints.length === 0 ? ["没有测试点数据"] : []),
+        ...(countInvalid(testPoints) > 0 ? [`${countInvalid(testPoints)} 个测试点已失效`] : []),
+        ...(countUnreviewed(testPoints) > 0 ? [`${countUnreviewed(testPoints)} 个测试点未评审通过`] : []),
+        ...(testPoints.length > 0 && pointsWithRequirementCount < testPoints.length ? [`${testPoints.length - pointsWithRequirementCount} 个测试点缺少需求追溯`] : []),
+      ],
+    },
+    testCases: {
+      label: "测试用例",
+      ready: testCases.length > 0 && countInvalid(testCases) === 0 && countUnreviewed(testCases) === 0,
+      summary: testCases.length > 0 ? `${testCases.length} 条用例` : "未生成",
+      detail: testCases.length > 0 ? `有效 ${countValid(testCases)} 条，已通过 ${countReviewed(testCases)} 条，可自动化 ${automatableCaseCount} 条` : "需先根据测试点生成用例",
+      blockers: [
+        ...(testCases.length === 0 ? ["没有测试用例数据"] : []),
+        ...(countInvalid(testCases) > 0 ? [`${countInvalid(testCases)} 条用例已失效`] : []),
+        ...(countUnreviewed(testCases) > 0 ? [`${countUnreviewed(testCases)} 条用例未评审通过`] : []),
+        ...(testCases.length > 0 && casesWithPointCount < testCases.length ? [`${testCases.length - casesWithPointCount} 条用例缺少测试点追溯`] : []),
+        ...(testCases.length > 0 && casesWithRequirementCount < testCases.length ? [`${testCases.length - casesWithRequirementCount} 条用例缺少需求追溯`] : []),
+      ],
+    },
+    scripts: {
+      label: "脚本/执行",
+      ready: scripts.length > 0 && scriptInvalidCount === 0 && scriptExecutedCount > 0,
+      optional: true,
+      summary: scripts.length > 0 ? `${scripts.length} 个脚本` : "未生成",
+      detail: scripts.length > 0 ? `覆盖用例 ${scriptCoveredCaseCount} 条，已评审 ${scriptReviewedCount} 个，已执行 ${scriptExecutedCount} 个，通过 ${scriptPassCount} 个` : "报告可先生成，但执行结论会不完整",
+      blockers: [
+        ...(scripts.length === 0 ? ["没有脚本和执行结果，报告结论会缺少执行证据"] : []),
+        ...(scriptInvalidCount > 0 ? [`${scriptInvalidCount} 个脚本已失效`] : []),
+        ...(scripts.length > 0 && scriptExecutedCount === 0 ? ["脚本尚未执行"] : []),
+      ],
+    },
+    traceability: {
+      label: "数据追溯",
+      ready: traceabilityReady,
+      summary: traceabilityReady ? "链路完整" : "链路待补",
+      detail: `需求 ${requirements.length} 条，测试点关联 ${pointsWithRequirementCount}/${testPoints.length}，用例关联测试点 ${casesWithPointCount}/${testCases.length}、关联需求 ${casesWithRequirementCount}/${testCases.length}`,
+      blockers: [
+        ...(testPoints.length > 0 && pointsWithRequirementCount < testPoints.length ? [`${testPoints.length - pointsWithRequirementCount} 个测试点无法追溯需求`] : []),
+        ...(testCases.length > 0 && casesWithPointCount < testCases.length ? [`${testCases.length - casesWithPointCount} 条用例无法追溯测试点`] : []),
+        ...(testCases.length > 0 && casesWithRequirementCount < testCases.length ? [`${testCases.length - casesWithRequirementCount} 条用例无法追溯需求`] : []),
+      ],
+    },
   };
 
   const isReady = (needs: string[]) => {
     if (initialLoading) return false;
-    if (needs.includes("files") && files.length === 0) return false;
-    if (needs.includes("testCases") && testCases.length === 0) return false;
-    return true;
+    return needs.every((need) => {
+      const item = prerequisiteState[need as PrerequisiteKey];
+      return item ? item.ready || item.optional : true;
+    });
   };
+
+  const getTemplatePrerequisites = (tpl: typeof templates[0]) => tpl.needs.map((need) => prerequisiteState[need as PrerequisiteKey]).filter(Boolean);
+
+  const getPrimaryBlocker = (items: PrerequisiteItem[]) => {
+    const requiredBlocker = items.find((item) => !item.ready && !item.optional && item.blockers.length > 0);
+    if (requiredBlocker) return requiredBlocker.blockers[0];
+    const optionalBlocker = items.find((item) => item.optional && item.blockers.length > 0);
+    return optionalBlocker?.blockers[0] || "";
+  };
+
+  const renderPrerequisites = (tpl: typeof templates[0]) => (
+    <div className="doc-prereq-summary">
+      {(() => {
+        const items = getTemplatePrerequisites(tpl);
+        const blocker = getPrimaryBlocker(items);
+        const requiredReady = items.filter((item) => !item.optional && item.ready).length;
+        const requiredTotal = items.filter((item) => !item.optional).length;
+        return (
+          <>
+            <div className="doc-prereq-summary__top">
+              <StatusPill tone={requiredReady === requiredTotal ? "green" : "amber"}>{requiredReady}/{requiredTotal} 满足</StatusPill>
+              <button className="text-button doc-prereq-summary__detail" type="button" onClick={() => setPrereqDetailId(tpl.id)}>详情</button>
+            </div>
+            <div className="doc-prereq-summary__chips">
+              {items.slice(0, 4).map((item) => (
+                <span key={item.label} className={item.ready ? "doc-prereq-chip doc-prereq-chip--ready" : "doc-prereq-chip"} title={`${item.label}：${item.detail}`}>
+                  {item.label} {item.summary}
+                </span>
+              ))}
+              {items.length > 4 && <span className="doc-prereq-chip doc-prereq-chip--more">+{items.length - 4}</span>}
+            </div>
+            {blocker && <div className="doc-prereq-summary__blocker" title={blocker}>卡点：{blocker}</div>}
+          </>
+        );
+      })()}
+    </div>
+  );
 
   const getGenerationGateError = () => {
     if (requirements.length === 0) return "需求列表为空，请先完成需求解析";
@@ -67,18 +207,22 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
     if (invalidReq > 0) return `还有 ${invalidReq} 条需求已失效，请先重新解析需求`;
     const unreviewedReq = requirements.filter((item) => item.reviewStatus !== "已通过").length;
     if (unreviewedReq > 0) return `还有 ${unreviewedReq} 条需求未评审通过，请先完成需求评审`;
+    if (clarificationPendingCount > 0) return `还有 ${clarificationPendingCount} 条需求存在待确认问题，请先在需求列表中补充确认结论`;
 
     if (testPoints.length === 0) return "测试点列表为空，请先生成测试点";
     const invalidPoint = testPoints.filter((item) => (item as any).validityStatus === "已失效").length;
     if (invalidPoint > 0) return `还有 ${invalidPoint} 个测试点已失效，请先重新生成测试点`;
     const unreviewedPoint = testPoints.filter((item) => item.reviewStatus !== "已通过").length;
     if (unreviewedPoint > 0) return `还有 ${unreviewedPoint} 个测试点未评审通过，请先完成测试点评审`;
+    if (pointsWithRequirementCount < testPoints.length) return `还有 ${testPoints.length - pointsWithRequirementCount} 个测试点缺少需求追溯，请先重新生成测试点`;
 
     if (testCases.length === 0) return "测试用例列表为空，请先生成测试用例";
     const invalidCase = testCases.filter((item) => (item as any).validityStatus === "已失效").length;
     if (invalidCase > 0) return `还有 ${invalidCase} 条测试用例已失效，请先重新生成测试用例`;
     const unreviewedCase = testCases.filter((item) => item.reviewStatus !== "已通过").length;
     if (unreviewedCase > 0) return `还有 ${unreviewedCase} 条测试用例未评审通过，请先完成用例评审`;
+    if (casesWithPointCount < testCases.length) return `还有 ${testCases.length - casesWithPointCount} 条测试用例缺少测试点追溯，请先重新生成测试用例`;
+    if (casesWithRequirementCount < testCases.length) return `还有 ${testCases.length - casesWithRequirementCount} 条测试用例缺少需求追溯，请先重新生成测试用例`;
 
     return "";
   };
@@ -308,9 +452,9 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
       <section className="work-panel">
         <DataTable rows={templates} getRowKey={(r) => r.id} columns={[
           { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
-          { key: "name", label: "模板名称", lineClamp: 2, render: (r) => r.name },
-          { key: "desc", label: "说明", lineClamp: 2, render: (r) => r.desc },
-          { key: "needs", label: "前置数据", render: (r) => r.needs.map((n) => n === "files" ? "文档" : "用例").join("、") },
+          { key: "name", label: "模板名称", lineClamp: 3, render: (r) => r.name },
+          { key: "desc", label: "说明", lineClamp: 3, render: (r) => r.desc },
+          { key: "needs", label: "前置数据", align: "left", width: "34%", render: renderPrerequisites },
           { key: "status", label: "状态", align: "center", render: (r) => {
             const st = getTemplateStatus(r);
             if (st === "已生成") return <StatusPill tone="green">已生成</StatusPill>;
@@ -335,6 +479,50 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
           }},
         ]} />
       </section>
+
+      <Modal
+        open={!!prereqDetailId}
+        onClose={() => setPrereqDetailId(null)}
+        title={prereqDetailId ? `前置数据详情 - ${templates.find((t) => t.id === prereqDetailId)?.name || ""}` : "前置数据详情"}
+        width={860}
+        footer={<button className="primary-button" type="button" onClick={() => setPrereqDetailId(null)}>关闭</button>}
+      >
+        {(() => {
+          const tpl = templates.find((t) => t.id === prereqDetailId);
+          if (!tpl) return null;
+          const items = getTemplatePrerequisites(tpl);
+          const blocker = getPrimaryBlocker(items);
+          return (
+            <div className="doc-prereq-detail">
+              <div className="doc-prereq-detail__summary">
+                <div>
+                  <div className="doc-prereq-detail__title">生成门禁</div>
+                  <div className="doc-prereq-detail__desc">文档生成只使用已通过、有效并且可追溯的数据。</div>
+                </div>
+                {blocker ? <StatusPill tone="amber">存在卡点</StatusPill> : <StatusPill tone="green">可生成</StatusPill>}
+              </div>
+              {blocker && <div className="doc-prereq-detail__blocker">当前主要卡点：{blocker}</div>}
+              <div className="doc-prereq-detail__list">
+                {items.map((item) => (
+                  <div key={item.label} className="doc-prereq-detail__item">
+                    <div className="doc-prereq-detail__item-head">
+                      <div className="doc-prereq-detail__item-title">{item.label}</div>
+                      <StatusPill tone={item.ready ? "green" : item.optional ? "blue" : "amber"}>{item.ready ? "满足" : item.optional ? "建议补充" : "待补"}</StatusPill>
+                    </div>
+                    <div className="doc-prereq-detail__item-main">{item.summary}</div>
+                    <div className="doc-prereq-detail__item-desc">{item.detail}</div>
+                    {item.blockers.length > 0 && (
+                      <div className="doc-prereq-detail__pending">
+                        {item.blockers.map((text) => <span key={text}>待处理：{text}</span>)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
 
       {/* 文档预览弹窗 */}
       <Modal

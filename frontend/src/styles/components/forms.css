@@ -162,6 +162,16 @@
   opacity: 0.76;
 }
 
+.field-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.field-hint--warning {
+  color: #b45309;
+}
+
 .form-input[type="number"] {
   appearance: textfield;
   font-variant-numeric: tabular-nums;

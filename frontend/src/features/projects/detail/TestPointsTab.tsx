@@ -23,9 +23,6 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
   const { state, dispatch } = useStore();
   const generating = useMemo(() => state.activeAITasks.includes(`${projectId}:测试点生成`), [state.activeAITasks, projectId]);
   const { showConfigError, dialog: configErrorDialog } = useConfigError();
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [isReceiving, setIsReceiving] = useState(false);
-  const [streamCount, setStreamCount] = useState(0);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [viewTP, setViewTP] = useState<typeof testPoints[0] | null>(null);
@@ -123,7 +120,7 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
             { key: "pointCode", label: "测试点编号", render: (r) => r.pointCode || <span style={{ color: "var(--muted)" }}>-</span> },
             { key: "module", label: "模块", render: (r) => r.module },
             { key: "type", label: "类型", render: (r) => r.type },
-            { key: "title", label: "测试点", align: "left", lineClamp: 2, render: (r) => r.title },
+            { key: "title", label: "测试点", align: "left", lineClamp: 3, render: (r) => r.title },
             { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
             { key: "reviewStatus", label: "评审", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus}</StatusPill></button> },
             { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <span title={r.invalidReason || ""}><StatusPill tone={r.validityStatus === "已失效" ? "amber" : "green"}>{r.validityStatus || "有效"}</StatusPill></span> },

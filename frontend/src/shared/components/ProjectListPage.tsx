@@ -211,7 +211,7 @@ export function ProjectListPage({ mode }: ProjectListPageProps) {
                 key: "name",
                 label: "项目名称",
                 width: "16%",
-                lineClamp: 2,
+                lineClamp: 3,
                 render: (row) => <strong>{row.name}</strong>,
               },
               {

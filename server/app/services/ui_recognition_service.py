@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -15,6 +16,27 @@ from app.services.export_format import format_api_datetime
 from app.services.ai_input_builder import requirement_records
 from app.services.ai_service import AIService
 from app.utils import decrypt_value, verify_project_owner
+
+
+def _friendly_recognition_error(exc: Exception) -> str:
+    message = str(exc)
+    lowered = message.lower()
+    if "executable doesn't exist" in lowered and "playwright" in lowered:
+        return "系统识别所需的浏览器运行环境未安装或已损坏，请联系管理员在后端环境执行：python -m playwright install chromium，然后重新识别。"
+    if "playwright install" in lowered:
+        return "系统识别所需的 Playwright 浏览器未安装，请联系管理员安装浏览器运行环境后重试。"
+    if "target page, context or browser has been closed" in lowered:
+        return "系统识别浏览器进程异常关闭，请稍后重试；如果持续出现，请联系管理员检查后端浏览器运行环境。"
+    return message
+
+
+def _system_browser_executable() -> str | None:
+    candidates = [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    ]
+    return next((path for path in candidates if os.path.exists(path)), None)
 
 
 class UIRecognitionService:
@@ -87,7 +109,8 @@ class UIRecognitionService:
             status = "成功"
             error = ""
         except Exception as exc:
-            self._add_trace(trace, "failed", "failed", str(exc)[:1000])
+            friendly_error = _friendly_recognition_error(exc)
+            self._add_trace(trace, "failed", "failed", friendly_error[:1000])
             snapshot = {
                 "environment": {
                     "id": environment.id,
@@ -103,7 +126,7 @@ class UIRecognitionService:
                 "recognitionTrace": trace,
             }
             status = "失败"
-            error = str(exc)[:3000]
+            error = friendly_error[:3000]
 
         item = UISnapshot(
             id=str(uuid.uuid4()),
@@ -227,7 +250,15 @@ class UIRecognitionService:
         from playwright.async_api import async_playwright
 
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=not headed, slow_mo=300 if headed else 0)
+            launch_options = {"headless": not headed, "slow_mo": 300 if headed else 0}
+            try:
+                browser = await p.chromium.launch(**launch_options)
+            except Exception as exc:
+                system_browser = _system_browser_executable()
+                if not system_browser or "playwright install" not in str(exc).lower():
+                    raise
+                self._add_trace(trace, "browser_fallback", "success", "Playwright 浏览器缺失，已切换为本机 Chrome/Edge 浏览器", data={"executablePath": system_browser})
+                browser = await p.chromium.launch(executable_path=system_browser, **launch_options)
             context = await browser.new_context(ignore_https_errors=True)
             page = await context.new_page()
             page.set_default_timeout(30000)

@@ -182,13 +182,13 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
           <DataTable rows={scripts} getRowKey={(r) => r.id} columns={[
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "scriptCode", label: "脚本编号", render: (r) => r.scriptCode || <span className="text-muted">-</span> },
-            { key: "testCase", label: "关联用例", align: "left", lineClamp: 2, render: (r) => getTestCaseTitle(r.testCaseId) },
+            { key: "testCase", label: "关联用例", align: "left", lineClamp: 3, render: (r) => getTestCaseTitle(r.testCaseId) },
             { key: "testType", label: "测试类型", align: "center", render: (r) => {
               const tc = testCases.find((t) => t.id === r.testCaseId);
               return tc ? (tc.testType || "功能测试") : <span className="text-muted">-</span>;
             }},
             { key: "targetPlatform", label: "测试端", align: "center", render: (r) => testCases.find((t) => t.id === r.testCaseId)?.targetPlatform || "-" },
-            { key: "testUrl", label: "测试地址", align: "left", lineClamp: 2, render: (r) => testCases.find((t) => t.id === r.testCaseId)?.testUrl || "未配置" },
+            { key: "testUrl", label: "测试地址", align: "left", lineClamp: 3, render: (r) => testCases.find((t) => t.id === r.testCaseId)?.testUrl || "未配置" },
             { key: "requiredRole", label: "角色", align: "center", render: (r) => testCases.find((t) => t.id === r.testCaseId)?.requiredRole || "无" },
             { key: "framework", label: "框架", render: (r) => r.framework },
             { key: "scriptType", label: "脚本类型", render: (r) => r.scriptType },
