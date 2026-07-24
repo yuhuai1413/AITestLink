@@ -14,6 +14,7 @@ import { ConfirmDialog } from "../../../shared/components/ConfirmDialog";
 import { Modal } from "../../../shared/components/Modal";
 import { MenuSelect } from "../../../shared/components/MenuSelect";
 import { formatProjectTime as formatTime, reviewTone } from "./projectDetail.config";
+import { formatClarificationForDisplay } from "../../../shared/utils/formatClarification";
 import { riskTone, validityTone } from "../../../shared/utils/statusTone";
 import {
   CLARIFICATION_CONFIRMED,
@@ -212,9 +213,10 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
             { key: "source", label: "来源", width: "10%", render: (r) => r.source },
             { key: "risk", label: "风险", align: "center", render: (r) => <StatusPill tone={riskTone(r.risk)}>{r.risk}</StatusPill> },
             { key: "rule", label: "业务规则", width: "20%", align: "left", lineClamp: 3, render: (r) => <span title={r.rule}>{r.rule}</span> },
-            { key: "question", label: "待确认问题", width: "20%", align: "left", lineClamp: 3, render: (r) => (
-              r.question ? <span title={r.question}>{r.question}</span> : <span className="text-muted">-</span>
-            ) },
+            { key: "question", label: "待确认问题", width: "20%", align: "left", lineClamp: 3, render: (r) => {
+              const formatted = formatClarificationForDisplay(r.question);
+              return formatted ? <span title={r.question}>{formatted}</span> : <span className="text-muted">-</span>;
+            } },
             { key: "clarificationStatus", label: "确认状态", width: "8%", align: "center", render: (r) => {
               const status = getClarificationStatus(r);
               return <StatusPill tone={clarificationTone(status)}>{status}</StatusPill>;
@@ -226,7 +228,7 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
             { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
               <div className="inline-actions">
                 <button className="text-button" type="button" onClick={() => setViewReq(r)}>查看</button>
-                <button className="text-button" type="button" onClick={() => { setEditReq(r); setEditRule(r.rule); setEditQuestion(r.question); setEditClarificationAnswer(r.clarificationAnswer || ""); }}>编辑</button>
+                <button className="text-button" type="button" onClick={() => { setEditReq(r); setEditRule(r.rule); setEditQuestion(formatClarificationForDisplay(r.question) || r.question); setEditClarificationAnswer(r.clarificationAnswer || ""); }}>编辑</button>
               </div>
             )},
           ]} />
@@ -243,7 +245,7 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
             <div className="detail-row"><span className="detail-label">来源</span><span>{viewReq.source}</span></div>
             <div className="detail-row"><span className="detail-label">风险等级</span><StatusPill tone={riskTone(viewReq.risk)}>{viewReq.risk}</StatusPill></div>
             <div className="detail-row detail-row--full"><span className="detail-label">业务规则</span><pre className="detail-pre">{viewReq.rule || "无"}</pre></div>
-            <div className="detail-row detail-row--full"><span className="detail-label">待确认问题</span><pre className="detail-pre">{viewReq.question || "无"}</pre></div>
+            <div className="detail-row detail-row--full"><span className="detail-label">待确认问题</span><pre className="detail-pre">{formatClarificationForDisplay(viewReq.question) || "无"}</pre></div>
             <div className="detail-row"><span className="detail-label">确认状态</span><StatusPill tone={clarificationTone(getClarificationStatus(viewReq))}>{getClarificationStatus(viewReq)}</StatusPill></div>
             <div className="detail-row detail-row--full"><span className="detail-label">确认结论</span><pre className="detail-pre">{viewReq.clarificationAnswer || "无"}</pre></div>
             <div className="detail-row"><span className="detail-label">评审状态</span><StatusPill tone={reviewTone(viewReq.reviewStatus)}>{viewReq.reviewStatus || "待评审"}</StatusPill></div>

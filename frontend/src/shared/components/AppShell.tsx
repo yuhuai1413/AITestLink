@@ -430,31 +430,42 @@ localStorage.removeItem(TOKEN_KEY);
             <div className="help-popover__body">
               <div className="help-section">
                 <h3>平台简介</h3>
-                <p>AITestLink是一款 AI 驱动的软件测试平台，支持从需求文档到测试用例的全链路自动化生成。</p>
+                <p>AITestLink 是一套面向软件测试全流程的 AI 协作平台，覆盖资料上传、需求解析、测试设计、自动化脚本、执行汇总和测试文档生成。</p>
               </div>
               <div className="help-section">
-                <h3>核心功能</h3>
-                <ul>
-                  <li><strong>需求解析</strong> — 上传需求文档，AI 自动提取模块、测试点和业务规则</li>
-                  <li><strong>测试设计</strong> — 基于需求生成测试点和测试用例</li>
-                  <li><strong>用例管理</strong> — 在线编辑、评审和导出 Excel</li>
-                  <li><strong>自动化中心</strong> — 脚本生成与执行分析（规划中）</li>
-                </ul>
-              </div>
-              <div className="help-section">
-                <h3>操作流程</h3>
+                <h3>项目主流程</h3>
                 <ol>
-                  <li>创建项目 → 上传需求资料</li>
-                  <li>发起 AI 解析 → 确认识别结果</li>
-                  <li>生成测试点 → 生成测试用例</li>
-                  <li>人工评审 → 导出 Excel</li>
+                  <li>在项目空间创建项目，进入项目详情后上传需求、原型、接口文档等输入资料</li>
+                  <li>配置测试环境和测试账号，再发起 AI 需求解析或 AI 反推需求</li>
+                  <li>评审通过需求后生成测试点，评审通过测试点后生成测试用例</li>
+                  <li>评审通过适合自动化的用例后生成脚本，再进入执行脚本完成运行</li>
+                  <li>汇总手工和自动化结果，按模板生成测试总结和交付文档</li>
                 </ol>
               </div>
               <div className="help-section">
-                <h3>侧边栏操作</h3>
+                <h3>常用入口</h3>
                 <ul>
-                  <li>点击左下角图标可收起/展开侧边栏</li>
-                  <li>收起后只显示图标，点击图标仍可导航</li>
+                  <li><strong>首页驾驶舱</strong> — 查看质量状态、项目风险、待办和关键指标</li>
+                  <li><strong>项目空间</strong> — 管理项目、输入资料、AI 生成结果、评审和导出</li>
+                  <li><strong>文档配置</strong> — 上传 Word 模板，维护文档分类、模板说明和解析结果</li>
+                  <li><strong>模型配置</strong> — 配置各 AI 节点的供应商、模型、Base URL、API Key 和提示词</li>
+                  <li><strong>用户管理</strong> — 管理系统用户，仅管理员账号可见</li>
+                </ul>
+              </div>
+              <div className="help-section">
+                <h3>评审与数据规则</h3>
+                <ul>
+                  <li>需求、测试点、测试用例和脚本都需要人工评审后，才能进入下游生成或执行</li>
+                  <li>删除输入资料或重新生成上游数据时，下游关联数据可能被清理或标记为已失效</li>
+                  <li>导出 Excel、生成脚本和文档生成会优先使用有效且已评审通过的数据</li>
+                </ul>
+              </div>
+              <div className="help-section">
+                <h3>操作提示</h3>
+                <ul>
+                  <li>顶部搜索可快速定位项目、需求、测试点和测试用例</li>
+                  <li>通知面板会展示 AI 任务完成或失败消息，点击通知可跳转到对应项目页签</li>
+                  <li>左下角按钮可收起或展开侧边栏，收起后仍可通过图标导航</li>
                 </ul>
               </div>
             </div>

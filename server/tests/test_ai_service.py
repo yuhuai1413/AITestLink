@@ -176,6 +176,37 @@ class TestAIServiceLLMCall:
         assert result[0]["module"] == "M"
 
     @patch("app.services.ai_service._get_config_for_task")
+    def test_parse_requirements_prompt_uses_images_before_questions(self, mock_get_config):
+        mock_get_config.return_value = {
+            "api_key": "test-key",
+            "endpoint": "https://api.test.com/v1",
+            "model": "test-model",
+            "prompt": "You are a software testing assistant."
+        }
+        service = AIService()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "choices": [{"message": {"content": '[{"module": "M", "feature": "F", "source": "", "risk": "中", "rule": "", "question": "无"}]'}}]
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        content = "正文需求\n[图片识别结果]\n可形成需求的事实：提交按钮保存订单"
+        with patch("app.services.llm_client.httpx.AsyncClient", return_value=mock_client):
+            _run_async(service.parse_requirements(content, "user-1"))
+
+        user_prompt = mock_client.post.call_args[1]["json"]["messages"][1]["content"]
+        assert "图片中的页面、字段、按钮、流程、权限、状态、异常提示与正文、表格合并分析" in user_prompt
+        assert "能明确推出的内容写入 rule，不要放入 question" in user_prompt
+        assert "不要生成泛化待确认问题" in user_prompt
+
+    @patch("app.services.ai_service._get_config_for_task")
     def test_generate_test_points_calls_llm(self, mock_get_config):
         mock_get_config.return_value = {
             "api_key": "test-key",

@@ -221,7 +221,7 @@ class DocumentService(BaseService):
         if req.review_status == "已通过" and not is_clarification_resolved(req.question, req.clarification_status, req.clarification_answer):
             issues = clarification_answer_quality_issues(req.question, req.clarification_answer)
             detail = "该需求还有待确认问题未处理，请先填写确认结论"
-            if issues:
+            if issues and (req.clarification_answer or "").strip():
                 detail = "确认结论仍不充分：" + "；".join(issues)
             raise HTTPException(status_code=400, detail=detail)
 

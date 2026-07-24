@@ -28,10 +28,8 @@ _VAGUE_ANSWER_PATTERNS = (
     "TODO",
 )
 
-_DOMAIN_KEYWORDS = (
-    "角色", "权限", "范围", "可见", "不可见", "不可操作", "无权限", "部门", "用户", "账号", "创建人",
-    "数据", "字段", "状态", "条件", "规则", "口径", "来源", "取值", "公式", "计算", "触发", "报价单", "合同", "指导价",
-    "文件", "审批", "提示", "页面", "按钮", "菜单", "列表", "结果", "预期", "校验",
+_EXPLICIT_CONCLUSION_MARKERS = (
+    "按", "以", "仅", "不再", "不纳入", "不包含", "统一", "采用", "使用", "归属", "范围", "口径", "处理", "执行", "确认", "纳入", "排除", "开放", "关闭",
 )
 
 _NO_QUESTION_VALUES = {
@@ -92,11 +90,9 @@ def clarification_answer_quality_issues(question: str | None, answer: str | None
     if len(compact_answer) < max(12, len(real_questions) * 8):
         return ["确认结论过短，无法判断是否已回答清楚待确认问题"]
 
-    question_text = " ".join(real_questions)
-    question_keywords = [keyword for keyword in _DOMAIN_KEYWORDS if keyword in question_text]
-    uncovered = [keyword for keyword in question_keywords if keyword not in normalized_answer]
-    if question_keywords and len(uncovered) == len(question_keywords):
-        return ["确认结论没有覆盖待确认问题中的关键业务对象或判断口径"]
+    has_explicit_conclusion = any(marker in normalized_answer for marker in _EXPLICIT_CONCLUSION_MARKERS)
+    if not has_explicit_conclusion and not re.search(r"[。！？.!?；;\n]", normalized_answer):
+        return ["确认结论缺少明确表述，请补充结论范围或判断口径"]
 
     if len(real_questions) >= 2:
         numbered_answer = bool(re.search(r"(^|[\n；;])\s*(\d+|[一二三四五六七八九十]+)[、.．)]", normalized_answer))

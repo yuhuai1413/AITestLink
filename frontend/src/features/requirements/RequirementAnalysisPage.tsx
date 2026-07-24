@@ -4,6 +4,7 @@ import { useStore } from "../../app/store";
 import { DataTable } from "../../shared/components/DataTable";
 import { SectionHeader } from "../../shared/components/SectionHeader";
 import { StatusPill } from "../../shared/components/StatusPill";
+import { formatClarificationForDisplay } from "../../shared/utils/formatClarification";
 import { riskTone } from "../../shared/utils/statusTone";
 import type { Requirement } from "../../shared/types/platform";
 
@@ -59,7 +60,7 @@ export function RequirementAnalysisPage() {
                 align: "center",
                 render: (row) => <StatusPill tone={riskTone(row.risk)}>{row.risk}</StatusPill>,
               },
-              { key: "question", label: "待确认问题", align: "left", render: (row) => row.question },
+            { key: "question", label: "待确认问题", align: "left", lineClamp: 3, render: (row) => formatClarificationForDisplay(row.question) || <span className="text-muted">-</span> },
             ]}
           />
         )}
