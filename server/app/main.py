@@ -12,10 +12,11 @@ logging.getLogger("app").setLevel(logging.INFO)
 
 from app.config import settings
 from app.database import init_db, close_db, async_session
-from app.routers import projects, files, requirements, test_points, test_cases, ai, model_config, auth, automation, doc_config, status_logs, doc_gen, notification, environment
+from app.routers import projects, files, requirements, test_points, test_cases, ai, model_config, auth, automation, doc_config, status_logs, doc_gen, notification, environment, defects
 
 # 导入所有模型，确保表被创建
 from app.models import project, requirement, test_point, test_case, file_asset, ai_task, model_config as mc_model, prompt_version, user, automation_script, execution_run, ui_snapshot, doc_template as dc_model, status_log, doc_gen_status, notification as notif_model
+from app.models.defect import Defect  # noqa: ensure defects table is created
 from app.models.environment_config import EnvironmentConfig, TestAccount
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ app.include_router(doc_gen.router, prefix="/api", tags=["doc-gen"])
 app.include_router(status_logs.router, prefix="/api", tags=["status-logs"])
 app.include_router(notification.router, prefix="/api", tags=["notifications"])
 app.include_router(environment.router, prefix="/api", tags=["environments"])
+app.include_router(defects.router, prefix="/api", tags=["defects"])
 
 # 静态文件服务（头像等上传文件）
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
