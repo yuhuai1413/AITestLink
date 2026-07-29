@@ -2,7 +2,6 @@ import { useEffect, useCallback } from "react";
 import { useEditor, EditorContent, Extension } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
-import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -16,7 +15,6 @@ import {
   Heading3,
   List,
   ListOrdered,
-  Link as LinkIcon,
   ImageIcon,
 } from "lucide-react";
 import { API_BASE } from "../config/deploy";
@@ -127,14 +125,20 @@ function createPasteImageExtension() {
                       }
                     });
                     if (foundPos >= 0) {
-                      editor
-                        .chain()
-                        .focus()
-                        .setNodeMarkup(foundPos, undefined, {
-                          src: url,
-                          alt: file.name || "图片",
-                        })
-                        .run();
+                      // Delete placeholder and insert final image
+                      const { state } = editor;
+                      const node = state.doc.nodeAt(foundPos);
+                      if (node) {
+                        editor
+                          .chain()
+                          .focus()
+                          .deleteRange({ from: foundPos, to: foundPos + 1 })
+                          .insertContentAt(foundPos, {
+                            type: "image",
+                            attrs: { src: url, alt: file.name || "图片" },
+                          })
+                          .run();
+                      }
                     }
                   })
                   .catch((err) => {
@@ -258,10 +262,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
         heading: { levels: [1, 2, 3] },
       }),
       Underline,
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: { class: "rte-link" },
-      }),
+
       Image.configure({
         HTMLAttributes: { class: "rte-content-image" },
       }),
@@ -288,18 +289,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
 
   if (!editor) return null;
 
-  const addLink = useCallback(() => {
-    const currentLink = editor.getAttributes("link").href;
-    const url = window.prompt("请输入链接地址：", currentLink || "https://");
-    if (url === null) return;
-    if (url === "") {
-      editor.chain().focus().unsetLink().run();
-      return;
-    }
-    editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
-  }, [editor]);
-
-  const addImage = useCallback(() => {
+const addImage = useCallback(() => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*";
@@ -343,7 +333,6 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
         >
           <Heading3 size={15} />
         </ToolbarButton>
-        <span className="rte-toolbar-divider" />
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBold().run()}
           isActive={editor.isActive("bold")}
@@ -365,7 +354,6 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
         >
           <UnderlineIcon size={15} />
         </ToolbarButton>
-        <span className="rte-toolbar-divider" />
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
           isActive={editor.isActive("orderedList")}
@@ -381,19 +369,7 @@ export function RichTextEditor({ value, onChange, placeholder }: RichTextEditorP
           <List size={15} />
         </ToolbarButton>
         <span className="rte-toolbar-divider" />
-        <ToolbarButton
-          onClick={() => {
-            if (editor.isActive("link")) {
-              editor.chain().focus().unsetLink().run();
-            } else {
-              addLink();
-            }
-          }}
-          isActive={editor.isActive("link")}
-          title="插入/取消链接"
-        >
-          <LinkIcon size={15} />
-        </ToolbarButton>
+
         <ToolbarButton onClick={addImage} title="插入图片（支持粘贴截图）">
           <ImageIcon size={15} />
         </ToolbarButton>
