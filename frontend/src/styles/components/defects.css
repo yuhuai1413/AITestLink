@@ -1,0 +1,447 @@
+/* ─── DefectsTab ─── */
+
+/* Toolbar */
+.defect-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.defect-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l2);
+  background: var(--surface);
+  padding: 0 10px;
+  height: 34px;
+  flex: 1;
+  max-width: 360px;
+  color: var(--muted);
+}
+
+.defect-search-input {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  flex: 1;
+  min-width: 0;
+}
+
+.defect-search-input::placeholder {
+  color: var(--muted);
+}
+
+.defect-search-clear {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px;
+  display: grid;
+  place-items: center;
+}
+
+.defect-batch-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.defect-batch-count {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ─── Defect Form Split (left-right layout matching screenshot) ─── */
+.defect-form-split {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.defect-form-split__left {
+  padding-right: 24px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.defect-form-split__right {
+  padding-left: 24px;
+  align-self: start;
+}
+
+/* Left: title area */
+.defect-form-title-area {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.defect-form-title-area__label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.defect-form-title-area__input {
+  width: 100%;
+  font-size: 15px;
+  padding: 10px 12px;
+}
+
+/* Left: editor area */
+.defect-form-editor-area {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-height: 300px;
+}
+
+.defect-form-editor-area__label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+/* ─── Rich Text Editor ─── */
+.rte-wrapper {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l2);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  flex: 1;
+}
+
+.rte-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-soft);
+  flex-wrap: wrap;
+}
+
+.rte-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-l1);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.rte-toolbar-btn:hover {
+  background: var(--line);
+  color: var(--text);
+}
+
+.rte-toolbar-btn--active {
+  background: rgba(91, 33, 182, 0.1);
+  color: var(--blue);
+}
+
+.rte-toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--line);
+  margin: 0 4px;
+}
+
+.rte-editor {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+}
+
+.rte-content {
+  min-height: 240px;
+  padding: 12px 14px;
+  outline: none;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.rte-content p {
+  margin: 0 0 8px;
+}
+
+.rte-content h1 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 16px 0 8px;
+}
+
+.rte-content h2 {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 14px 0 6px;
+}
+
+.rte-content h3 {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 12px 0 6px;
+}
+
+.rte-content ul,
+.rte-content ol {
+  padding-left: 24px;
+  margin: 4px 0;
+}
+
+.rte-content li {
+  margin: 2px 0;
+}
+
+.rte-placeholder {
+  color: var(--muted);
+  pointer-events: none;
+  position: absolute;
+  top: 12px;
+  left: 14px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.rte-link {
+  color: var(--blue);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.rte-content img,
+.rte-content-image {
+  max-width: 100%;
+  border-radius: var(--radius-l1);
+  margin: 8px 0;
+}
+
+/* Right: sidebar */
+.defect-form-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.defect-form-sidebar__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.defect-form-sidebar__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.defect-form-sidebar__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.defect-form-sidebar__field .form-input,
+.defect-form-sidebar__field .form-textarea,
+.defect-form-sidebar__field .menu-select {
+  width: 100%;
+}
+
+/* ─── Legacy: detail preview (kept for compat) ─── */
+.defect-detail-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.defect-detail-preview__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.defect-detail-preview__section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.defect-detail-preview__label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.defect-detail-preview__value {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.defect-detail-preview__code {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l3);
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: inherit;
+}
+
+.defect-detail-preview__code--error {
+  border-color: rgba(220, 38, 38, 0.2);
+  background: rgba(220, 38, 38, 0.03);
+}
+
+/* Attachment dropzone */
+.defect-attachment-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-l2);
+  background: var(--surface-soft);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  font-size: 13px;
+}
+
+.defect-attachment-dropzone:hover {
+  border-color: var(--blue);
+  background: rgba(91, 33, 182, 0.03);
+}
+
+.defect-attachment-dropzone--compact {
+  padding: 12px;
+}
+
+.defect-attachment-dropzone--compact span {
+  font-size: 12px;
+}
+
+/* Legacy defect-form styles (kept for compat) */
+.defect-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.defect-form-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.defect-form-row:last-child {
+  border-bottom: none;
+}
+
+.defect-form-label {
+  width: 80px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--muted);
+  padding-top: 6px;
+}
+
+.defect-form-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.defect-form-input,
+.defect-form-select,
+.defect-form-textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l1);
+  background: var(--surface);
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text);
+  outline: 0;
+  box-sizing: border-box;
+}
+
+.defect-form-input:focus,
+.defect-form-select:focus,
+.defect-form-textarea:focus {
+  border-color: var(--blue);
+}
+
+.defect-form-textarea {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.defect-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 16px;
+}
+
+/* Responsive */
+@media (max-width: 860px) {
+  .defect-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .defect-search {
+    max-width: none;
+  }
+  .defect-form-split {
+    grid-template-columns: 1fr;
+  }
+  .defect-form-split__left {
+    border-right: none;
+    padding-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 16px;
+  }
+  .defect-form-split__right {
+    padding-left: 0;
+    padding-top: 16px;
+  }
+}

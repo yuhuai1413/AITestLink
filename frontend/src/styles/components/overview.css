@@ -1,0 +1,182 @@
+/* ─── OverviewTab 根布局 ─── */
+/* 独立于驾驶舱 .dashboard 的固定高度 grid，项目概况需要自然滚动 */
+
+.overview-page {
+  display: grid;
+  gap: var(--sp-sm);
+  padding: 0;
+  overflow: auto;
+}
+
+/* 项目信息条 */
+.ov-project-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ov-project-bar__left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.ov-project-bar__tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ov-project-bar__meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ov-project-bar__meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 健康度中心标签 */
+.ov-center-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.ov-center-label strong {
+  font-size: 28px;
+  line-height: 34px;
+}
+
+.ov-center-label span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* 质量洞察列表 */
+.ov-insight-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.ov-insight-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.ov-insight-row:last-child {
+  border-bottom: none;
+}
+
+.ov-insight-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-l3);
+  flex-shrink: 0;
+}
+
+.ov-insight-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ov-insight-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.ov-insight-value {
+  font-size: 18px;
+  line-height: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-insight-hint {
+  font-size: 12px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* 下一步行动列表 */
+.ov-action-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.ov-action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.ov-action-row:last-child {
+  border-bottom: none;
+}
+
+.ov-action-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-l3);
+  flex-shrink: 0;
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.ov-action-icon--done {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.ov-action-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ov-action-body strong {
+  font-size: 13px;
+}
+
+.ov-action-body span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ov-action-arrow {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* 响应式 */
+@media (max-width: 1180px) {
+  .ov-project-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

@@ -182,6 +182,12 @@ async def _migrate_sqlite_schema(conn):
         await conn.execute(text("UPDATE environment_configs SET app_url = '' WHERE environment_type = 'Web' AND COALESCE(app_url, '') != ''"))
         await conn.execute(text("UPDATE environment_configs SET web_url = '' WHERE environment_type = 'APP' AND COALESCE(web_url, '') != ''"))
 
+    defect_columns = {
+        row[1] for row in (await conn.execute(text("PRAGMA table_info(defects)"))).all()
+    }
+    if "description" not in defect_columns:
+        await conn.execute(text("ALTER TABLE defects ADD COLUMN description TEXT DEFAULT ''"))
+
     account_columns = {
         row[1] for row in (await conn.execute(text("PRAGMA table_info(test_accounts)"))).all()
     }
