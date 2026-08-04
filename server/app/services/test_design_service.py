@@ -4,7 +4,7 @@ import uuid
 import re
 import json
 
-from sqlalchemy import select, func, update
+from sqlalchemy import select, func, update, or_
 
 from app.models.test_point import TestPoint
 from app.models.test_case import TestCase
@@ -18,9 +18,10 @@ from app.services.ai_input_builder import (
     validate_reference_values,
     validate_references,
 )
-from app.services.data_lineage_service import VALID, cascade_delete_test_case, cascade_delete_test_point
+from app.services.data_lineage_service import INVALID, REVIEW_INVALIDATED, VALID, cascade_delete_test_case, cascade_delete_test_point
 from app.services.environment_service import EnvironmentService
 from app.services.script_generation_quality import review_generated_case_automation
+from app.services.ui_recognition_service import UIRecognitionService
 from app.contracts.test_design import TestPointUpdate, TestCaseUpdate
 
 
@@ -118,6 +119,17 @@ class TestDesignService(BaseService):
             return None
 
         update_data = data.model_dump(exclude_unset=True)
+
+        # 已失效的测试点不允许改为"已通过"——数据失效后需重新生成，
+        # 不能在旧数据上恢复评审状态。与 test_case 守卫保持一致。
+        new_review = update_data.get("review_status")
+        is_invalid = tp.validity_status == INVALID or tp.review_status == REVIEW_INVALIDATED
+        if new_review == "已通过" and is_invalid:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=400,
+                detail="该测试点已失效，无法再次评审。请重新生成测试点",
+            )
         field_map = {
             "title": "title",
             "description": "description",
@@ -139,10 +151,28 @@ class TestDesignService(BaseService):
         await self.db.commit()
         return True
 
-    async def batch_update_review(self, point_ids: list[str], status: str) -> int:
+    async def batch_update_test_point_review(self, point_ids: list[str], status: str) -> int:
         ids = [str(item) for item in point_ids if str(item).strip()]
         if not ids:
             return 0
+        # 已失效（作废）的测试点不允许改为已通过
+        if status == "已通过":
+            result = await self.db.execute(
+                select(TestPoint).where(
+                    TestPoint.id.in_(ids),
+                    or_(
+                        TestPoint.review_status == REVIEW_INVALIDATED,
+                        TestPoint.validity_status == INVALID,
+                    ),
+                )
+            )
+            invalidated = result.scalars().all()
+            if invalidated:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"已作废的测试点不能改为已通过，请先重新生成测试点",
+                )
         result = await self.db.execute(
             update(TestPoint)
             .where(TestPoint.id.in_(ids))
@@ -181,10 +211,12 @@ class TestDesignService(BaseService):
         ))
         requirements_by_id = {item.id: item for item in requirement_result.scalars().all()}
         environment_context = await EnvironmentService(self.db).get_generation_context(project_id, user_id)
+        # 取系统识别结果，让用例生成能引用真实页面/字段/菜单
+        ui_context_by_environment = await UIRecognitionService(self.db).latest_context_by_project(project_id, user_id)
 
         generated: list[dict] = []
         point_payloads_by_id: dict[str, dict] = {}
-        for payload in test_point_batches(test_points, requirements_by_id, environment_context):
+        for payload in test_point_batches(test_points, requirements_by_id, environment_context, ui_context_by_environment):
             batch_items = await self.ai_service.generate_test_cases(payload, user_id)
             payload_items = json.loads(payload)
             point_payloads_by_id.update({item["testPointId"]: item for item in payload_items})
@@ -270,6 +302,17 @@ class TestDesignService(BaseService):
             return None
 
         update_data = data.model_dump(exclude_unset=True)
+
+        # 已失效（作废）的用例不允许改为"已通过"——数据失效后需重新生成，
+        # 不能在旧数据上恢复评审状态。防止前端绕过或同步逻辑误改。
+        new_review = update_data.get("review_status")
+        is_invalid = tc.validity_status == INVALID or tc.review_status == REVIEW_INVALIDATED
+        if new_review == "已通过" and is_invalid:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=400,
+                detail="该用例已失效，无法再次评审。请重新生成测试用例",
+            )
         field_map = {
             "title": "title",
             "priority": "priority",
@@ -316,10 +359,28 @@ class TestDesignService(BaseService):
         await self.db.commit()
         return count
 
-    async def batch_update_review(self, case_ids: list[str], status: str) -> int:
+    async def batch_update_test_case_review(self, case_ids: list[str], status: str) -> int:
         ids = [str(item) for item in case_ids if str(item).strip()]
         if not ids:
             return 0
+        # 已失效（作废）的测试用例不允许改为已通过
+        if status == "已通过":
+            result = await self.db.execute(
+                select(TestCase).where(
+                    TestCase.id.in_(ids),
+                    or_(
+                        TestCase.review_status == REVIEW_INVALIDATED,
+                        TestCase.validity_status == INVALID,
+                    ),
+                )
+            )
+            invalidated = result.scalars().all()
+            if invalidated:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=400,
+                    detail="已作废的测试用例不能改为已通过，请先重新生成测试用例",
+                )
         result = await self.db.execute(
             update(TestCase)
             .where(TestCase.id.in_(ids))

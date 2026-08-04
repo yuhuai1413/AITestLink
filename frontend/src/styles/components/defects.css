@@ -422,6 +422,22 @@
   padding-top: 16px;
 }
 
+/* Defect detail: execution failure screenshot */
+.defect-screenshot-link {
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-muted, #f7f8fa);
+}
+.defect-screenshot {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  cursor: zoom-in;
+}
+
 /* Responsive */
 @media (max-width: 860px) {
   .defect-toolbar {

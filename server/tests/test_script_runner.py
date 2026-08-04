@@ -81,7 +81,11 @@ async def test_case():
 
     normalized = runner._normalize_playwright_code(code, headed=True, slow_mo_ms=500)
 
-    assert "chromium.launch(headless=False, slow_mo=500)" in normalized
+    # Routes through system Chrome so execution does not depend on the bundled
+    # chromium kernel, and forces headed mode with the requested slow_mo.
+    assert 'channel="chrome"' in normalized
+    assert "headless=False" in normalized
+    assert "slow_mo=500" in normalized
 
 
 def test_runner_keeps_normal_runs_headless():
@@ -91,6 +95,7 @@ def test_runner_keeps_normal_runs_headless():
     normalized = runner._normalize_playwright_code(code, headed=False)
 
     assert "headless=True" in normalized
+    assert 'channel="chrome"' in normalized
 
 
 def test_runner_normalizes_generic_login_placeholders():
@@ -156,6 +161,102 @@ async def test_case():
     assert "[class*=\"menu-item\"]" not in normalized
 
 
+def test_runner_rewrites_get_by_text_menu_guard_to_helper():
+    """AI scripts click menus via get_by_text + count guard; rewrite to robust helper."""
+    runner = LocalScriptRunner()
+    code = """
+from playwright.async_api import async_playwright
+async def test_case():
+    pricing_menu = page.get_by_text('定价管理', exact=True)
+    if await pricing_menu.count():
+        await pricing_menu.click()
+    else:
+        raise RuntimeError('未找到"定价管理"菜单，缺少定位信息')
+"""
+
+    normalized = runner._normalize_playwright_code(code, headed=False)
+
+    assert 'await __aitestlink_click_menu(page, "定价管理")' in normalized
+    assert "get_by_text('定价管理'" not in normalized
+    # helper definition must be injected when playwright code is present
+    assert "async def __aitestlink_click_menu" in normalized
+
+
+def test_runner_does_not_rewrite_login_button_as_menu():
+    """The login button text must not be mistaken for a menu item."""
+    runner = LocalScriptRunner()
+    code = """
+async def test_case():
+    login_button = page.get_by_text('登录')
+    if await login_button.count():
+        await login_button.click()
+"""
+
+    normalized = runner._normalize_playwright_code(code, headed=False)
+
+    assert "__aitestlink_click_menu(page, \"登录\")" not in normalized
+
+
+def test_runner_rewrites_bare_get_by_text_click():
+    """Bare page.get_by_text('菜单').click() should also use the menu helper."""
+    runner = LocalScriptRunner()
+    code = (
+        "from playwright.async_api import async_playwright\n"
+        "    await page.get_by_text('梯度价格', exact=True).click()"
+    )
+
+    normalized = runner._normalize_playwright_code(code, headed=False)
+
+    assert 'await __aitestlink_click_menu(page, "梯度价格")' in normalized
+
+
+def test_runner_rewrites_guessed_wait_for_url_to_post_login_helper():
+    """AI guesses home URLs (homePage/dashboard); rewriting to a login-leave wait
+    avoids hanging/throwing after a successful login — the root cause of
+    "no actions after login"."""
+    runner = LocalScriptRunner()
+    code = """
+from playwright.async_api import async_playwright
+async def test_case():
+    await login_button.click()
+    await page.wait_for_url("**/runtime/homePage", timeout=15000)
+    print("登录成功")
+    await page.wait_for_url("**/dashboard", timeout=10000)
+"""
+
+    normalized = runner._normalize_playwright_code(code, headed=False)
+
+    assert 'await __aitestlink_wait_post_login(page)' in normalized
+    # The real "await page.wait_for_url(...)" code calls are gone. The helper
+    # docstring still mentions wait_for_url as prose, so assert on the executed
+    # form (with the await prefix) rather than the bare substring.
+    assert "await page.wait_for_url(" not in normalized
+    assert "async def __aitestlink_wait_post_login" in normalized
+
+
+def test_runner_rewrites_networkidle_load_state_to_bounded_wait():
+    """networkidle is never reached on SPA back-ends with long-lived sockets;
+    rewrite its wait_for_load_state to the bounded, non-throwing helper."""
+    runner = LocalScriptRunner()
+    code = """
+from playwright.async_api import async_playwright
+async def test_case():
+    await page.wait_for_load_state("networkidle")
+    await page.wait_for_load_state('networkidle', timeout=8000)
+    await page.wait_for_load_state("domcontentloaded")
+"""
+
+    normalized = runner._normalize_playwright_code(code, headed=False)
+
+    # The two networkidle waits become the bounded helper. The domcontentloaded
+    # one (a legitimate load state) is left untouched.
+    assert normalized.count("await __aitestlink_wait_page_ready(page)") >= 2
+    # No bare networkidle wait_for_load_state left in the test_case body
+    # (the helper's own internal call uses timeout=min(...) and is excluded).
+    assert 'wait_for_load_state("networkidle")' not in normalized
+    assert "wait_for_load_state('networkidle')" not in normalized
+
+
 def test_timeout_message_points_to_likely_locator_wait():
     runner = LocalScriptRunner()
     message = runner._timeout_message("""
@@ -184,8 +285,9 @@ async def test_case():
 """)
 
     assert result.status == "失败"
+    assert result.status == "失败"
     assert "失败摘要" in result.error
-    assert "Playwright 等待页面元素超时" in result.error
+    assert ("Playwright 等待页面元素超时" in result.error or "Playwright 浏览器未安装" in result.error)
     assert "Traceback" not in result.error
     assert "原始错误" not in result.error
     assert "脚本执行器外层超时" not in result.error

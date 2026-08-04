@@ -72,6 +72,15 @@ async def _migrate_sqlite_schema(conn):
     for table in ("requirements", "test_points", "test_cases", "automation_scripts", "execution_runs"):
         await ensure_columns(table, validity_additions)
 
+    # 缺陷与脚本执行关联：source 标记来源（手工/自动化），script_id / execution_run_id
+    # 让缺陷能追溯到具体哪次执行/哪个脚本产生。
+    await ensure_columns("defects", {
+        "source": "VARCHAR(30) DEFAULT '手工'",
+        "script_id": "VARCHAR(36)",
+        "execution_run_id": "VARCHAR(36)",
+        "screenshot_url": "VARCHAR(500) DEFAULT ''",
+    })
+
     await ensure_columns("requirements", {
         "clarification_status": "VARCHAR(50) DEFAULT '无需确认'",
         "clarification_answer": "TEXT DEFAULT ''",
@@ -193,6 +202,8 @@ async def _migrate_sqlite_schema(conn):
     }
     if "department" not in account_columns:
         await conn.execute(text("ALTER TABLE test_accounts ADD COLUMN department VARCHAR(100) DEFAULT ''"))
+    if "is_admin" not in account_columns:
+        await conn.execute(text("ALTER TABLE test_accounts ADD COLUMN is_admin BOOLEAN DEFAULT 0"))
 
     case_columns = {
         row[1] for row in (await conn.execute(text("PRAGMA table_info(test_cases)"))).all()

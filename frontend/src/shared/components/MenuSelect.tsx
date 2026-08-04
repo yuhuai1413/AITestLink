@@ -85,8 +85,10 @@ export function MenuSelect<T extends string>({
     const close = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
+    // 捕获阶段监听，确保即便上层容器（如 Modal 的 dialog）调用 stopPropagation
+    // 阻止冒泡，点击外部关闭仍能生效。
+    window.addEventListener("click", close, true);
+    return () => window.removeEventListener("click", close, true);
   }, [open]);
 
   return (

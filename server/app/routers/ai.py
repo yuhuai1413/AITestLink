@@ -49,7 +49,7 @@ from app.services.data_lineage_service import (
 from app.services.document_vision_service import describe_requirement_images
 from app.services.environment_service import EnvironmentService
 from app.services.requirement_clarification import default_clarification_status, is_clarification_resolved
-from app.services.script_generation_quality import assert_cases_script_ready, generated_script_error_message, review_generated_case_automation
+from app.services.script_generation_quality import assert_cases_script_ready, generated_script_error_message, generated_script_warning_message, review_generated_case_automation
 from app.services.ui_recognition_service import UIRecognitionService
 from app.utils import model_to_dict
 from app.utils import verify_project_owner
@@ -80,6 +80,23 @@ async def _update_task_progress(db: AsyncSession, task_id: str, payload: dict) -
         return
     task.result = json.dumps(payload, ensure_ascii=False)
     await db.commit()
+
+
+async def _safe_update_task_status(db: AsyncSession, task_id: str, status: str, error: str | None = None) -> None:
+    """回写任务终态，失败也不抛错。
+
+    优先用传入的 session 回写；若该 session 已被异常污染导致回写失败，
+    则用一个全新的独立 session 重试一次，确保任务不会永远卡在“执行中”。
+    """
+    try:
+        await _update_task_status(db, task_id, status, error)
+    except Exception:
+        logger.exception("update_task_status failed, retrying with fresh session")
+        try:
+            async with async_session() as fresh_db:
+                await _update_task_status(fresh_db, task_id, status, error)
+        except Exception:
+            logger.exception("fresh-session retry for task %s also failed", task_id)
 
 
 def _next_code(counters: dict[str, int], module: str, prefix: str) -> str:
@@ -456,9 +473,10 @@ async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
             )
             requirements_by_id = {item.id: item for item in requirement_result.scalars().all()}
             environment_context = await EnvironmentService(db).get_generation_context(project_id, user_id)
+            ui_context_by_environment = await UIRecognitionService(db).latest_context_by_project(project_id, user_id)
 
             cases = []
-            payload_batches = test_point_batches(points, requirements_by_id, environment_context)
+            payload_batches = test_point_batches(points, requirements_by_id, environment_context, ui_context_by_environment)
             await _update_task_progress(db, task_id, {
                 "stage": "generating",
                 "message": f"正在生成测试用例：共 {len(points)} 个已评审测试点，拆分为 {len(payload_batches)} 批",
@@ -553,6 +571,8 @@ async def run_generate_test_cases(task_id: str, project_id: str, user_id: str):
 async def run_generate_scripts(task_id: str, project_id: str, user_id: str):
     """后台任务：生成自动化脚本"""
     from app.models.automation_script import AutomationScript
+    # 标记任务是否已进入终态（成功/失败），避免 finally 重复回写。
+    _terminal = False
     async with async_session() as db:
         try:
             # 获取适合自动化的测试用例
@@ -567,6 +587,7 @@ async def run_generate_scripts(task_id: str, project_id: str, user_id: str):
             test_cases = tc_result.scalars().all()
             if not test_cases:
                 await _update_task_status(db, task_id, "失败", "没有已评审通过且适合自动化的测试用例，无法生成脚本。请先在「测试用例」完成用例评审")
+                _terminal = True
                 return
             validate_persisted_traceability(cases=test_cases)
             validate_case_runtime_fields(test_cases, for_automation=True)
@@ -574,7 +595,10 @@ async def run_generate_scripts(task_id: str, project_id: str, user_id: str):
 
             ui_context = await UIRecognitionService(db).latest_context_by_project(project_id, user_id)
             scripts = []
+            warnings: list[str] = []
             payload_batches = test_case_batches(test_cases, ui_context)
+            # 用例按 id 建索引，避免 next() 在匹配不到时抛 StopIteration
+            cases_by_id = {tc.id: tc for tc in test_cases}
             await _update_task_progress(db, task_id, {
                 "stage": "generating",
                 "message": f"正在生成自动化脚本：共 {len(test_cases)} 条用例，拆分为 {len(payload_batches)} 批",
@@ -607,6 +631,9 @@ async def run_generate_scripts(task_id: str, project_id: str, user_id: str):
                     quality_error = generated_script_error_message(item.get("code", ""), batch_cases_by_id[item["testCaseId"]])
                     if quality_error:
                         raise ValueError(quality_error)
+                    quality_warning = generated_script_warning_message(item.get("code", ""), batch_cases_by_id[item["testCaseId"]])
+                    if quality_warning:
+                        warnings.append(quality_warning)
                 scripts.extend(batch_scripts)
                 if batch_index == 1:
                     await invalidate_after_scripts(db, project_id, "自动化脚本已重新生成，执行结果已失效")
@@ -614,16 +641,25 @@ async def run_generate_scripts(task_id: str, project_id: str, user_id: str):
                     await db.commit()
                 for s in batch_scripts:
                     tc_id = s.get("testCaseId", "")
-                    matched_tc = next(tc for tc in test_cases if tc.id == tc_id)
+                    matched_tc = cases_by_id.get(tc_id)
+                    if matched_tc is None:
+                        raise ValueError(f"生成的脚本 testCaseId={tc_id} 无法匹配到测试用例")
                     abbr = _to_eng_abbr(matched_tc.module)
+                    # 规范化脚本元数据：不信任 AI 随意填写的 scriptType/framework/language，
+                    # 统一根据用例的 target_platform 推导，避免出现 16 种乱七八糟的类型。
+                    tc_platform = (getattr(matched_tc, "target_platform", "") or "PC").upper()
+                    norm_script_type = "APP" if tc_platform == "APP" else "UI"
+                    norm_framework = "Appium" if tc_platform == "APP" else "Playwright"
+                    raw_lang = (s.get("language") or "Python").strip()
+                    norm_language = "Python" if raw_lang.lower().startswith("py") else raw_lang.capitalize()
                     db.add(AutomationScript(
                         id=str(uuid.uuid4()),
                         project_id=project_id,
                         test_case_id=matched_tc.id,
                         script_code=f"SC_{abbr}_{len(scripts):03d}",
-                        script_type=s.get("scriptType", "UI"),
-                        framework=s.get("framework", "Playwright"),
-                        language=s.get("language", "Python"),
+                        script_type=norm_script_type,
+                        framework=norm_framework,
+                        language=norm_language,
                         code=s.get("code", ""),
                         status="未测试",
                         generated_by_ai=True,
@@ -640,15 +676,32 @@ async def run_generate_scripts(task_id: str, project_id: str, user_id: str):
 
             if not scripts:
                 await _update_task_status(db, task_id, "失败", "AI 未返回有效的脚本数据")
+                _terminal = True
                 return
 
+            if warnings:
+                unique_warnings = list(dict.fromkeys(warnings))
+                summary = "\n\n".join(unique_warnings[:6])
+                await _update_task_progress(db, task_id, {
+                    "stage": "done",
+                    "message": f"已生成 {len(scripts)} 条脚本，其中 {len(unique_warnings)} 条有改进建议（不影响保存和执行）：\n\n{summary}",
+                    "totalCases": len(test_cases),
+                    "generatedScripts": len(scripts),
+                })
             await _update_task_status(db, task_id, "成功")
+            _terminal = True
 
         except Exception as e:
             await db.rollback()
             logger.exception("run_generate_scripts failed")
             friendly = _friendly_error(e, "脚本生成")
-            await _update_task_status(db, task_id, "失败", friendly)
+            await _safe_update_task_status(db, task_id, "失败", friendly)
+            _terminal = True
+        finally:
+            # 兜底：任务若因取消（CancelledError 等 BaseException）或异常逃逸
+            # 未能进入终态，强制标记为失败，避免永远卡在“执行中”。
+            if not _terminal:
+                await _safe_update_task_status(db, task_id, "失败", "脚本生成任务异常中断，请重试")
 
 
 # ─── 路由 ───

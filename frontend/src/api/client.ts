@@ -18,6 +18,7 @@ export {
   docGenApi,
 } from "./system.api";
 export { notificationsApi } from "./notification.api";
+export { defectsApi } from "./defect.api";
 export { environmentApi } from "./environment.api";
 
 // Re-export types with original names (Api prefix) for backward compatibility

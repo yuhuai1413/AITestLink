@@ -7,8 +7,8 @@ import "./styles/tailwind.css";
 import "./styles/login-theme.css";
 import "./styles/global.css";
 
-// 本地开发时 basename 为空，生产环境使用 /aitestlink
-const basename = import.meta.env.DEV ? "" : (import.meta.env.VITE_BASE_PATH || "/aitestlink");
+// 独立域名 aitestlink.cn，无需子路径 basename
+const basename = import.meta.env.VITE_BASE_PATH || "";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

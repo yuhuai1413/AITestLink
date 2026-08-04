@@ -22,15 +22,11 @@ export async function request<T>(path: string, options?: RequestInit): Promise<T
   }
   if (!res.ok) {
     if (res.status === 401) {
-      const errBody = await res.clone().json().catch(() => ({}));
-      const msg = (errBody as any).detail || "登录已过期";
-      if (!window.__alertShown) {
-        window.__alertShown = true;
-        localStorage.removeItem(TOKEN_KEY);
-        showAlert("账号异常", msg);
-        setTimeout(() => { window.__alertShown = false; }, 5000);
+      localStorage.removeItem(TOKEN_KEY);
+      if (!window.location.pathname.includes("/login")) {
+        window.location.href = "/login";
       }
-      throw new Error(msg);
+      throw new Error("登录已过期");
     }
     const errText = await res.text();
     let detail = errText;

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -69,7 +70,7 @@ class AuthService(BaseService):
         phone = data.phone if isinstance(data, LoginRequest) else data.get("phone", "")
         password = data.password if isinstance(data, LoginRequest) else data.get("password", "")
 
-        if not phone or len(phone) != 11 or not phone.isdigit():
+        if not phone or not re.match(r"^1[3-9]\d{9}$", phone):
             return {"ok": False, "message": "手机号格式不正确"}
 
         result = await self.db.execute(select(User).where(User.phone == phone))
@@ -109,7 +110,7 @@ class AuthService(BaseService):
         phone = data.phone if isinstance(data, RegisterRequest) else data.get("phone", "")
         password = data.password if isinstance(data, RegisterRequest) else data.get("password", "")
 
-        if not phone or len(phone) != 11 or not phone.isdigit():
+        if not phone or not re.match(r"^1[3-9]\d{9}$", phone):
             return {"ok": False, "message": "手机号格式不正确"}
 
         if len(password) < 8:
@@ -258,3 +259,36 @@ class AuthService(BaseService):
         await self.db.delete(db_user)
         await self.db.commit()
         return {"ok": True, "message": "删除成功"}
+
+    async def create_user(self, data: dict) -> dict:
+        """管理员后台创建用户（无需验证码）。密码为空时使用默认密码。"""
+        phone = (data.get("phone") or "").strip()
+        if not phone or not re.match(r"^1[3-9]\d{9}$", phone):
+            return {"ok": False, "message": "手机号格式不正确"}
+
+        password = data.get("password") or "password123"
+        if len(password) < 8:
+            return {"ok": False, "message": "密码长度不能少于8位"}
+        if not any(c.isalpha() for c in password):
+            return {"ok": False, "message": "密码必须包含字母"}
+        if not any(c.isdigit() for c in password):
+            return {"ok": False, "message": "密码必须包含数字"}
+
+        existing = await self.db.execute(select(User).where(User.phone == phone))
+        if existing.scalar_one_or_none():
+            return {"ok": False, "message": "该手机号已注册"}
+
+        is_admin = bool(data.get("is_admin", False))
+        # 管理员账号强制启用，避免创建后无法登录管理后台
+        is_active = True if is_admin else bool(data.get("is_active", True))
+
+        user = User(
+            phone=phone,
+            password_hash=hash_password(password),
+            nickname=f"用户{phone[-4:]}",
+            is_admin=is_admin,
+            is_active=is_active,
+        )
+        self.db.add(user)
+        await self.db.commit()
+        return {"ok": True, "message": "创建成功"}

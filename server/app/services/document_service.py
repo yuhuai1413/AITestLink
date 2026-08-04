@@ -211,6 +211,14 @@ class DocumentService(BaseService):
             if schema_key in update_data:
                 setattr(req, db_key, update_data[schema_key])
 
+        # 已失效的需求不允许再次评审通过——数据失效后需重新解析需求，
+        # 不能在旧数据上恢复评审状态。防止前端绕过或同步逻辑误改。
+        from app.services.data_lineage_service import INVALID, REVIEW_INVALIDATED
+        new_review = update_data.get("review_status")
+        is_invalid = req.validity_status == INVALID or req.review_status == REVIEW_INVALIDATED
+        if new_review == "已通过" and is_invalid:
+            raise HTTPException(status_code=400, detail="该需求已失效，无法再次评审。请重新解析需求")
+
         req.clarification_status = default_clarification_status(
             req.question,
             False,

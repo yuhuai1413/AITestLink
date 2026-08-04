@@ -11,6 +11,8 @@ import { StatusPill } from "../../shared/components/StatusPill";
 import { toast } from "sonner";
 import { EnvironmentAccountsModal } from "./EnvironmentAccountsModal";
 import { formatDateTime } from "../../shared/utils/dateTime";
+import { useStore } from "../../app/store";
+import { startRecognizeUI, getRecognizingEnvId } from "../../shared/hooks/aiTaskManager";
 
 function formatTime(iso: string | undefined): string {
   return formatDateTime(iso);
@@ -89,12 +91,15 @@ interface Props {
 }
 
 export function EnvironmentPage({ projectId }: Props) {
+  const { state } = useStore();
   const [environments, setEnvironments] = useState<EnvironmentConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [uiSnapshots, setUiSnapshots] = useState<Record<string, UISnapshot | null>>({});
-  const [recognizingId, setRecognizingId] = useState<string | null>(null);
   const [detailSnapshot, setDetailSnapshot] = useState<UISnapshot | null>(null);
   const [moreMenu, setMoreMenu] = useState<{ environmentId: string; top: number; left: number } | null>(null);
+
+  // 系统识别状态来自全局 store，切换页面不丢失
+  const recognizing = state.activeAITasks.includes(`${projectId}:系统识别`);
 
   // 环境配置弹窗
   const [showEnvModal, setShowEnvModal] = useState(false);
@@ -123,6 +128,7 @@ export function EnvironmentPage({ projectId }: Props) {
     department: "",
     password: "",
     role: "",
+    isAdmin: false,
   });
 
   // 删除确认
@@ -150,6 +156,21 @@ export function EnvironmentPage({ projectId }: Props) {
   }, [projectId]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // 系统识别完成后（后台任务结束）刷新对应环境的 snapshot
+  useEffect(() => {
+    const handler = async (event: Event) => {
+      const detail = (event as CustomEvent).detail as { environmentId?: string } | undefined;
+      const envId = detail?.environmentId;
+      if (!envId) return;
+      try {
+        const snapshot = await environmentApi.getUISnapshot(envId);
+        setUiSnapshots((prev) => ({ ...prev, [envId]: "status" in snapshot ? snapshot : null }));
+      } catch { /* ignore */ }
+    };
+    window.addEventListener("aitestlink:ui-snapshot-refresh", handler);
+    return () => window.removeEventListener("aitestlink:ui-snapshot-refresh", handler);
+  }, []);
   useEffect(() => {
     if (!moreMenu) return;
     const close = () => setMoreMenu(null);
@@ -201,16 +222,8 @@ export function EnvironmentPage({ projectId }: Props) {
   const handleRecognizeUI = async (environment: EnvironmentConfig) => {
     if (environment.environmentType === "APP") { toast.warning("APP 环境暂不支持系统识别"); return; }
     if (!environment.webUrl) { toast.warning("请先配置 Web 地址"); return; }
-    setRecognizingId(environment.id);
-    try {
-      const snapshot = await environmentApi.recognizeUI(environment.id);
-      setUiSnapshots((prev) => ({ ...prev, [environment.id]: snapshot }));
-      snapshot.status === "成功" ? toast.success("系统识别完成") : toast.error(snapshot.error || "系统识别失败");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "系统识别失败");
-    } finally {
-      setRecognizingId(null);
-    }
+    // 走统一异步任务管理器：状态存全局 store，切换页面不丢失
+    await startRecognizeUI(projectId, environment.id);
   };
 
   const toggleMoreMenu = (environment: EnvironmentConfig, event: MouseEvent<HTMLButtonElement>) => {
@@ -259,7 +272,7 @@ export function EnvironmentPage({ projectId }: Props) {
     setDeleteTarget(null);
   };
 
-  const resetAccountForm = () => setAccountForm({ name: "", username: "", department: "", password: "", role: "" });
+  const resetAccountForm = () => setAccountForm({ name: "", username: "", department: "", password: "", role: "", isAdmin: false });
   const accountManagerEnvironment = environments.find((environment) => environment.id === accountManagerEnvId) ?? null;
 
   const openCreateAccount = (environmentId: string) => {
@@ -270,10 +283,30 @@ export function EnvironmentPage({ projectId }: Props) {
   };
 
   const openEditAccount = (account: TestAccount) => {
-    setAccountForm({ name: account.name, username: account.username, department: account.department || "", password: "", role: account.role });
+    setAccountForm({ name: account.name, username: account.username, department: account.department || "", password: "", role: account.role, isAdmin: !!account.isAdmin });
     setEditingAccount(account);
     setCurrentEnvId(account.environmentId);
     setShowAccountModal(true);
+  };
+
+  // 切换识别账号：同一环境只能有一个识别账号。开启当前账号时，先把同环境其他识别账号关掉。
+  const handleToggleAdmin = async (account: TestAccount) => {
+    try {
+      const env = environments.find((e) => e.id === account.environmentId);
+      const siblings = env?.accounts ?? [];
+      // 关闭已是识别账号的兄弟账号（识别账号只能有一个）
+      await Promise.all(
+        siblings
+          .filter((a) => a.id !== account.id && a.isAdmin)
+          .map((a) => environmentApi.updateAccount(a.id, { isAdmin: false })),
+      );
+      // 切换当前账号
+      await environmentApi.updateAccount(account.id, { isAdmin: !account.isAdmin });
+      await loadData();
+    } catch (err) {
+      toast.error("切换识别账号失败，请重试");
+      console.error("toggle recognition account failed:", err);
+    }
   };
 
   return (
@@ -310,7 +343,7 @@ export function EnvironmentPage({ projectId }: Props) {
             { key: "uiSnapshot", label: "系统识别", width: "12%", align: "center", render: (r) => {
               if (r.environmentType === "APP") return <span className="text-muted">暂未支持</span>;
               const snapshot = uiSnapshots[r.id];
-              if (recognizingId === r.id) return <span className="text-blue">识别中...</span>;
+              if (recognizing && getRecognizingEnvId(projectId) === r.id) return <span className="text-blue">识别中...</span>;
               if (!snapshot) return <span className="text-muted">未识别</span>;
               return <span className={snapshot.status === "成功" ? "text-green" : "text-red"} title={snapshot.summary || snapshot.error}>{snapshot.status}</span>;
             } },
@@ -337,7 +370,7 @@ export function EnvironmentPage({ projectId }: Props) {
       <EnvironmentMoreMenu
         environment={moreMenu ? environments.find((item) => item.id === moreMenu.environmentId) ?? null : null}
         snapshot={moreMenu ? uiSnapshots[moreMenu.environmentId] ?? null : null}
-        recognizing={!!moreMenu && recognizingId === moreMenu.environmentId}
+        recognizing={!!moreMenu && recognizing && getRecognizingEnvId(projectId) === moreMenu.environmentId}
         position={moreMenu}
         onAccount={(environment) => runMoreAction(() => setAccountManagerEnvId(environment.id))}
         onRecognize={(environment) => runMoreAction(() => handleRecognizeUI(environment))}
@@ -350,6 +383,7 @@ export function EnvironmentPage({ projectId }: Props) {
         onAdd={openCreateAccount}
         onEdit={openEditAccount}
         onDelete={(account) => setDeleteTarget({ type: "account", id: account.id, name: account.name })}
+        onToggleAdmin={handleToggleAdmin}
       />
 
       {/* 环境配置弹窗 */}
@@ -521,6 +555,9 @@ function RecognitionDetailModal({ snapshot, onClose }: { snapshot: UISnapshot | 
   const effectiveButtons = appButtons.filter(meaningfulButton);
   const effectiveTables = appTables.filter(meaningfulTable);
   const effectivePageObjects = pageObjects.filter(meaningfulPageObject);
+  const screenshots = asArray<JsonRecord>(root.screenshots);
+  const countMenuTotal = (nodes: JsonRecord[]): number => nodes.reduce((sum, n) => sum + 1 + countMenuTotal(asArray<JsonRecord>(n.menus ?? n.children)), 0);
+  const menuTotal = countMenuTotal(appMenus);
 
   useEffect(() => {
     if (snapshot) setActiveTab("basic");
@@ -544,7 +581,9 @@ function RecognitionDetailModal({ snapshot, onClose }: { snapshot: UISnapshot | 
               <div className="panel-stack">
                 <div className="detail-grid">
                   <div className="detail-row"><span className="detail-label">识别状态</span><StatusPill tone={snapshot.status === "成功" ? "green" : "red"}>{snapshot.status || "-"}</StatusPill></div>
-                  <div className="detail-row"><span className="detail-label">识别模式</span><span>{textOf(scope.mode ?? aiAnalysis.scopeMode, "full")}</span></div>
+                  <div className="detail-row"><span className="detail-label">开始时间</span><span>{snapshot.createdAt ? formatTime(snapshot.createdAt) : "-"}</span></div>
+                  <div className="detail-row"><span className="detail-label">完成时间</span><span>{snapshot.updatedAt ? formatTime(snapshot.updatedAt) : "-"}</span></div>
+                  <div className="detail-row"><span className="detail-label">识别范围</span><span>{(() => { const m = textOf(scope.mode ?? aiAnalysis.scopeMode, "full"); return m === "incremental" ? "增量识别（仅识别需求相关模块）" : "全量识别（识别整个系统）"; })()}</span></div>
                   <div className="detail-row detail-row--full"><span className="detail-label">识别摘要</span><pre className={`detail-pre${snapshot.status === "成功" ? "" : " text-red"}`}>{snapshot.summary || snapshot.error || "暂无摘要"}</pre></div>
                   <div className="detail-row"><span className="detail-label">入口页面</span><span>{textOf(loginPage.title)}</span></div>
                   <div className="detail-row"><span className="detail-label">登录后页面</span><span>{textOf(appPage.title)}</span></div>
@@ -553,8 +592,27 @@ function RecognitionDetailModal({ snapshot, onClose }: { snapshot: UISnapshot | 
                   <div className="detail-row"><span className="detail-label">尝试登录</span><span>{textOf(loginResult.attempted)}</span></div>
                   <div className="detail-row"><span className="detail-label">登录结果</span><StatusPill tone={loginResult.success ? "green" : "red"}>{loginResult.success ? "成功" : "失败/未确认"}</StatusPill></div>
                   <div className="detail-row"><span className="detail-label">账号角色</span><span>{textOf(loginResult.accountRole)}</span></div>
-                  <div className="detail-row"><span className="detail-label">有效采集</span><span>菜单 {effectiveMenus.length} / 按钮 {effectiveButtons.length} / 表格 {effectiveTables.length}</span></div>
+                  <div className="detail-row"><span className="detail-label">有效采集</span><span>菜单 {menuTotal} 个（{effectiveMenus.length} 根）/ 按钮 {effectiveButtons.length} / 表格 {effectiveTables.length}</span></div>
                 </div>
+
+                {screenshots.length > 0 ? (
+                  <DetailSection title="识别过程截图">
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      {screenshots.map((shot, idx) => {
+                        const url = textOf(shot.url);
+                        const label = textOf(shot.label) || textOf(shot.step) || `截图 ${idx + 1}`;
+                        return url ? (
+                          <div key={idx}>
+                            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 4 }}>{label}</div>
+                            <a href={url} target="_blank" rel="noreferrer">
+                              <img src={url} alt={label} style={{ width: "100%", borderRadius: 6, border: "1px solid var(--border-color, #e5e7eb)", cursor: "zoom-in", display: "block" }} />
+                            </a>
+                          </div>
+                        ) : null;
+                      })}
+                    </div>
+                  </DetailSection>
+                ) : null}
 
                 <DetailSection title="登录页字段">
                   <ListBlock
@@ -574,31 +632,44 @@ function RecognitionDetailModal({ snapshot, onClose }: { snapshot: UISnapshot | 
             {activeTab === "result" ? (
               <div className="panel-stack">
                 <DetailSection title="AI 结构化识别">
-                  <ListBlock title="相关模块" items={relevantModules.map((item) => `${textOf(item.name)}：${textOf(item.reason, "无说明")}（置信度 ${textOf(item.confidence, "0")}）`)} emptyText="暂无相关模块" />
-                  <ListBlock title="导航计划" items={navigationPlan.map((item) => `${textOf(item.fromPage)} → ${textOf(item.toPage)}：${asArray<unknown>(item.steps).map((step) => compactText(step, "")).filter(Boolean).join(" / ") || "无步骤"}`)} emptyText="暂无导航计划" />
-                  <div className="recognition-card-list">
-                    {effectivePageObjects.length === 0 ? <EmptyLine text="暂无有效页面对象。请确认系统识别是否成功登录，并检查模型配置中的「系统识别」节点。" /> : effectivePageObjects.map((page, index) => {
-                      const elements = asArray<JsonRecord>(page.elements).filter(meaningfulElement);
-                      return (
-                        <div className="detail-card recognition-page-card" key={`${textOf(page.pageName)}-${index}`}>
-                          <div className="detail-card__value">{textOf(page.pageName)}</div>
-                          <div className="trace-row__url">{asArray<unknown>(page.routeOrMenuPath).map((item) => compactText(item, "")).filter(Boolean).join(" / ") || textOf(page.purpose)}</div>
-                          <ListBlock title="元素" compact items={elements.map((element) => `${textOf(element.name)} [${textOf(element.type)}] ${textOf(element.selector, "无稳定定位")} - ${textOf(element.evidence, "无证据")}`)} emptyText="暂无元素" />
-                        </div>
-                      );
-                    })}
-                  </div>
+                  {effectivePageObjects.length === 0 && relevantModules.length === 0 && navigationPlan.length === 0 ? (
+                    <EmptyLine text="本次 AI 结构化识别未产出有效数据（规则采集结果仍可用）。可检查模型配置中的「系统识别」节点后重新识别。" />
+                  ) : (
+                    <>
+                      <ListBlock title="相关模块" items={relevantModules.map((item) => `${textOf(item.name)}：${textOf(item.reason, "无说明")}`)} emptyText="暂无相关模块" />
+                      <ListBlock title="导航计划" items={navigationPlan.map((item) => `${textOf(item.fromPage)} → ${textOf(item.toPage)}：${asArray<unknown>(item.steps).map((step) => compactText(step, "")).filter(Boolean).join(" / ") || "无步骤"}`)} emptyText="暂无导航计划" />
+                      <div className="recognition-card-list">
+                        {effectivePageObjects.map((page, index) => {
+                          const elements = asArray<JsonRecord>(page.elements).filter(meaningfulElement);
+                          return (
+                            <div className="detail-card recognition-page-card" key={`${textOf(page.pageName)}-${index}`}>
+                              <div className="detail-card__value">{textOf(page.pageName)}</div>
+                              <div className="trace-row__url">{asArray<unknown>(page.routeOrMenuPath).map((p) => compactText(p, "")).filter(Boolean).join(" / ") || textOf(page.purpose)}</div>
+                              <ListBlock title="元素" compact items={elements.map((element) => `${textOf(element.name)} [${textOf(element.type)}] ${textOf(element.selector, "无稳定定位")}`)} emptyText="暂无元素" />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
                 </DetailSection>
 
                 <DetailSection title="规则采集结果">
-                  <ListBlock title="菜单" items={effectiveMenus.slice(0, 30).map((item) => `${visibleTextField(item, ["title", "text", "name"])} ${textOf(item.selectorHint, "")}`.trim())} emptyText="未采集到有效菜单" />
-                  <ListBlock title="按钮" items={effectiveButtons.slice(0, 30).map((item) => visibleTextField(item, ["text", "name", "ariaLabel", "title"]))} emptyText="未采集到有效按钮" />
-                  <ListBlock title="表格" items={effectiveTables.map((item) => `列：${asArray<unknown>(item.columns).map((column) => compactText(column, "")).filter(Boolean).join(" / ")}`)} emptyText="未采集到有效表格" />
+                  <div className="recognition-menu-tree">
+                    <div className="recognition-menu-tree__head">系统菜单（共 {menuTotal} 个，{effectiveMenus.length} 个一级菜单）</div>
+                    {effectiveMenus.length === 0 ? <EmptyLine text="未采集到有效菜单" /> : (
+                      <ul className="menu-tree-list">
+                        {effectiveMenus.map((node, idx) => renderMenuNode(node, idx))}
+                      </ul>
+                    )}
+                  </div>
+                  <ListBlock title="页面按钮" items={effectiveButtons.slice(0, 40).map((item) => visibleTextField(item, ["text", "name", "ariaLabel", "title"]))} emptyText="未采集到有效按钮" />
+                  <ListBlock title="表格列" items={effectiveTables.map((item) => `列：${asArray<unknown>(item.columns).map((column) => compactText(column, "")).filter(Boolean).join(" / ")}`)} emptyText="未采集到有效表格" />
                 </DetailSection>
 
                 <DetailSection title="问题与建议">
-                  <ListBlock title="未解决问题" items={unresolvedQuestions.map((item) => compactText(item))} emptyText="暂无未解决问题" />
-                  <ListBlock title="脚本生成建议" items={scriptGuidance.map((item) => compactText(item))} emptyText="暂无建议" />
+                  <ListBlock title="未解决问题" items={unresolvedQuestions.map((item) => compactText(item)).filter((t) => t && !/^[a-zA-Z\s\d:.()'"\-_,]+$/.test(t))} emptyText="无未解决问题" />
+                  <ListBlock title="脚本生成建议" items={scriptGuidance.map((item) => compactText(item)).filter(Boolean)} emptyText="无建议" />
                 </DetailSection>
               </div>
             ) : null}
@@ -725,4 +796,28 @@ function ListBlock({ title, items, emptyText = "暂无数据", compact = false }
 
 function EmptyLine({ text }: { text: string }) {
   return <div className="muted-empty">{text}</div>;
+}
+
+function renderMenuNode(node: JsonRecord, key: number | string): ReactNode {
+  const title = visibleTextField(node, ["title", "text", "name"]) || "未命名";
+  const selector = textOf(node.selectorHint, "");
+  const className = String(node.className || "");
+  const isSubmenu = className.includes("submenu");
+  const children = asArray<JsonRecord>(node.children).filter(meaningfulMenu);
+  const isOpened = className.includes("is-opened");
+  return (
+    <li className={`menu-tree-node${isSubmenu ? " menu-tree-node--branch" : ""}`} key={key}>
+      <div className="menu-tree-node__label">
+        <span className="menu-tree-node__icon">{isSubmenu ? (isOpened ? "▾" : "▸") : "•"}</span>
+        <span className="menu-tree-node__title">{title}</span>
+        {isSubmenu ? <span className="menu-tree-node__tag">子菜单{children.length > 0 ? `(${children.length})` : ""}</span> : null}
+        {selector ? <span className="menu-tree-node__selector">{selector}</span> : null}
+      </div>
+      {children.length > 0 ? (
+        <ul className="menu-tree-list">
+          {children.map((child, idx) => renderMenuNode(child, `${key}-${idx}`))}
+        </ul>
+      ) : null}
+    </li>
+  );
 }

@@ -40,27 +40,47 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
   const hasPrerequisite = automatable.length > 0;
   const invalidTCCount = automatable.filter((tc) => (tc as any).validityStatus === "已失效").length;
   const unreviewedTCCount = automatable.filter((tc) => tc.reviewStatus !== "已通过").length;
-  const allSelected = scripts.length > 0 && scripts.every((s) => selectedIds.has(s.id));
-  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(scripts.map((s) => s.id)));
+  const isInvalid = (s: any) => s.validityStatus === "已失效" || s.reviewStatus === "已作废";
+  const reviewableScripts = scripts.filter((s) => !isInvalid(s));
+  const allSelected = reviewableScripts.length > 0 && reviewableScripts.every((s) => selectedIds.has(s.id));
+  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(reviewableScripts.map((s) => s.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const normalizeTestStatus = (status?: string | null) => status === "通过" ? "通过" : status === "失败" ? "失败" : "未测试";
   const getRelatedTestCase = (script: AutomationScript | null) => script ? testCases.find((t) => t.id === script.testCaseId) : undefined;
 
   const toggleReview = async (script: AutomationScript) => {
+    if (isInvalid(script)) { toast.warning("已失效的脚本不能修改评审状态，请重新生成脚本"); return; }
     const newStatus = (script as any).reviewStatus === "已通过" ? "待评审" : "已通过";
     try { await scriptsApi.update(script.id, { reviewStatus: newStatus } as any); } catch {}
     dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, reviewStatus: newStatus } as any });
     await refreshScripts();
   };
   const batchApprove = async () => {
-    for (const id of selectedIds) {
-      const script = scripts.find((s) => s.id === id);
-      if (script && (script as any).reviewStatus !== "已通过") {
-        try { await scriptsApi.update(script.id, { reviewStatus: "已通过" } as any); } catch {}
-        dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, reviewStatus: "已通过" } as any });
+    const selected = scripts.filter((s) => selectedIds.has(s.id));
+    const invalid = selected.filter(isInvalid);
+    const reviewable = selected.filter((s) => !isInvalid(s) && (s as any).reviewStatus !== "已通过");
+
+    if (reviewable.length === 0) {
+      if (invalid.length > 0) {
+        toast.warning(`选中的 ${selectedIds.size} 个脚本均已失效，无法再次评审。数据失效后需重新生成脚本`);
+      } else {
+        toast.info("选中的脚本已是评审通过状态，无需重复评审");
       }
+      setSelectedIds(new Set());
+      return;
     }
-    toast.success(`已通过 ${selectedIds.size} 个脚本`);
+
+    let passed = 0;
+    for (const script of reviewable) {
+      try { await scriptsApi.update(script.id, { reviewStatus: "已通过" } as any); } catch {}
+      dispatch({ type: "UPDATE_SCRIPT", payload: { ...script, reviewStatus: "已通过" } as any });
+      passed += 1;
+    }
+    if (invalid.length > 0) {
+      toast.success(`已通过 ${passed} 个脚本；其中 ${invalid.length} 个已失效被自动跳过`);
+    } else {
+      toast.success(`已通过 ${passed} 个脚本`);
+    }
     setSelectedIds(new Set());
     await refreshScripts();
   };
@@ -114,11 +134,18 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
         {initialLoading && scripts.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : scripts.length === 0 ? <div className="empty-state"><p>暂无自动化脚本，请点击上方「生成自动化脚本」按钮生成</p></div> : (
           <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <DataTable rows={scripts} getRowKey={(r) => r.id} columns={[
-              { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
+              { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} disabled={reviewableScripts.length === 0} />, width: "40px", sticky: "left" as const, render: (r) => {
+                const invalid = isInvalid(r);
+                return <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} disabled={invalid} title={invalid ? "已失效脚本不可评审" : undefined} />;
+              } },
               { key: "scriptCode", label: "脚本编号", render: (r) => r.scriptCode || <span style={{ color: "var(--muted)" }}>-</span> },
-              { key: "testCase", label: "关联用例", align: "left", lineClamp: 3, render: (r) => {
+              { key: "caseCode", label: "用例编号", align: "center", render: (r) => {
                 const tc = testCases.find((t) => t.id === r.testCaseId);
-                return tc ? <span title={`${tc.caseCode} ${tc.title}`}>{tc.caseCode} · {tc.title}</span> : <span style={{ color: "var(--muted)" }}>-</span>;
+                return tc?.caseCode ? <span title={tc.caseCode}>{tc.caseCode}</span> : <span style={{ color: "var(--muted)" }}>-</span>;
+              }},
+              { key: "caseTitle", label: "用例描述", align: "left", lineClamp: 3, render: (r) => {
+                const tc = testCases.find((t) => t.id === r.testCaseId);
+                return tc?.title ? <span title={tc.title}>{tc.title}</span> : <span style={{ color: "var(--muted)" }}>-</span>;
               }},
               { key: "testType", label: "测试类型", align: "center", render: (r) => {
                 const tc = testCases.find((t) => t.id === r.testCaseId);
@@ -232,7 +259,17 @@ export function ScriptsTab({ projectId }: { projectId: string }) {
       </Modal>
 
       <ConfirmDialog open={showGenerateConfirm} title="重新生成脚本" message={`当前已有 ${existingScriptCount} 个脚本，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" confirmLoading={generating} onConfirm={handleGenerate} onCancel={() => setShowGenerateConfirm(false)} />
-      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 个脚本标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
+      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={(() => {
+        const selected = scripts.filter((s) => selectedIds.has(s.id));
+        const invalidCount = selected.filter(isInvalid).length;
+        if (invalidCount === selected.length) {
+          return `选中的 ${selectedIds.size} 个脚本均已失效，无法再次评审。数据失效后需重新生成脚本`;
+        }
+        if (invalidCount > 0) {
+          return `选中的 ${selectedIds.size} 个脚本中有 ${invalidCount} 个已失效，将被自动跳过，仅评审其余 ${selectedIds.size - invalidCount} 个。是否继续？`;
+        }
+        return `确定将选中的 ${selectedIds.size} 个脚本标记为评审通过？`;
+      })()} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
       {configErrorDialog}
       {scriptDirty.confirmDialog}
 

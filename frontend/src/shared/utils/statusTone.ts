@@ -17,6 +17,7 @@ export function riskTone(risk?: string | null): StatusTone {
 export function reviewTone(status?: string | null): StatusTone {
   if (status === "已通过") return "green";
   if (status === "需修改" || status === "已驳回" || status === "不通过") return "red";
+  if (status === "已作废") return "slate";
   if (status === "待评审" || !status) return "amber";
   return "slate";
 }

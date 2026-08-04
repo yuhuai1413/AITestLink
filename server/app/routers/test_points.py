@@ -40,7 +40,7 @@ def _point_value(item: dict, key: str, index: int) -> str:
         "automatable": "是" if item.get("automatable") else "否",
         "reviewStatus": item.get("reviewStatus") or "待评审",
         "validityStatus": item.get("validityStatus") or "有效",
-        "invalidReason": item.get("invalidReason") or "",
+        "invalidReason": (item.get("invalidReason") or "失效原因未知") if (item.get("validityStatus") == "已失效") else "",
         "createdAt": format_export_datetime(item.get("createdAt")),
         "updatedAt": format_export_datetime(item.get("updatedAt")),
     }
@@ -63,7 +63,12 @@ def _build_test_points_xlsx(project_name: str, rows: list[dict]) -> bytes:
         ("automatable", "是否自动化", 12, "center"),
         ("reviewStatus", "评审状态", 12, "center"),
         ("validityStatus", "数据状态", 12, "center"),
-        ("invalidReason", "失效原因", 28, "left"),
+    ]
+    # 仅当存在已失效数据时才输出"失效原因"列（含表头）
+    has_invalid = any(r.get("validityStatus") == "已失效" for r in rows)
+    if has_invalid:
+        columns.append(("invalidReason", "失效原因", 28, "left"))
+    columns += [
         ("createdAt", "生成时间", 20, "center"),
         ("updatedAt", "更新时间", 20, "center"),
     ]
@@ -238,5 +243,5 @@ async def batch_review_test_points(
     user: dict = Depends(get_current_user),
     service: TestDesignService = Depends(get_test_design_service),
 ):
-    count = await service.batch_update_review(data.ids, data.status)
+    count = await service.batch_update_test_point_review(data.ids, data.status)
     return {"ok": True, "updated": count}

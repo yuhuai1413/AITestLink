@@ -35,6 +35,7 @@ export interface ExecutionResult {
   status: string;
   output: string;
   error: string | null;
+  autoCreatedDefectCode?: string | null;
   executedAt: string;
   startedAt?: string | null;
   finishedAt?: string | null;

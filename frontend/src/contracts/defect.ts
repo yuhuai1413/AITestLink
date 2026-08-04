@@ -16,7 +16,11 @@ export interface Defect {
   status: DefectStatus;
   module: string;
   category: DefectCategory;
+  source: string;
   testCaseId: string | null;
+  scriptId: string | null;
+  executionRunId: string | null;
+  screenshotUrl: string;
   stepsToReproduce: string;
   expectedResult: string;
   actualResult: string;
@@ -26,7 +30,6 @@ export interface Defect {
   remark: string;
   testPlan: string;
   iteration: string;
-  source: string;
   foundAt: string | null;
   resolvedAt: string | null;
   createdAt: string;
@@ -41,7 +44,11 @@ export interface DefectCreate {
   status?: DefectStatus;
   module?: string;
   category?: DefectCategory;
+  source?: string;
   testCaseId?: string | null;
+  scriptId?: string | null;
+  executionRunId?: string | null;
+  screenshotUrl?: string;
   stepsToReproduce?: string;
   expectedResult?: string;
   actualResult?: string;
@@ -51,7 +58,6 @@ export interface DefectCreate {
   remark?: string;
   testPlan?: string;
   iteration?: string;
-  source?: string;
 }
 
 export type DefectUpdate = Partial<DefectCreate>;
@@ -62,6 +68,8 @@ export interface DefectStats {
   byStatus: Record<string, number>;
   byModule: Record<string, number>;
   byCategory: Record<string, number>;
+  bySource: Record<string, number>;
+  autoCount: number;
   openCount: number;
   closedCount: number;
 }

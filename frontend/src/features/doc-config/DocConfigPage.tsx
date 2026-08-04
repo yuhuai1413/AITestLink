@@ -21,6 +21,21 @@ const DOC_CATEGORY_MAP: Record<string, string> = {
   "tpl-app": "操作手册",
 };
 
+// 从文件名提取扩展名并映射成可读的文档类型；无文件时返回空串（列里展示 -）
+const EXT_TYPE_MAP: Record<string, string> = {
+  docx: "Word",
+  doc: "Word",
+  pdf: "PDF",
+  xlsx: "Excel",
+  xls: "Excel",
+  csv: "CSV",
+  md: "Markdown",
+  txt: "文本",
+  json: "JSON",
+  yaml: "YAML",
+  yml: "YAML",
+};
+
 const DOC_TONE_MAP: Record<string, string> = {
   "tpl-plan": "blue",
   "tpl-spec": "green",
@@ -28,6 +43,13 @@ const DOC_TONE_MAP: Record<string, string> = {
   "tpl-pc": "amber",
   "tpl-app": "red",
 };
+
+// 根据实际上传的模板文件名提取文档类型（如 软件测试计划模板.docx → Word）；无文件返回空
+function docTypeFromFileName(fileName: string): string {
+  if (!fileName) return "";
+  const ext = fileName.split(".").pop()?.toLowerCase() || "";
+  return EXT_TYPE_MAP[ext] || (ext ? ext.toUpperCase() : "");
+}
 
 export function DocConfigPage() {
   const [configs, setConfigs] = useState<ApiDocConfig[]>([]);
@@ -41,6 +63,7 @@ export function DocConfigPage() {
   const [filterCategory, setFilterCategory] = useState("all");
   const [isAdmin, setIsAdmin] = useState(false);
   const docDirty = useUnsavedChanges();
+
 
   useEffect(() => {
     loadConfigs();
@@ -138,6 +161,8 @@ export function DocConfigPage() {
       setPreviewLoading(false);
     }
   }, []);
+
+
 
   const handleDownloadFile = useCallback(async (config: ApiDocConfig) => {
     if (!config.templateFile) return;
@@ -271,6 +296,16 @@ export function DocConfigPage() {
                   {DOC_CATEGORY_MAP[row.configKey] || "其他"}
                 </StatusPill>
               ),
+            },
+            {
+              key: "docType",
+              label: "文档类型",
+              width: "10%",
+              align: "center",
+              render: (row) => {
+                const docType = docTypeFromFileName(row.templateFile || "");
+                return docType ? <StatusPill tone="slate">{docType}</StatusPill> : <span style={{ color: "var(--muted)" }}>-</span>;
+              },
             },
             {
               key: "description",
@@ -464,6 +499,8 @@ export function DocConfigPage() {
           </form>
         )}
       </Modal>
+
+
       {docDirty.confirmDialog}
     </div>
   );

@@ -19,6 +19,82 @@ def _required_text(value: Any) -> str:
     return value.strip()
 
 
+# 模型有时把 confidence 返回成中文或百分比字符串，这里统一容错为 0-1 的 float，
+# 避免一条记录的 confidence 解析失败拖垮整个系统识别结果。
+_CONFIDENCE_WORD_MAP = {
+    "高": 0.8, "较高": 0.75, "中": 0.5, "较低": 0.3, "低": 0.2,
+    "high": 0.8, "medium": 0.5, "low": 0.2,
+    "确定": 0.9, "不确定": 0.3,
+}
+
+
+def _coerce_confidence(value: Any) -> float:
+    if isinstance(value, (int, float)):
+        return max(0.0, min(1.0, float(value)))
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return 0.0
+        lowered = text.lower()
+        # 中英文置信度词
+        for word, mapped in _CONFIDENCE_WORD_MAP.items():
+            if lowered == word.lower():
+                return mapped
+        # 百分比 "80%"
+        if text.endswith("%"):
+            try:
+                return max(0.0, min(1.0, float(text[:-1]) / 100))
+            except ValueError:
+                return 0.0
+        # 纯数字字符串 "0.8" / "80"
+        try:
+            num = float(text)
+            if num > 1:  # "80" 当百分比处理
+                num = num / 100
+            return max(0.0, min(1.0, num))
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
+def _coerce_str_list(value: Any) -> list[str]:
+    """把模型返回的值容错为 list[str]。
+
+    模型常把本应是数组的字段返回成：单个字符串、用分隔符拼接的字符串、
+    null、单个对象等。这里统一转成 list[str]，避免一个字段类型不符
+    就让整个系统识别结果校验失败、AI 分析全部丢弃。
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if v is not None and str(v).strip() != ""]
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return []
+        # 模型可能用 "A / B / C" 或 "A,B,C" 或 "A、B" 拼接
+        import re
+        parts = re.split(r"[/／,，、;；\n]+", stripped)
+        return [p.strip() for p in parts if p.strip()]
+    # 其他类型（数字、对象等）转成单元素 list
+    return [str(value).strip()]
+
+
+def _coerce_obj_list(value: Any) -> list:
+    """把模型返回的值容错为 list（对象列表）。
+
+    模型可能把 elements 返回成单个对象 {} 而非 [{}]，或返回 null。
+    这里统一转成 list，None/空值返回空列表。
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [v for v in value if v is not None]
+    if isinstance(value, dict):
+        return [value]
+    return []
+
+
 class RequirementOutput(_AIOutputBase):
     module: str
     feature: str
@@ -219,6 +295,7 @@ class SystemRecognitionOutput(_AIOutputBase):
         confidence: float = Field(default=0, ge=0, le=1)
 
         _name_required = field_validator("name", mode="before")(_required_text)
+        _confidence_coerced = field_validator("confidence", mode="before")(_coerce_confidence)
 
     class Element(_AIOutputBase):
         name: str
@@ -232,6 +309,7 @@ class SystemRecognitionOutput(_AIOutputBase):
 
         _name_required = field_validator("name", mode="before")(_required_text)
         _type_required = field_validator("type", mode="before")(_required_text)
+        _confidence_coerced = field_validator("confidence", mode="before")(_coerce_confidence)
 
     class PageObject(_AIOutputBase):
         pageName: str
@@ -242,11 +320,17 @@ class SystemRecognitionOutput(_AIOutputBase):
         risks: list[str] = Field(default_factory=list)
 
         _page_required = field_validator("pageName", mode="before")(_required_text)
+        _elements_coerced = field_validator("elements", mode="before")(_coerce_obj_list)
+        _route_coerced = field_validator("routeOrMenuPath", mode="before")(_coerce_str_list)
+        _assertions_coerced = field_validator("assertions", mode="before")(_coerce_str_list)
+        _risks_coerced = field_validator("risks", mode="before")(_coerce_str_list)
 
     class NavigationStep(_AIOutputBase):
         fromPage: str = Field(default="", validation_alias=AliasChoices("fromPage", "from"), serialization_alias="fromPage")
         toPage: str = Field(default="", validation_alias=AliasChoices("toPage", "to"), serialization_alias="toPage")
         steps: list[str] = Field(default_factory=list)
+
+        _steps_coerced = field_validator("steps", mode="before")(_coerce_str_list)
 
     scopeMode: Literal["full", "incremental"] = "full"
     relevantModules: list[RelevantModule] = Field(default_factory=list)
@@ -254,6 +338,9 @@ class SystemRecognitionOutput(_AIOutputBase):
     navigationPlan: list[NavigationStep] = Field(default_factory=list)
     scriptGuidance: list[str] = Field(default_factory=list)
     unresolvedQuestions: list[str] = Field(default_factory=list)
+
+    _script_guidance_coerced = field_validator("scriptGuidance", mode="before")(_coerce_str_list)
+    _unresolved_coerced = field_validator("unresolvedQuestions", mode="before")(_coerce_str_list)
 
 
 OUTPUT_SCHEMAS: dict[str, type[_AIOutputBase]] = {

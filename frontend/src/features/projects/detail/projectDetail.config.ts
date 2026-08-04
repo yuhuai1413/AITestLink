@@ -3,18 +3,20 @@ import { formatDateTime } from "../../../shared/utils/dateTime";
 export { priorityTone, reviewTone } from "../../../shared/utils/statusTone";
 
 export type ProjectDetailTabKey =
+  | "overview"
   | "files"
   | "requirements"
   | "testPoints"
   | "testCases"
   | "scripts"
   | "executeScripts"
+  | "defects"
   | "docFusion"
-  | "summary"
   | "docGenerate"
   | "environment";
 
 export const projectDetailTabs: { key: ProjectDetailTabKey; label: string }[] = [
+  { key: "overview", label: "项目概况" },
   { key: "files", label: "输入资料" },
   { key: "environment", label: "环境配置" },
   { key: "requirements", label: "需求列表" },
@@ -22,8 +24,8 @@ export const projectDetailTabs: { key: ProjectDetailTabKey; label: string }[] = 
   { key: "testCases", label: "测试用例" },
   { key: "scripts", label: "自动化脚本" },
   { key: "executeScripts", label: "执行脚本" },
+  { key: "defects", label: "缺陷统计" },
   { key: "docFusion", label: "数据汇总" },
-  { key: "summary", label: "测试总结" },
   { key: "docGenerate", label: "文档生成" },
 ];
 

@@ -2,12 +2,11 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-// dev: base = "/"  (本地开发，无子路径)
-// prod build: base = "/aitestlink/"  (服务器子路径部署)
-// 通过 VITE_BASE 环境变量覆盖，或自动判断
+// 本地开发和生产环境均使用 "/"（独立域名 aitestlink.cn，无子路径）
+// 通过 VITE_BASE 环境变量可覆盖
 function getBase(mode: string, viteBase?: string): string {
   if (mode === "development") return "/";
-  return viteBase || "/aitestlink/";
+  return viteBase || "/";
 }
 
 export default defineConfig(({ mode }) => {

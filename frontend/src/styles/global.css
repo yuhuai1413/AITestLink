@@ -15,6 +15,8 @@
 @import "./components/user-menu.css";
 @import "./components/edit-tabs.css";
 @import "./components/dashboard.css";
+@import "./components/overview.css";
+@import "./components/defects.css";
 @import "./components/confirm-dialog.css";
 @import "./components/toast.css";
 @import "./components/animations.css";

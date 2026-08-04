@@ -5,6 +5,7 @@
  */
 import { aiApi, requirementsApi, testPointsApi, testCasesApi, scriptsApi } from "../../api/client";
 import type { ApiRequirement, ApiTestPoint, ApiTestCase, ApiScript } from "../../api/client";
+import { environmentApi } from "../../api/environment.api";
 import { toast } from "sonner";
 import { addTaskNotification, initNotificationContext } from "../ai-tasks/aiTaskNotifications";
 import type { AITaskType } from "../types/platform";
@@ -27,10 +28,13 @@ export const addNotification = addTaskNotification;
 
 // ── 活跃轮询任务 ──
 const activeTasks = new Map<string, AbortController>();
+// 记录系统识别任务当前识别的环境 id（切页面保持），供 UI 精确显示哪个环境在识别
+const recognizingEnvIds = new Map<string, string>();
 const DEFAULT_POLL_SECONDS = 900;
 const LONG_RUNNING_POLL_SECONDS: Partial<Record<AITaskType, number>> = {
   "脚本生成": 1800,
   "文档生成": 1800,
+  "系统识别": 1800,
 };
 
 // ── 轮询 AI 任务状态 ──
@@ -40,7 +44,8 @@ async function pollAITask(
   taskType: AITaskType,
   signal: AbortSignal,
   onProgress?: () => Promise<void>,
-): Promise<{ success: boolean; error?: string }> {
+  onProgressMessage?: (msg: string) => void,
+): Promise<{ success: boolean; timeout?: boolean; error?: string; info?: string }> {
   const maxPollSeconds = LONG_RUNNING_POLL_SECONDS[taskType] ?? DEFAULT_POLL_SECONDS;
   let lastStatus = "";
   let lastResult = "";
@@ -55,6 +60,15 @@ async function pollAITask(
       if (task?.result && task.result !== lastResult) {
         lastResult = task.result;
         await onProgress?.();
+        // 解析进度 message（后端写入"正在生成第 X/Y 批"等），通过回调展示
+        if (onProgressMessage) {
+          try {
+            const parsed = JSON.parse(task.result);
+            if (parsed && typeof parsed.message === "string" && parsed.message.trim()) {
+              onProgressMessage(parsed.message.trim());
+            }
+          } catch { /* ignore */ }
+        }
       }
       if (task && (task.status === "成功" || task.status === "失败")) {
         if (_dispatch) {
@@ -72,13 +86,23 @@ async function pollAITask(
             },
           });
         }
-        if (task.status === "成功") return { success: true };
+        if (task.status === "成功") {
+          let info: string | undefined;
+          try {
+            const parsed = task.result ? JSON.parse(task.result) : null;
+            if (parsed && typeof parsed.message === "string" && parsed.message.trim()) {
+              info = parsed.message.trim();
+            }
+          } catch { /* ignore */ }
+          return { success: true, info };
+        }
         return { success: false, error: task.errorMessage || undefined };
       }
     } catch (e) { console.warn('Polling error:', e); }
   }
   if (lastStatus === "执行中") {
-    return { success: false, error: `${taskType}仍在后台执行，生成内容较多时会耗时较长，请稍后刷新任务列表查看结果` };
+    // 轮询超时但后台仍在执行：不当作失败，保持按钮"生成中"状态，避免用户二次点击
+    return { success: false, timeout: true, error: `${taskType}仍在后台执行，生成内容较多时会耗时较长，请稍后刷新任务列表查看结果` };
   }
   return { success: false, error: `${taskType}等待超时，未获取到任务结果` };
 }
@@ -95,6 +119,10 @@ function makeTaskKey(projectId: string, type: string) {
 
 function emitProjectDataRefresh(projectId: string) {
   window.dispatchEvent(new CustomEvent("aitestlink:data-refresh", { detail: { projectId } }));
+}
+
+function emitUISnapshotRefresh(environmentId: string) {
+  window.dispatchEvent(new CustomEvent("aitestlink:ui-snapshot-refresh", { detail: { environmentId } }));
 }
 
 async function refreshRequirements(projectId: string) {
@@ -258,8 +286,8 @@ async function runTask(
   taskType: AITaskType,
   apiCall: () => Promise<{ id: string; projectId: string; type: string; status: string; modelName: string; createdAt: string }>,
   onSuccess?: () => Promise<void>,
-  opts?: { skipStartDispatch?: boolean; onProgress?: () => Promise<void>; onStarted?: () => void },
-): Promise<{ success: boolean; error?: string }> {
+  opts?: { skipStartDispatch?: boolean; onProgress?: () => Promise<void>; onProgressMessage?: (msg: string) => void; onStarted?: () => void },
+): Promise<{ success: boolean; error?: string; info?: string }> {
   const key = makeTaskKey(projectId, taskType);
 
   // 如果同类任务正在进行，先取消
@@ -271,6 +299,9 @@ async function runTask(
   const controller = new AbortController();
   activeTasks.set(key, controller);
 
+  // 任务是否进入终态（成功/失败/异常）。轮询超时但后台仍执行时不置 true，
+  // 这样 finally 不会清除按钮"生成中"状态，避免用户在后台仍在生成时二次点击。
+  let taskEnded = false;
   try {
     const task = await apiCall();
     if (_dispatch) {
@@ -291,14 +322,25 @@ async function runTask(
     }
     opts?.onStarted?.();
 
-    const pollResult = await pollAITask(projectId, task.id, taskType, controller.signal, opts?.onProgress);
+    const pollResult = await pollAITask(projectId, task.id, taskType, controller.signal, opts?.onProgress, opts?.onProgressMessage);
 
     if (pollResult.success) {
       if (onSuccess) await onSuccess();
       emitProjectDataRefresh(projectId);
       addNotification("任务完成", taskType, projectId, `${taskType}已完成`, getTaskTargetPath(projectId));
-      return { success: true };
+      if (pollResult.info) {
+        toast.info(pollResult.info, { duration: 12000 });
+      }
+      taskEnded = true;
+      return { success: true, info: pollResult.info };
+    } else if (pollResult.timeout) {
+      // 轮询超时但后台仍在执行：提示用户但不重置按钮状态（taskEnded 保持 false）
+      if (!controller.signal.aborted) {
+        toast.info(pollResult.error || `${taskType}仍在后台执行，完成后会在通知列表提醒`, { duration: 10000 });
+      }
+      return { success: false, error: pollResult.error };
     } else {
+      taskEnded = true;
       const errorMsg = pollResult.error || `${taskType}失败`;
       if (!controller.signal.aborted) {
         notifyTaskFailure(taskType, projectId, errorMsg, getTaskTargetPath(projectId));
@@ -306,6 +348,7 @@ async function runTask(
       return { success: false, error: errorMsg };
     }
   } catch (err) {
+    taskEnded = true;
     if (!controller.signal.aborted) {
       const msg = err instanceof Error ? err.message : "未知错误";
       notifyTaskFailure(taskType, projectId, `${taskType}失败: ${msg}`);
@@ -313,7 +356,9 @@ async function runTask(
     return { success: false, error: err instanceof Error ? err.message : "未知错误" };
   } finally {
     activeTasks.delete(key);
-    if (_dispatch) {
+    // 只有任务真正结束（成功/失败/异常）才清除按钮状态；
+    // 轮询超时但后台仍执行时保持"生成中"，避免二次点击。
+    if (taskEnded && _dispatch) {
       _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:${taskType}` });
     }
   }
@@ -437,9 +482,17 @@ export async function startGenerateScripts(projectId: string) {
     }
 
     toast.info("脚本生成已启动，完成后会在通知列表中提醒");
+    let lastProgressMsg = "";
     return await runTask(projectId, "脚本生成", () => aiApi.generateScripts(projectId), () => refreshScripts(projectId), {
       skipStartDispatch: true,
       onProgress: () => refreshScripts(projectId),
+      onProgressMessage: (msg) => {
+        // 节流：同一进度消息只提示一次，避免刷屏
+        if (msg && msg !== lastProgressMsg) {
+          lastProgressMsg = msg;
+          toast.info(msg, { duration: 6000 });
+        }
+      },
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "脚本生成失败";
@@ -491,6 +544,80 @@ export async function startExecuteScripts(projectId: string) {
     if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:执行脚本` });
     return { success: false, error: msg };
   }
+}
+
+export async function startRecognizeUI(
+  projectId: string,
+  environmentId: string,
+  options: { accountId?: string; headed?: boolean; scopeMode?: "full" | "incremental"; requirementIds?: string[]; requirementText?: string } = {},
+) {
+  try {
+    const verify = await verifyAIConfig(projectId, "系统识别");
+    if (!verify.ok) {
+      notifyTaskFailure("系统识别", projectId, `系统识别失败：${verify.error}`);
+      return { success: false, error: verify.error };
+    }
+
+    // 先调 API 创建任务；后端会在创建任务前校验识别账号等前置条件，
+    // 校验不通过直接返回 400，此时还没设"识别中"，用户立即看到错误提示。
+    const task = await environmentApi.recognizeUI(environmentId, options);
+    // API 成功说明任务已创建，此时才设"识别中"状态并提示已启动
+    if (_dispatch) {
+      _dispatch({ type: "START_ACTIVE_AI_TASK", payload: `${projectId}:系统识别` });
+      _dispatch({
+        type: "ADD_AI_TASK",
+        payload: {
+          id: task.id,
+          projectId: task.projectId,
+          type: task.type as any,
+          status: task.status as any,
+          modelName: task.modelName,
+          createdAt: task.createdAt,
+        },
+      });
+    }
+    recognizingEnvIds.set(projectId, environmentId);
+    toast.info("系统识别已启动，完成后会在通知列表中提醒");
+
+    // 轮询任务状态（复用 runTask 的轮询，但跳过它的 apiCall/START）
+    const controller = new AbortController();
+    const key = makeTaskKey(projectId, "系统识别");
+    if (activeTasks.has(key)) {
+      activeTasks.get(key)!.abort();
+    }
+    activeTasks.set(key, controller);
+    let pollResult: { success?: boolean; timeout?: boolean; error?: string; info?: string } = {};
+    try {
+      pollResult = await pollAITask(projectId, task.id, "系统识别", controller.signal, () => emitUISnapshotRefresh(environmentId));
+      if (pollResult.success) {
+        emitUISnapshotRefresh(environmentId);
+        addNotification("任务完成", "系统识别", projectId, "系统识别已完成", `/projects/${projectId}`);
+        if (pollResult.info) toast.info(pollResult.info, { duration: 12000 });
+      } else if (!pollResult.timeout) {
+        if (!controller.signal.aborted) {
+          notifyTaskFailure("系统识别", projectId, pollResult.error || "系统识别失败", `/projects/${projectId}`);
+        }
+      }
+    } finally {
+      activeTasks.delete(key);
+      // 任务真正结束（成功/失败/异常）才清除"识别中"；轮询超时但后台仍执行时保持
+      if (pollResult.success || (pollResult.timeout === false)) {
+        if (_dispatch) _dispatch({ type: "STOP_ACTIVE_AI_TASK", payload: `${projectId}:系统识别` });
+      }
+      recognizingEnvIds.delete(projectId);
+    }
+    return { success: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "系统识别失败";
+    notifyTaskFailure("系统识别", projectId, msg);
+    recognizingEnvIds.delete(projectId);
+    return { success: false, error: msg };
+  }
+}
+
+/** 返回某个项目当前正在识别的环境 id（若有），用于精确显示"识别中" */
+export function getRecognizingEnvId(projectId: string): string | undefined {
+  return recognizingEnvIds.get(projectId);
 }
 
 /** 查询某个项目是否有正在运行的任务 */

@@ -43,7 +43,7 @@ def _pick_element_fields(item: dict[str, Any]) -> dict[str, Any]:
     """Keep only locator-relevant fields for script generation prompts."""
     return {
         key: value
-        for key in ("tag", "text", "title", "placeholder", "type", "role", "visible")
+        for key in ("tag", "text", "title", "placeholder", "type", "role", "id", "name", "ariaLabel", "required", "visible")
         if (value := item.get(key)) not in (None, "", [], {})
     }
 
@@ -120,19 +120,164 @@ def _compact_ui_context_for_script(context: dict[str, Any], item: Any) -> dict[s
         if isinstance(input_item, dict)
     ][:8]
 
+    login_buttons = [
+        _pick_element_fields(button)
+        for button in (context.get("loginButtons") or [])
+        if isinstance(button, dict) and (button.get("visible") or button.get("text") or button.get("title"))
+    ][:6]
+
     ai_analysis = context.get("aiAnalysis") if isinstance(context.get("aiAnalysis"), dict) else {}
     script_guidance = ai_analysis.get("scriptGuidance") if isinstance(ai_analysis.get("scriptGuidance"), list) else []
+
+    # AI 结构化页面对象：含每个元素的 selector/selectorType/action，
+    # 是脚本生成最依赖的精确定位器来源。按关键词筛选相关页面。
+    raw_pages = context.get("pageObjects") if isinstance(context.get("pageObjects"), list) else []
+    page_objects = [
+        {
+            "pageName": page.get("pageName") or "",
+            "routeOrMenuPath": page.get("routeOrMenuPath") or [],
+            "purpose": page.get("purpose") or "",
+            "elements": [
+                {
+                    "name": el.get("name") or "",
+                    "type": el.get("type") or "",
+                    "selector": el.get("selector") or "",
+                    "selectorType": el.get("selectorType") or "",
+                    "action": el.get("action") or "",
+                }
+                for el in (page.get("elements") or [])
+                if isinstance(el, dict) and (el.get("selector") or el.get("name"))
+            ][:10],
+            "assertions": [a for a in (page.get("assertions") or []) if a][:5],
+        }
+        for page in raw_pages
+        if isinstance(page, dict) and page.get("pageName")
+    ][:8]
+
+    navigation_plan = [
+        {
+            "fromPage": step.get("fromPage") or "",
+            "toPage": step.get("toPage") or "",
+            "steps": [s for s in (step.get("steps") or []) if s][:6],
+        }
+        for step in (context.get("navigationPlan") or [])
+        if isinstance(step, dict) and (step.get("toPage") or step.get("steps"))
+    ][:6]
+
+    tables = [
+        {"columns": [c for c in (table.get("columns") or []) if c][:10]}
+        for table in (context.get("tables") or [])
+        if isinstance(table, dict) and table.get("columns")
+    ][:6]
+
+    login_form = context.get("loginForm") if isinstance(context.get("loginForm"), dict) else {}
 
     return {
         "recognizedAtUrl": context.get("recognizedAtUrl") or "",
         "scopeMode": context.get("scopeMode") or "full",
         "componentHints": context.get("componentHints") or {},
         "loginInputs": login_inputs,
+        "loginButtons": login_buttons,
+        "loginForm": login_form,
         "menuPaths": selected_menu_paths,
         "matchedByKeywords": keywords,
         "buttons": buttons,
+        "pageObjects": page_objects,
+        "navigationPlan": navigation_plan,
+        "tables": tables,
         "scriptGuidance": script_guidance[:5],
     }
+
+
+def _compact_ui_context_for_case(context: dict[str, Any], point: Any) -> dict[str, Any]:
+    """用例生成阶段的精简 UI 上下文。
+
+    与脚本生成不同，用例生成不需要精确定位器，只需知道系统里真实存在哪些
+    页面/菜单/表单字段/按钮，以便 title 能引用真实元素（如"测试登录页账号
+    输入框为空时..."），而不是凭空泛化。数据量刻意保持很小，避免 batch 拆碎。
+    """
+    keywords = _case_keywords_for_point(point)
+    menu_paths = _flatten_menu_paths(context.get("menus") or [], limit=60)
+    matched_menu_paths = [
+        path for path in menu_paths
+        if any(keyword.lower() in path.lower() for keyword in keywords)
+    ]
+    selected_menu_paths = (matched_menu_paths or menu_paths)[:12]
+
+    login_inputs = [
+        _pick_element_fields(input_item)
+        for input_item in (context.get("loginInputs") or [])
+        if isinstance(input_item, dict)
+    ][:6]
+    buttons = [
+        {"text": (button.get("text") or button.get("title") or "").strip()}
+        for button in (context.get("buttons") or [])
+        if isinstance(button, dict) and (button.get("text") or button.get("title"))
+    ][:10]
+
+    # pageObjects 来自 AI 分析，含页面名/用途/元素，用于让 title 引用真实页面
+    ai_analysis = context.get("aiAnalysis") if isinstance(context.get("aiAnalysis"), dict) else {}
+    raw_pages = ai_analysis.get("pageObjects") if isinstance(ai_analysis.get("pageObjects"), list) else []
+    page_objects = [
+        {
+            "pageName": page.get("pageName") or "",
+            "purpose": page.get("purpose") or "",
+            "elements": [
+                {"name": el.get("name") or "", "type": el.get("type") or ""}
+                for el in (page.get("elements") or [])
+                if isinstance(el, dict) and el.get("name")
+            ][:6],
+        }
+        for page in raw_pages
+        if isinstance(page, dict) and page.get("pageName")
+    ][:6]
+
+    return {
+        "recognizedAtUrl": context.get("recognizedAtUrl") or "",
+        "menuPaths": selected_menu_paths,
+        "loginInputs": login_inputs,
+        "buttons": buttons,
+        "pageObjects": page_objects,
+    }
+
+
+def _case_keywords_for_point(point: Any) -> list[str]:
+    """从测试点提取关键词，用于匹配相关菜单/页面。"""
+    text = " ".join(
+        str(value or "")
+        for value in (
+            getattr(point, "module", ""),
+            getattr(point, "title", ""),
+            getattr(point, "description", ""),
+            getattr(point, "type", ""),
+        )
+    )
+    candidates = re.findall(r"[\u4e00-\u9fff]{2,}|[A-Za-z][A-Za-z0-9_-]{2,}", text)
+    stop_words = {
+        "测试", "验证", "页面", "系统", "功能", "成功", "失败", "显示", "进入", "点击",
+        "进行", "支持", "能够", "用户", "操作", "信息", "检查", "应当", "是否",
+    }
+    keywords: list[str] = []
+    for word in candidates:
+        normalized = word.strip()
+        if not normalized or normalized in stop_words:
+            continue
+        if normalized not in keywords:
+            keywords.append(normalized)
+    return keywords[:15]
+
+
+def _first_environment_id(environment_context: dict[str, Any]) -> str:
+    """从生成上下文提取主环境 ID，用于匹配系统识别结果。"""
+    env_id = environment_context.get("environmentId") or ""
+    if env_id:
+        return str(env_id)
+    targets = environment_context.get("targets") or []
+    if isinstance(targets, list) and targets:
+        first = targets[0]
+        if isinstance(first, dict):
+            return str(first.get("environmentId") or "")
+    return ""
 
 
 def requirement_records(requirements: Iterable[Any]) -> list[dict[str, Any]]:
@@ -162,6 +307,7 @@ def test_point_batches(
     points: Iterable[Any],
     requirements_by_id: dict[str, Any],
     environment_context: dict[str, Any] | None = None,
+    ui_context_by_environment: dict[str, dict[str, Any]] | None = None,
 ) -> list[str]:
     records = []
     for point in points:
@@ -182,6 +328,13 @@ def test_point_batches(
         }
         if environment_context is not None:
             record["testEnvironment"] = environment_context
+        # 接入系统识别结果：让用例 title 能引用真实页面/字段/菜单
+        if ui_context_by_environment and environment_context:
+            env_id = _first_environment_id(environment_context)
+            if env_id and env_id in ui_context_by_environment:
+                record["recognizedUI"] = _compact_ui_context_for_case(
+                    ui_context_by_environment[env_id], point
+                )
         records.append(record)
     return _json_batches(records)
 

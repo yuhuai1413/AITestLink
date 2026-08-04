@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Download, FileText, Loader2, Plus, Upload } from "lucide-react";
+import { Download, FileText, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useProjectData } from "../useProjectData";
 import { defectsApi } from "../../../api/defect.api";
@@ -9,13 +9,14 @@ import { StatusPill } from "../../../shared/components/StatusPill";
 import { Modal } from "../../../shared/components/Modal";
 import { MenuSelect, type MenuSelectOption } from "../../../shared/components/MenuSelect";
 import { RichTextEditor } from "../../../shared/components/RichTextEditor";
+import { getMe } from "../../../features/auth/api/auth";
 import type { Defect, DefectCreate, DefectSeverity, DefectPriority, DefectStatus, DefectCategory } from "../../../contracts/defect";
 import { formatProjectTime as formatTime } from "./projectDetail.config";
 
-const SEVERITY_OPTIONS: MenuSelectOption<DefectSeverity>[] = ["致命", "严重", "一般", "轻微", "建议"].map((v) => ({ value: v, label: v }));
-const PRIORITY_OPTIONS: MenuSelectOption<DefectPriority>[] = ["P0", "P1", "P2", "P3"].map((v) => ({ value: v, label: v }));
-const STATUS_OPTIONS: MenuSelectOption<DefectStatus>[] = ["新建", "确认", "修复中", "已修复", "已验证", "已关闭", "重新打开"].map((v) => ({ value: v, label: v }));
-const CATEGORY_OPTIONS: MenuSelectOption<DefectCategory>[] = ["功能缺陷", "性能缺陷", "界面缺陷", "安全缺陷", "兼容性缺陷"].map((v) => ({ value: v, label: v }));
+const SEVERITY_OPTIONS: MenuSelectOption<DefectSeverity>[] = (["致命", "严重", "一般", "轻微", "建议"] as const).map((v) => ({ value: v, label: v }));
+const PRIORITY_OPTIONS: MenuSelectOption<DefectPriority>[] = (["P0", "P1", "P2", "P3"] as const).map((v) => ({ value: v, label: v }));
+const STATUS_OPTIONS: MenuSelectOption<DefectStatus>[] = (["新建", "确认", "修复中", "已修复", "已验证", "已关闭", "重新打开"] as const).map((v) => ({ value: v, label: v }));
+const CATEGORY_OPTIONS: MenuSelectOption<DefectCategory>[] = (["功能缺陷", "性能缺陷", "界面缺陷", "安全缺陷", "兼容性缺陷"] as const).map((v) => ({ value: v, label: v }));
 
 const severityTone = (s: string) => s === "致命" || s === "严重" ? "red" : s === "一般" ? "amber" : "slate";
 const statusTone = (s: string) => {
@@ -25,6 +26,7 @@ const statusTone = (s: string) => {
   return "slate";
 };
 const priorityTone = (p: string) => p === "P0" ? "red" : p === "P1" ? "amber" : "slate";
+const sourceTone = (s: string) => s === "自动化" ? "blue" : "slate";
 
 const emptyForm: DefectCreate = {
   title: "",
@@ -34,12 +36,14 @@ const emptyForm: DefectCreate = {
   status: "新建",
   module: "",
   category: "功能缺陷",
+  source: "手工",
   testCaseId: null,
+  scriptId: null,
+  executionRunId: null,
   expectedResult: "",
   assignee: "",
   testPlan: "",
   iteration: "",
-  source: "",
   environmentInfo: "",
   reporter: "",
   remark: "",
@@ -129,6 +133,13 @@ export function DefectsTab({ projectId }: { projectId: string }) {
   const [saving, setSaving] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [detailDefect, setDetailDefect] = useState<Defect | null>(null);
+  const [currentUser, setCurrentUser] = useState<string>("");
+
+  useEffect(() => {
+    getMe()
+      .then((res) => setCurrentUser(res.user.nickname || res.user.phone || ""))
+      .catch(() => {});
+  }, []);
 
   const fetchDefects = useCallback(async () => {
     try {
@@ -149,16 +160,17 @@ export function DefectsTab({ projectId }: { projectId: string }) {
   const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(defects.map((d) => d.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  const openCreate = () => { setEditDefect(null); setForm({ ...emptyForm }); setShowForm(true); };
+  const openCreate = () => { setEditDefect(null); setForm({ ...emptyForm, reporter: currentUser }); setShowForm(true); };
   const openEdit = (d: Defect) => {
     setEditDefect(d);
     setForm({
       title: d.title, description: d.description, severity: d.severity, priority: d.priority, status: d.status,
-      module: d.module, category: d.category, testCaseId: d.testCaseId,
+      module: d.module, category: d.category, source: d.source || "手工", testCaseId: d.testCaseId,
+      scriptId: d.scriptId, executionRunId: d.executionRunId, screenshotUrl: d.screenshotUrl,
       stepsToReproduce: d.stepsToReproduce, expectedResult: d.expectedResult,
       actualResult: d.actualResult, environmentInfo: d.environmentInfo,
       reporter: d.reporter, assignee: d.assignee, remark: d.remark,
-      testPlan: d.testPlan, iteration: d.iteration, source: d.source,
+      testPlan: d.testPlan, iteration: d.iteration,
     });
     setShowForm(true);
   };
@@ -214,8 +226,8 @@ export function DefectsTab({ projectId }: { projectId: string }) {
     { key: "priority", label: "优先级", width: "76px", render: (d) => <StatusPill tone={priorityTone(d.priority)}>{d.priority}</StatusPill> },
     { key: "status", label: "状态", width: "96px", render: (d) => <StatusPill tone={statusTone(d.status)}>{d.status}</StatusPill> },
     { key: "category", label: "缺陷类型", width: "108px", render: (d) => d.category || "-" },
-    { key: "module", label: "模块", width: "100px", render: (d) => d.module || "-" },
-    { key: "reporter", label: "发现人", width: "80px", render: (d) => d.reporter || "-" },
+    { key: "source", label: "来源", width: "80px", render: (d) => <StatusPill tone={sourceTone(d.source || "手工")}>{d.source || "手工"}</StatusPill> },
+    { key: "reporter", label: "创建人", width: "80px", render: (d) => d.reporter || "-" },
     { key: "assignee", label: "指派人", width: "80px", render: (d) => d.assignee || "-" },
     { key: "createdAt", label: "创建时间", width: "140px", render: (d) => formatTime(d.createdAt) },
     { key: "actions", label: "操作", width: "120px", sticky: "right", align: "center", render: (d) => (
@@ -286,6 +298,7 @@ export function DefectsTab({ projectId }: { projectId: string }) {
               <div className="detail-row"><span className="detail-label">{"优先级"}</span><StatusPill tone={priorityTone(detailDefect.priority)}>{detailDefect.priority}</StatusPill></div>
               <div className="detail-row"><span className="detail-label">{"状态"}</span><StatusPill tone={statusTone(detailDefect.status)}>{detailDefect.status}</StatusPill></div>
               <div className="detail-row"><span className="detail-label">{"缺陷类型"}</span><span>{detailDefect.category}</span></div>
+              <div className="detail-row"><span className="detail-label">{"来源"}</span><StatusPill tone={sourceTone(detailDefect.source || "手工")}>{detailDefect.source || "手工"}</StatusPill></div>
               <div className="detail-row"><span className="detail-label">{"模块"}</span><span>{detailDefect.module || "-"}</span></div>
               <div className="detail-row"><span className="detail-label">{"发现人"}</span><span>{detailDefect.reporter || "-"}</span></div>
               <div className="detail-row"><span className="detail-label">{"指派人"}</span><span>{detailDefect.assignee || "-"}</span></div>
@@ -296,6 +309,14 @@ export function DefectsTab({ projectId }: { projectId: string }) {
             {detailDefect.stepsToReproduce && <div><h4 className="panel-title">{"复现步骤"}</h4><pre className="code-block">{detailDefect.stepsToReproduce}</pre></div>}
             {detailDefect.expectedResult && <div><h4 className="panel-title">{"期望结果"}</h4><pre className="code-block">{detailDefect.expectedResult}</pre></div>}
             {detailDefect.actualResult && <div><h4 className="panel-title">{"实际结果"}</h4><pre className="code-block code-block--error">{detailDefect.actualResult}</pre></div>}
+            {detailDefect.screenshotUrl && (
+              <div>
+                <h4 className="panel-title">{"执行失败截图"}</h4>
+                <a href={detailDefect.screenshotUrl} target="_blank" rel="noreferrer" className="defect-screenshot-link">
+                  <img src={detailDefect.screenshotUrl} alt="执行失败截图" className="defect-screenshot" />
+                </a>
+              </div>
+            )}
             {detailDefect.remark && <div><h4 className="panel-title">{"备注"}</h4><pre className="code-block code-block--muted">{detailDefect.remark}</pre></div>}
             <div className="form-actions">
               <button className="ghost-button" type="button" onClick={() => { setDetailDefect(null); openEdit(detailDefect); }}>{"编辑"}</button>

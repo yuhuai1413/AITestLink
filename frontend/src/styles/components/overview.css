@@ -3,9 +3,19 @@
 
 .overview-page {
   display: grid;
-  gap: var(--sp-sm);
-  padding: 0;
+  /* 四周内边距由外层 .content 的 padding:14px 统一提供（和其他 tab 一致），
+     这里只补顶部间距，让首行卡片不贴到 tab-bar 上。
+     gap 也固定为 14px 而非响应式 --sp-sm，避免宽屏下卡片间距变成 18px、
+     反而比四周(固定14px)大，造成“中间比四周宽”的不一致。 */
+  gap: 14px;
+  padding-top: 14px;
   overflow: auto;
+}
+
+/* 同理：overview 内同一行的卡片之间也锁成 14px，与四周保持一致 */
+.overview-page .dash-stats,
+.overview-page .dash-charts-row {
+  gap: 14px;
 }
 
 /* 项目信息条 */

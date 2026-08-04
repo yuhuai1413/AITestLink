@@ -102,7 +102,14 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
       setExecutionRuns((prev) => ({ ...prev, [script.id]: latestRun }));
       await refreshScripts();
       if (!silent) {
-        result.status === "通过" ? toast.success("测试通过") : toast.error(result.error || "测试失败");
+        if (result.status === "通过") {
+          toast.success("测试通过");
+        } else {
+          const defectHint = result.autoCreatedDefectCode
+            ? `（已自动创建缺陷 ${result.autoCreatedDefectCode}，可在「缺陷统计」查看）`
+            : "";
+          toast.error((result.error || "测试失败") + defectHint);
+        }
       }
       return result.status === "通过";
     } catch (err) {
@@ -182,7 +189,14 @@ export function ExecuteScriptsTab({ projectId }: { projectId: string }) {
           <DataTable rows={scripts} getRowKey={(r) => r.id} columns={[
             { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
             { key: "scriptCode", label: "脚本编号", render: (r) => r.scriptCode || <span className="text-muted">-</span> },
-            { key: "testCase", label: "关联用例", align: "left", lineClamp: 3, render: (r) => getTestCaseTitle(r.testCaseId) },
+            { key: "caseCode", label: "用例编号", align: "center", render: (r) => {
+              const tc = testCases.find((t) => t.id === r.testCaseId);
+              return tc?.caseCode ? <span title={tc.caseCode}>{tc.caseCode}</span> : <span className="text-muted">-</span>;
+            }},
+            { key: "caseTitle", label: "用例描述", align: "left", lineClamp: 3, render: (r) => {
+              const tc = testCases.find((t) => t.id === r.testCaseId);
+              return tc?.title ? <span title={tc.title}>{tc.title}</span> : <span className="text-muted">-</span>;
+            }},
             { key: "testType", label: "测试类型", align: "center", render: (r) => {
               const tc = testCases.find((t) => t.id === r.testCaseId);
               return tc ? (tc.testType || "功能测试") : <span className="text-muted">-</span>;

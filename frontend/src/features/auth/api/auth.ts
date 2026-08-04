@@ -88,3 +88,7 @@ export async function deleteUser(userId: string) {
 export async function updateUser(userId: string, data: Record<string, unknown>) {
   return api.put<{ ok: boolean; message: string }>(`/auth/users/${userId}`, data);
 }
+
+export async function createUser(data: { phone: string; password?: string; is_admin?: boolean; is_active?: boolean }) {
+  return api.post<{ ok: boolean; message: string }>("/auth/users", data);
+}

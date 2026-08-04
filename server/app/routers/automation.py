@@ -13,7 +13,9 @@ from app.models.automation_script import AutomationScript
 from app.models.test_case import TestCase
 from app.models.execution_run import ExecutionRun
 from app.models.environment_config import TestAccount
+from app.models.defect import Defect
 from app.routers.deps import get_current_user, get_automation_service, get_project_service
+from app.routers.defects import _next_defect_code
 from app.services.automation_service import AutomationService
 from app.services.project_service import ProjectService
 from app.services.ai_service import AIService, check_config_for_task
@@ -40,13 +42,14 @@ class ExecuteScriptRequest(BaseModel):
     slowMo: int | None = None
 
 
-def _execution_result(run: ExecutionRun, script: AutomationScript) -> dict:
+def _execution_result(run: ExecutionRun, script: AutomationScript, defect_code: str | None = None) -> dict:
     return {
         "executionRunId": run.id,
         "scriptId": script.id,
         "status": run.status,
         "output": run.output or "",
         "error": run.error or None,
+        "autoCreatedDefectCode": defect_code,
         "executedAt": format_api_datetime(run.finished_at),
         "startedAt": format_api_datetime(run.started_at) or None,
         "finishedAt": format_api_datetime(run.finished_at) or None,
@@ -65,6 +68,86 @@ def _timeout_seconds(snapshot: dict) -> int:
         return int(snapshot.get("timeoutSeconds") or 30)
     except (TypeError, ValueError):
         return 30
+
+
+async def _maybe_create_defect_for_failure(
+    *,
+    db: AsyncSession,
+    project_id: str,
+    script: AutomationScript,
+    test_case: TestCase,
+    run: ExecutionRun,
+    snapshot: dict,
+    reporter: str,
+    screenshot_url: str = "",
+) -> str | None:
+    """脚本执行失败后自动创建一条缺陷，返回缺陷编号；已存在未关闭缺陷时跳过。
+
+    去重：同一脚本若已存在一条「未关闭/未验证/未修复」状态的缺陷，则不重复
+    创建，避免反复执行失败刷屏。字段对齐：module / steps_to_reproduce /
+    expected_result 直接取自测试用例，确保缺陷页展示的字段与用例数据一致。
+    screenshot_url 写入执行失败那一刻的截图（若有）。
+    """
+    existing = await db.execute(
+        select(Defect.id).where(
+            Defect.script_id == script.id,
+            Defect.status.notin_(["已关闭", "已验证", "已修复"]),
+        ).limit(1)
+    )
+    if existing.scalar_one_or_none():
+        return None
+
+    # 从环境快照里提取环境名 + 测试地址，写入 environment_info 便于复现
+    env_parts: list[str] = []
+    if snapshot.get("environmentName"):
+        env_parts.append(str(snapshot["environmentName"]))
+    base_url = snapshot.get("WEB_BASE_URL") or snapshot.get("APP_BASE_URL") or snapshot.get("BASE_URL")
+    if base_url:
+        env_parts.append(str(base_url))
+    environment_info = " | ".join(env_parts)
+
+    case_title = (test_case.title or "未命名用例").strip()
+    title = f"脚本执行失败：{case_title}"[:200]
+    error_text = (run.error or "执行失败，未捕获到具体错误信息。").strip()
+
+    # 字段对齐：从测试用例补齐 module / 复现步骤 / 期望结果，让缺陷数据与页面字段一致
+    module_name = (test_case.module or "").strip()
+    reproduce_parts = []
+    if (test_case.precondition or "").strip():
+        reproduce_parts.append("前置条件：" + test_case.precondition.strip())
+    if (test_case.steps or "").strip():
+        reproduce_parts.append("测试步骤：" + test_case.steps.strip())
+    if environment_info:
+        reproduce_parts.append("执行环境：" + environment_info)
+    steps_to_reproduce = "\n".join(reproduce_parts)
+    expected_result = (test_case.expected_result or "").strip()
+
+    defect_code = await _next_defect_code(project_id, db)
+    defect = Defect(
+        project_id=project_id,
+        defect_code=defect_code,
+        title=title,
+        severity="一般",
+        priority="P1",
+        status="新建",
+        module=module_name,
+        category="功能缺陷",
+        source="自动化",
+        test_case_id=test_case.id,
+        script_id=script.id,
+        execution_run_id=run.id,
+        steps_to_reproduce=steps_to_reproduce,
+        expected_result=expected_result,
+        actual_result=error_text,
+        environment_info=environment_info,
+        reporter=reporter or "系统",
+        description=f"由脚本执行自动创建。执行记录 {run.id}。",
+        screenshot_url=screenshot_url,
+        found_at=run.finished_at or datetime.now(timezone.utc),
+    )
+    db.add(defect)
+    await db.commit()
+    return defect_code
 
 
 def _to_eng_abbr(module: str) -> str:
@@ -240,6 +323,7 @@ async def execute_script(
     await db.commit()
     script_code = script.code or ""
     quality_error = generated_script_error_message(script_code, test_case) if script.generated_by_ai and _is_ui_automation_code(script_code) else ""
+    screenshot_path: str | None = None
     if quality_error:
         result_status = "失败"
         output = ""
@@ -271,6 +355,7 @@ async def execute_script(
             result_status = result.status
             output = result.output
             error = result.error
+            screenshot_path = result.screenshot_path
             if result_status == "通过":
                 output = output or f"脚本进程正常结束，并通过用例覆盖校验。{coverage.evidence}".strip()
 
@@ -283,7 +368,36 @@ async def execute_script(
     await db.commit()
     await db.refresh(run)
     await db.refresh(script)
-    return _execution_result(run, script)
+
+    # 执行失败时自动创建缺陷，把脚本执行和缺陷统计连贯起来。
+    auto_defect_code: str | None = None
+    if result_status == "失败":
+        # 把截图绝对路径转成可访问的相对 URL（/uploads/script-screenshots/xxx.png）
+        screenshot_url = ""
+        if screenshot_path:
+            try:
+                from pathlib import Path as _Path
+                from app.config import settings as _settings
+                rel = _Path(screenshot_path).relative_to(_Path(_settings.UPLOAD_DIR).resolve())
+                screenshot_url = "/uploads/" + str(rel).replace("\\", "/")
+            except Exception:
+                screenshot_url = ""
+        try:
+            auto_defect_code = await _maybe_create_defect_for_failure(
+                db=db,
+                project_id=script.project_id,
+                script=script,
+                test_case=test_case,
+                run=run,
+                snapshot=snapshot,
+                reporter=(user.get("nickname") or user.get("phone") or ""),
+                screenshot_url=screenshot_url,
+            )
+        except Exception:
+            # 自动建缺陷是辅助流程，绝不能因为它让执行接口报错。
+            logger.exception("Auto-create defect after script failure failed")
+
+    return _execution_result(run, script, auto_defect_code)
 
 
 @router.get("/scripts/{script_id}/executions")
@@ -357,14 +471,16 @@ async def generate_scripts(
         scripts = []
         for ai_script in ai_scripts:
             matched_tc = test_cases_by_id[ai_script["testCaseId"]]
+            # 规范化脚本元数据：不信任 AI 随意填写的值，按用例平台推导
+            tc_platform = (getattr(matched_tc, "target_platform", "") or "PC").upper()
             script = AutomationScript(
                 id=str(uuid.uuid4()),
                 project_id=project_id,
                 test_case_id=matched_tc.id,
                 script_code=_script_code_for_tc(matched_tc, len(scripts) + 1),
-                script_type=ai_script.get("scriptType", "UI"),
-                framework=ai_script.get("framework", "Playwright"),
-                language=ai_script.get("language", "Python"),
+                script_type="APP" if tc_platform == "APP" else "UI",
+                framework="Appium" if tc_platform == "APP" else "Playwright",
+                language="Python",
                 code=ai_script["code"],
                 status="未测试",
                 generated_by_ai=True,

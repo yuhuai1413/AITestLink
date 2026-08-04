@@ -1,4 +1,5 @@
 import { request } from "./request";
+import type { AITask } from "../shared/types/platform";
 
 export interface EnvironmentConfig {
   id: string;
@@ -29,6 +30,7 @@ export interface TestAccount {
   password: string;
   hasPassword: boolean;
   role: string;
+  isAdmin: boolean;
   notes: string;
   createdAt: string;
   updatedAt: string;
@@ -68,6 +70,7 @@ export interface TestAccountCreate {
   department?: string;
   password: string;
   role?: string;
+  isAdmin?: boolean;
   notes?: string;
 }
 
@@ -113,7 +116,7 @@ export const environmentApi = {
     request<UISnapshot | { ok: false; message: string }>(`/environments/${environmentId}/ui-snapshot`),
 
   recognizeUI: (environmentId: string, data: { accountId?: string; headed?: boolean; scopeMode?: "full" | "incremental"; requirementIds?: string[]; requirementText?: string } = {}) =>
-    request<UISnapshot>(`/environments/${environmentId}/ui-snapshot/recognize`, {
+    request<AITask>(`/environments/${environmentId}/ui-snapshot/recognize`, {
       method: "POST",
       body: JSON.stringify(data),
     }),

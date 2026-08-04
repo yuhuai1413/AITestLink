@@ -38,6 +38,7 @@ class TestAccount(Base):
     department = Column(String(100), default="")  # 所属部门
     password = Column(String(200), nullable=False)  # 密码
     role = Column(String(50), default="")  # 角色/权限
+    is_admin = Column(Boolean, default=False)  # 是否管理员账号（高权限，识别系统时优先使用以采集完整菜单）
     notes = Column(Text, default="")  # 备注
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

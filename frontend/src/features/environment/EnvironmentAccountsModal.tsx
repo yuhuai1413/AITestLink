@@ -12,6 +12,7 @@ interface EnvironmentAccountsModalProps {
   onAdd: (environmentId: string) => void;
   onEdit: (account: TestAccount) => void;
   onDelete: (account: TestAccount) => void;
+  onToggleAdmin: (account: TestAccount) => void;
 }
 
 function formatTime(iso: string | undefined): string {
@@ -24,6 +25,7 @@ export function EnvironmentAccountsModal({
   onAdd,
   onEdit,
   onDelete,
+  onToggleAdmin,
 }: EnvironmentAccountsModalProps) {
   const accounts = environment?.accounts ?? [];
   const environmentType = environment?.environmentType === "APP" ? "APP" : "Web";
@@ -86,6 +88,17 @@ export function EnvironmentAccountsModal({
                     </span>
                   ) : <StatusPill tone="slate">未配置</StatusPill> },
                   { key: "role", label: "角色/权限", width: "96px", align: "center", render: (account) => account.role || <span style={{ color: "var(--muted)" }}>-</span> },
+                  { key: "isAdmin", label: "识别账号", width: "84px", align: "center", render: (account) => (
+                    <button
+                      type="button"
+                      className={`admin-toggle${account.isAdmin ? " admin-toggle--on" : ""}`}
+                      onClick={() => onToggleAdmin(account)}
+                      title={account.isAdmin ? "已设为识别账号（点击关闭）" : "设为识别账号（系统识别时使用此账号登录以采集完整菜单）"}
+                      aria-label="切换识别账号"
+                    >
+                      <span className="admin-toggle__knob" />
+                    </button>
+                  ) },
                   { key: "createdAt", label: "创建时间", width: "132px", align: "center", render: (account) => formatTime(account.createdAt) },
                   { key: "actions", label: "操作", width: "84px", sticky: "right", align: "center", render: (account) => (
                     <div className="inline-actions">

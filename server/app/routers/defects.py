@@ -34,7 +34,10 @@ def _defect_to_dict(row) -> dict:
         "status": row.status,
         "module": row.module,
         "category": row.category,
+        "source": row.source or "手工",
         "testCaseId": row.test_case_id,
+        "scriptId": row.script_id,
+        "executionRunId": row.execution_run_id,
         "stepsToReproduce": row.steps_to_reproduce,
         "expectedResult": row.expected_result,
         "actualResult": row.actual_result,
@@ -42,6 +45,7 @@ def _defect_to_dict(row) -> dict:
         "reporter": row.reporter,
         "assignee": row.assignee,
         "remark": row.remark,
+        "screenshotUrl": row.screenshot_url or "",
         "foundAt": row.found_at.isoformat() if row.found_at else None,
         "resolvedAt": row.resolved_at.isoformat() if row.resolved_at else None,
         "createdAt": row.created_at.isoformat() if row.created_at else None,
@@ -49,13 +53,14 @@ def _defect_to_dict(row) -> dict:
     }
 
 
-def _next_defect_code(project_id: str, db) -> str:
-    result = db.execute(
+async def _next_defect_code(project_id: str, db) -> str:
+    result = await db.execute(
         text("SELECT defect_code FROM defects WHERE project_id = :pid ORDER BY created_at DESC LIMIT 1"),
         {"pid": project_id},
-    ).fetchone()
-    if result and result[0]:
-        m = re.search(r"(\d+)$", result[0])
+    )
+    row = result.fetchone()
+    if row and row[0]:
+        m = re.search(r"(\d+)$", row[0])
         if m:
             return f"BUG-{int(m.group(1)) + 1:04d}"
     return "BUG-0001"
@@ -166,7 +171,7 @@ async def create_defect(
 ):
     await project_service._verify_project_owner(project_id, user["sub"])
     async with async_session() as db:
-        defect_code = _next_defect_code(project_id, db)
+        defect_code = await _next_defect_code(project_id, db)
         d = Defect(
             project_id=project_id,
             defect_code=defect_code,
@@ -176,7 +181,10 @@ async def create_defect(
             status=data.status,
             module=data.module,
             category=data.category,
+            source=data.source,
             test_case_id=data.test_case_id,
+            script_id=data.script_id,
+            execution_run_id=data.execution_run_id,
             steps_to_reproduce=data.steps_to_reproduce,
             expected_result=data.expected_result,
             actual_result=data.actual_result,
@@ -184,6 +192,8 @@ async def create_defect(
             reporter=data.reporter,
             assignee=data.assignee,
             remark=data.remark,
+            description=data.description,
+            screenshot_url=data.screenshot_url,
         )
         db.add(d)
         await db.commit()
@@ -294,17 +304,22 @@ async def defect_stats(
         by_status = {}
         by_module = {}
         by_category = {}
+        by_source = {}
         for r in rows:
             by_severity[r.severity] = by_severity.get(r.severity, 0) + 1
             by_status[r.status] = by_status.get(r.status, 0) + 1
             by_module[r.module] = by_module.get(r.module, 0) + 1
             by_category[r.category] = by_category.get(r.category, 0) + 1
+            src = r.source or "手工"
+            by_source[src] = by_source.get(src, 0) + 1
         return {
             "total": total,
             "bySeverity": by_severity,
             "byStatus": by_status,
             "byModule": by_module,
             "byCategory": by_category,
+            "bySource": by_source,
+            "autoCount": by_source.get("自动化", 0),
             "openCount": sum(1 for r in rows if r.status not in ("已关闭", "已验证")),
             "closedCount": sum(1 for r in rows if r.status in ("已关闭", "已验证")),
         }

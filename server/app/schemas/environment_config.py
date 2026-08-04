@@ -50,6 +50,7 @@ class TestAccountCreate(BaseModel):
     department: str = ""
     password: str
     role: str = ""
+    isAdmin: bool = False
     notes: str = ""
 
 
@@ -59,6 +60,7 @@ class TestAccountUpdate(BaseModel):
     department: Optional[str] = None
     password: Optional[str] = None
     role: Optional[str] = None
+    isAdmin: Optional[bool] = None
     notes: Optional[str] = None
 
 
@@ -92,6 +94,7 @@ class TestAccountResponse(BaseModel):
     password: str
     hasPassword: bool = False
     role: str
+    isAdmin: bool = False
     notes: str
     createdAt: str
     updatedAt: str

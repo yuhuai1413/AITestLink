@@ -42,7 +42,7 @@ def _requirement_value(item: dict, key: str, index: int) -> str:
         "clarificationAnswer": item.get("clarificationAnswer") or "",
         "reviewStatus": item.get("reviewStatus") or "待评审",
         "validityStatus": item.get("validityStatus") or "有效",
-        "invalidReason": item.get("invalidReason") or "",
+        "invalidReason": (item.get("invalidReason") or "失效原因未知") if (item.get("validityStatus") == "已失效") else "",
         "createdAt": format_export_datetime(item.get("createdAt")),
         "updatedAt": format_export_datetime(item.get("updatedAt")),
     }
@@ -67,7 +67,12 @@ def _build_requirements_xlsx(project_name: str, rows: list[dict]) -> bytes:
         ("clarificationAnswer", "确认结论", 34, "left"),
         ("reviewStatus", "评审状态", 12, "center"),
         ("validityStatus", "数据状态", 12, "center"),
-        ("invalidReason", "失效原因", 28, "left"),
+    ]
+    # 仅当存在已失效数据时才输出"失效原因"列（含表头）
+    has_invalid = any(r.get("validityStatus") == "已失效" for r in rows)
+    if has_invalid:
+        columns.append(("invalidReason", "失效原因", 28, "left"))
+    columns += [
         ("createdAt", "生成时间", 20, "center"),
         ("updatedAt", "更新时间", 20, "center"),
     ]

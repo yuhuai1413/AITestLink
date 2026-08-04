@@ -59,6 +59,8 @@ def _case_value(tc: dict, key: str, index: int) -> str:
         "reviewStatus": tc.get("reviewStatus") or "待评审",
         "automation": "是" if tc.get("automation") == "是" else "否",
         "remark": tc.get("remark") or "",
+        "validityStatus": tc.get("validityStatus") or "有效",
+        "invalidReason": (tc.get("invalidReason") or "失效原因未知") if (tc.get("validityStatus") == "已失效") else "",
     }
     return str(values.get(key, ""))
 
@@ -100,9 +102,16 @@ def _build_test_cases_xlsx(project_name: str, rows: list[dict], export_type: str
         ("actualResult", "实测结果", 30, "left"),
         ("passed", "执行结果", 12, "center"),
         ("reviewStatus", "评审状态", 12, "center"),
+        ("validityStatus", "数据状态", 12, "center"),
         ("automation", "自动化", 10, "center"),
         ("remark", "备注", 24, "left"),
     ]
+    # 仅当存在已失效数据时才输出"失效原因"列（含表头）
+    has_invalid = any(r.get("validityStatus") == "已失效" for r in rows)
+    if has_invalid:
+        # 插在"数据状态"之后
+        idx = next((i for i, c in enumerate(columns) if c[0] == "validityStatus"), len(columns) - 2)
+        columns.insert(idx + 1, ("invalidReason", "失效原因", 28, "left"))
 
     wb = Workbook()
     ws = wb.active
@@ -293,7 +302,7 @@ async def batch_review_test_cases(
     user: dict = Depends(get_current_user),
     service: TestDesignService = Depends(get_test_design_service),
 ):
-    count = await service.batch_update_review(data.ids, data.status)
+    count = await service.batch_update_test_case_review(data.ids, data.status)
     return {"ok": True, "updated": count}
 
 

@@ -79,13 +79,18 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
 
   const hasFiles = files.length > 0;
   const hasParsedFiles = requirements.length > 0;
-  const allSelected = requirements.length > 0 && requirements.every((r) => selectedIds.has(r.id));
-  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(requirements.map((r) => r.id)));
+  const isInvalid = (r: any) => r.validityStatus === "已失效" || r.reviewStatus === "已作废";
+  const reviewableRequirements = requirements.filter((r) => !isInvalid(r));
+  const allSelected = reviewableRequirements.length > 0 && reviewableRequirements.every((r) => selectedIds.has(r.id));
+  // 仅当存在已失效数据时才显示"失效原因"列（含表头）
+  const hasInvalid = requirements.some((r) => r.validityStatus === "已失效");
+  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(reviewableRequirements.map((r) => r.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
 
   const toggleReview = async (r: any) => {
+    if (isInvalid(r)) { toast.warning("已失效的需求不能修改评审状态，请重新解析需求"); return; }
     const newStatus = (r.reviewStatus === "已通过") ? "待评审" : "已通过";
     try {
       const updated = await requirementsApi.update(r.id, { reviewStatus: newStatus } as any);
@@ -97,24 +102,41 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
     await refresh();
   };
   const batchApprove = async () => {
-    const pending = requirements.filter((r) => selectedIds.has(r.id) && r.reviewStatus !== "已通过" && !isClarificationResolved(r));
+    const selected = requirements.filter((r) => selectedIds.has(r.id));
+    const invalid = selected.filter(isInvalid);
+    const reviewable = selected.filter((r) => !isInvalid(r) && r.reviewStatus !== "已通过");
+
+    if (reviewable.length === 0) {
+      if (invalid.length > 0) {
+        toast.warning(`选中的 ${selectedIds.size} 条需求均已失效，无法再次评审。数据失效后需重新解析需求`);
+      } else {
+        toast.info("选中的需求已是评审通过状态，无需重复评审");
+      }
+      setSelectedIds(new Set());
+      return;
+    }
+
+    const pending = reviewable.filter((r) => !isClarificationResolved(r));
     if (pending.length > 0) {
       toast.warning(`有 ${pending.length} 条需求存在待确认问题，请先处理确认结论`);
       return;
     }
-    for (const id of selectedIds) {
-      const r = requirements.find((x) => x.id === id);
-      if (r && r.reviewStatus !== "已通过") {
-        try {
-          const updated = await requirementsApi.update(r.id, { reviewStatus: "已通过" } as any);
-          dispatch({ type: "UPDATE_REQUIREMENT", payload: updated });
-        } catch (error) {
-          toast.error(apiErrorMessage(error, "批量评审失败"));
-          return;
-        }
+    let passed = 0;
+    for (const r of reviewable) {
+      try {
+        const updated = await requirementsApi.update(r.id, { reviewStatus: "已通过" } as any);
+        dispatch({ type: "UPDATE_REQUIREMENT", payload: updated });
+        passed += 1;
+      } catch (error) {
+        toast.error(apiErrorMessage(error, "批量评审失败"));
+        return;
       }
     }
-    toast.success(`已通过 ${selectedIds.size} 条需求`);
+    if (invalid.length > 0) {
+      toast.success(`已通过 ${passed} 条需求；其中 ${invalid.length} 条已失效被自动跳过`);
+    } else {
+      toast.success(`已通过 ${passed} 条需求`);
+    }
     setSelectedIds(new Set());
     await refresh();
   };
@@ -206,7 +228,10 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
           </div>
         ) : (
           <DataTable rows={requirements} getRowKey={(r) => r.id} columns={[
-            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
+            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} disabled={reviewableRequirements.length === 0} />, width: "40px", sticky: "left" as const, render: (r) => {
+              const invalid = isInvalid(r);
+              return <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} disabled={invalid} title={invalid ? "已失效需求不可评审" : undefined} />;
+            } },
             { key: "reqId", label: "需求编号", width: "12%", render: (r) => r.reqId || <span className="text-muted">-</span> },
             { key: "module", label: "模块", width: "10%", render: (r) => r.module },
             { key: "feature", label: "功能点", width: "10%", align: "left", lineClamp: 3, render: (r) => r.feature },
@@ -222,7 +247,8 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
               return <StatusPill tone={clarificationTone(status)}>{status}</StatusPill>;
             } },
             { key: "reviewStatus", label: "评审", width: "8%", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus || "待评审"}</StatusPill></button> },
-            { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <span title={r.invalidReason || ""}><StatusPill tone={validityTone(r.validityStatus)}>{r.validityStatus || "有效"}</StatusPill></span> },
+            { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <StatusPill tone={validityTone(r.validityStatus)}>{r.validityStatus || "有效"}</StatusPill> },
+            ...(hasInvalid ? [{ key: "invalidReason", label: "失效原因", align: "left" as const, width: "14%", lineClamp: 2, render: (r: any) => (r.validityStatus === "已失效" && r.invalidReason) ? <span title={r.invalidReason}>{r.invalidReason}</span> : null }] : []),
             { key: "createdAt", label: "生成时间", render: (r) => formatTime(r.createdAt) },
             { key: "updatedAt", label: "更新时间", render: (r) => formatTime(r.updatedAt) },
             { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
@@ -303,7 +329,17 @@ export function RequirementsTab({ projectId }: { projectId: string }) {
       </Modal>
 
       <ConfirmDialog open={showReparseConfirm} title="重新解析" message="部分文件已解析完成，再次解析将覆盖之前的解析数据和需求，是否继续？" confirmLabel="继续解析" onConfirm={() => { setShowReparseConfirm(false); doParse(); }} onCancel={() => setShowReparseConfirm(false)} />
-      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 条需求标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
+      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={(() => {
+        const selected = requirements.filter((r) => selectedIds.has(r.id));
+        const invalidCount = selected.filter(isInvalid).length;
+        if (invalidCount === selected.length) {
+          return `选中的 ${selectedIds.size} 条需求均已失效，无法再次评审。数据失效后需重新解析需求`;
+        }
+        if (invalidCount > 0) {
+          return `选中的 ${selectedIds.size} 条需求中有 ${invalidCount} 条已失效，将被自动跳过，仅评审其余 ${selectedIds.size - invalidCount} 条。是否继续？`;
+        }
+        return `确定将选中的 ${selectedIds.size} 条需求标记为评审通过？`;
+      })()} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
       <Modal open={showReverseModal} onClose={() => setShowReverseModal(false)} title="AI 反推需求" width={620}
         footer={<>
           <button className="ghost-button" type="button" onClick={() => setShowReverseModal(false)}>取消</button>

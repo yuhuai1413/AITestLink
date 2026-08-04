@@ -47,65 +47,55 @@
   overflow-wrap: anywhere;
 }
 
-.doc-prereq-summary {
+/* 说明列：主描述 + 一排淡色小标签（核心章节要点），让列内容更有层次但不臃肿 */
+.doc-desc {
   display: grid;
-  gap: 7px;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.doc-prereq-summary__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-width: 0;
-}
-
-.doc-prereq-summary__detail {
-  flex: none;
-  font-size: 12px;
-}
-
-.doc-prereq-summary__chips {
-  display: flex;
-  flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
 }
 
-.doc-prereq-chip {
-  max-width: 148px;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: #fff7ed;
-  color: #9a3412;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 24px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.doc-desc__text {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
-.doc-prereq-chip--ready {
-  background: #eaf8ef;
-  color: #16803a;
+.doc-desc__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
-.doc-prereq-chip--more {
+.doc-desc__tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
   background: var(--surface-soft);
   color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
 }
 
-.doc-prereq-summary__blocker {
-  color: #b45309;
-  font-size: 12px;
-  line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* 前置数据列：单个可点击徽章，展示「x/y 满足」，点击弹出详情。
+   复用 .status-pill 的视觉，但作为 <button> 需要重置默认边框/背景/字体并加上交互态。 */
+.doc-prereq-trigger {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  justify-self: center;
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+
+.doc-prereq-trigger:hover {
+  filter: brightness(0.96);
+}
+
+.doc-prereq-trigger:active {
+  transform: scale(0.97);
 }
 
 .doc-prereq-detail {
@@ -596,4 +586,56 @@
   .panel-grid--4 {
     grid-template-columns: 1fr;
   }
+}
+
+/* ===== 识别结果：菜单树 ===== */
+.recognition-menu-tree__head {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.menu-tree-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.menu-tree-list .menu-tree-list {
+  padding-left: 20px;
+  border-left: 1px dashed var(--slate-soft);
+  margin-left: 6px;
+}
+.menu-tree-node {
+  margin: 2px 0;
+}
+.menu-tree-node__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  flex-wrap: wrap;
+}
+.menu-tree-node__icon {
+  color: var(--muted);
+  width: 12px;
+  flex-shrink: 0;
+}
+.menu-tree-node--branch > .menu-tree-node__label .menu-tree-node__title {
+  font-weight: 600;
+  color: var(--text);
+}
+.menu-tree-node__title {
+  color: var(--text);
+}
+.menu-tree-node__tag {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--slate-soft);
+  padding: 0 6px;
+  border-radius: 8px;
+}
+.menu-tree-node__selector {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--mono-font, monospace);
 }

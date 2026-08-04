@@ -95,6 +95,37 @@
   padding-right: 8px;
 }
 
+/* 账号管理：管理员开关按钮（用 button 实现，确保可点击） */
+.admin-toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  border: none;
+  background: var(--line, #d1d5db);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.admin-toggle--on {
+  background: var(--blue, #2563eb);
+}
+.admin-toggle__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.admin-toggle--on .admin-toggle__knob {
+  transform: translateX(16px);
+}
+
 
 .align-left {
   text-align: left;

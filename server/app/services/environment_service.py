@@ -31,6 +31,31 @@ def _target_url(environment: EnvironmentConfig) -> str:
     return (environment.app_url if _environment_type(environment) == "APP" else environment.web_url) or ""
 
 
+def _origin(url: str) -> str:
+    """从完整地址中提取 scheme://host:port，剥掉路径、查询、片段。
+
+    用户在「Web 地址」里可能填完整登录地址（如
+    https://host/runtime/user/login），而脚本生成约定 WEB_BASE_URL 是域名根
+    再自行拼接路径。这里统一规范化为 origin，避免脚本再拼 /runtime/user/login
+    时出现路径重复（/runtime/user/login/runtime/user/login）。
+    """
+    if not url:
+        return ""
+    url = url.strip()
+    for scheme in ("https://", "http://"):
+        if url.lower().startswith(scheme):
+            rest = url[len(scheme):]
+            # host:port 之后遇到第一个 / 或 ? 或 # 即截断
+            cut = len(rest)
+            for ch in ("/", "?", "#"):
+                idx = rest.find(ch)
+                if idx != -1 and idx < cut:
+                    cut = idx
+            return f"{scheme}{rest[:cut]}".rstrip("/")
+    # 没有协议前缀，原样返回（不强行猜测）
+    return url
+
+
 def _normalize_target_fields(environment_type: str, web_url: str = "", app_url: str = "") -> tuple[str, str]:
     if environment_type == "APP":
         return "", app_url
@@ -108,6 +133,7 @@ class EnvironmentService:
                             "password": "",
                             "hasPassword": bool(acc.password),
                             "role": acc.role or "",
+                            "isAdmin": bool(acc.is_admin) if acc.is_admin is not None else False,
                             "notes": acc.notes or "",
                             "createdAt": format_api_datetime(acc.created_at),
                             "updatedAt": format_api_datetime(acc.updated_at),
@@ -332,8 +358,8 @@ class EnvironmentService:
                     raise ValueError("所选账号不属于当前测试环境")
 
             variables = {
-                "WEB_BASE_URL": environment.web_url if _environment_type(environment) == "Web" else "",
-                "APP_BASE_URL": environment.app_url if _environment_type(environment) == "APP" else "",
+                "WEB_BASE_URL": _origin(environment.web_url) if _environment_type(environment) == "Web" else "",
+                "APP_BASE_URL": _origin(environment.app_url) if _environment_type(environment) == "APP" else "",
                 "TEST_TIMEOUT": environment.timeout or "30",
                 "TEST_RETRY_COUNT": environment.retry_count or "0",
                 "TEST_LOGIN_CAPTCHA_REQUIRED": "true" if _captcha_required(environment) else "false",
@@ -379,6 +405,11 @@ class EnvironmentService:
             if not environment:
                 return None
             await verify_project_owner(db, environment.project_id, user_id)
+            # 第一个新建的账号默认作为识别账号（环境里还没有账号时）
+            existing_count = (await db.execute(
+                select(TestAccount).where(TestAccount.environment_id == data.environmentId)
+            )).scalars().all()
+            is_first_account = len(existing_count) == 0
             account = TestAccount(
                 id=str(__import__("uuid").uuid4()),
                 environment_id=data.environmentId,
@@ -387,6 +418,7 @@ class EnvironmentService:
                 department=data.department,
                 password=f"enc:{encrypt_value(data.password)}",
                 role=data.role,
+                is_admin=data.isAdmin or is_first_account,
                 notes=data.notes,
             )
             db.add(account)
@@ -402,6 +434,7 @@ class EnvironmentService:
                 "password": "",
                 "hasPassword": True,
                 "role": account.role or "",
+                "isAdmin": bool(account.is_admin),
                 "notes": account.notes or "",
                 "createdAt": format_api_datetime(account.created_at),
                 "updatedAt": format_api_datetime(account.updated_at),
@@ -434,6 +467,8 @@ class EnvironmentService:
                 account.password = f"enc:{encrypt_value(data.password)}"
             if data.role is not None:
                 account.role = data.role
+            if data.isAdmin is not None:
+                account.is_admin = data.isAdmin
             if data.notes is not None:
                 account.notes = data.notes
 
@@ -449,6 +484,7 @@ class EnvironmentService:
                 "password": "",
                 "hasPassword": bool(account.password),
                 "role": account.role or "",
+                "isAdmin": bool(account.is_admin),
                 "notes": account.notes or "",
                 "createdAt": format_api_datetime(account.created_at),
                 "updatedAt": format_api_datetime(account.updated_at),

@@ -18,6 +18,11 @@ PROMPT_CATALOG: dict[str, str] = {
 12. 如果需求涉及“创建人A/用户A/部门A/非权限范围数据/指定状态的数据/已上传文件/审批人/跨部门数据”等具体业务对象，但所有输入都没有说明对象含义、范围、来源或验证口径，才在 question 中逐条提问，不能把这些问题留到测试用例或脚本生成阶段。
 13. 权限类需求先从正文、表格、原型图和截图中合并识别适用角色、可见数据范围、不可见数据范围、判断字段、预期表现。仍缺任一关键项时才写入 question，并说明具体缺哪一项。
 
+质量准则（每条需求必须满足）：
+14. 可验证性：rule 必须包含可观测、可判定的预期结果（能明确"通过"或"失败"）。禁止只写“系统应正常处理”“应正确响应”“应友好提示”等无法断言的描述；预期结果要落到具体的页面提示、数据变化、状态跳转或返回值上。
+15. 无歧义：rule 不得使用“及时/迅速/友好/较好/合理/较快”等主观、无法度量的词。文档中出现量化阈值时必须原样保留（如“响应时间不超过 2 秒”），不得改写成“响应及时”这类模糊表达；文档未给阈值时不要自行编造，可在 question 中询问。
+16. 原子性：一条需求只描述一个可独立测试的能力。若 rule 用“并/同时/以及”连接两个互相独立、可分别验证的行为（如“登录并记录操作日志”），必须拆成两条需求；仅在主从关系下不可分割的（如“登录成功后跳转首页”）可合并为一条。
+
 只输出 JSON 数组。每项必须且只能包含：
 module、feature、source、risk、rule、question。
 不要输出编号、Markdown、解释或额外字段。""",
@@ -48,13 +53,19 @@ module、feature、source、risk、rule、question。
 5. 每个元素必须说明用途和 selector 证据。没有稳定定位时 selector 留空，并在 unresolvedQuestions 或 risks 中说明缺口。
 6. pageObjects 只包含后续自动化脚本可直接使用的页面对象；每个页面对象的 routeOrMenuPath 按从父菜单到目标菜单的顺序输出。
 7. navigationPlan 输出从登录后首页到目标页面的点击路径，步骤使用人类可读文本，必须能从菜单树或按钮文本中追溯。
-8. scriptGuidance 给脚本生成使用，重点写登录字段、菜单展开、表格列、弹窗、验证码策略等真实约束。
+8. scriptGuidance 给脚本生成使用，必须覆盖以下真实约束（缺哪项就说明缺哪项，不要编造）：
+   - 登录字段定位：账号输入框、密码输入框的 placeholder/选择器；登录按钮的可见文本或选择器；
+   - 验证码策略：明确该环境是否要求登录验证码（依据环境配置，而非臆测）；要求时说明验证码输入框定位；
+   - 菜单展开：进入业务页面需要展开/点击哪些菜单，懒加载菜单的等待方式；
+   - 关键表格列：业务列表页的表头列名（用于断言数据是否正确）；
+   - 弹窗/抽屉：新增/编辑等操作会弹出 dialog/drawer 时，说明触发按钮和关闭方式。
+9. confidence 是 JSON 数字，取值 0 到 1（如 0.8、0.5、0.2），表示识别置信度。禁止输出字符串（“高”/“中”/“低”/“80%”）或百分比；确信度高写 0.8-0.9，一般写 0.5，把握低写 0.2-0.3。
 
 只输出一个 JSON 对象，必须且只能包含：
 scopeMode、relevantModules、pageObjects、navigationPlan、scriptGuidance、unresolvedQuestions。
-relevantModules 每项包含 name、reason、confidence。
+relevantModules 每项包含 name、reason、confidence（数字）。
 pageObjects 每项包含 pageName、routeOrMenuPath、purpose、elements、assertions、risks。
-elements 每项包含 name、type、selector、selectorType、action、required、confidence、evidence。
+elements 每项包含 name、type、selector、selectorType、action、required、confidence（数字）、evidence。
 navigationPlan 每项包含 fromPage、toPage、steps。
 不要输出 Markdown、解释或额外字段。""",
 
@@ -76,6 +87,11 @@ navigationPlan 每项包含 fromPage、toPage、steps。
 3. 一个测试点只验证一个目标；仅测试数据不同但验证逻辑相同时合并到 description。
 4. 如果输入需求包含 clarificationStatus/clarificationAnswer，clarificationStatus 为“已确认”时必须把 clarificationAnswer 作为权威补充信息使用；为“无需确认”且 clarificationAnswer 有内容时，按 clarificationAnswer 说明的范围或原因处理。
 5. 不得使用输入中没有的阈值、角色、接口、页面、业务结果或测试数据；信息不足时在 description 中写“待确认”。
+
+质量准则（每条测试点必须满足）：
+6. 原子性：一个测试点只验证一个独立的验证目标。title/description 不得用“并/同时/以及”跨越多个互相独立的验证点（如“校验账号格式并校验密码强度”应拆成两个测试点）；仅在主从流程中不可分割的（如“填写正确账号密码后登录成功”）可合并为一个。
+7. 唯一性：同一个 requirementId 下不得出现 type 和验证目标完全重复的测试点。若两个测试点的 type 相同且验证的是同一个行为/同一组等价类，合并为一个；仅当验证维度（正常/异常/边界/权限）不同或目标对象不同时才分别生成。
+8. 覆盖完整性：type 为“边界值”时，description 应覆盖该字段的上下界（如长度上限与下限）；type 为“异常流程”时，应覆盖该目标的主要异常输入或非法操作；仅当需求规则未涉及该维度时才不生成对应类型。
 
 禁止输出字段：
 id、testPointId、testPointCode、pointCode、code、req_id、requirementCode、precondition、steps、expectedResult、testData、question、reviewStatus、createdAt、updatedAt。
@@ -101,17 +117,37 @@ id、testPointId、testPointCode、pointCode、code、req_id、requirementCode�
 1. 每项输出的 testPointId 必须原样复制自对应输入，禁止新建、修改或猜测 ID；testPointCode 仅用于理解和追溯，不要输出为 testPointId。
 2. 每个输入测试点至少生成一条用例。若需求同时适用于 PC 和 APP，且 testEnvironment 同时配置了两个地址，应分别生成 PC、APP 用例；单个测试点最多四条。
 3. module 使用输入测试点的 module；feature 使用 requirementFeature；priority 不得改变。
-4. 根据测试目标选择 PC 或 APP，并从 testEnvironment.targets 中选择对应 platform 的目标；environmentId 必须复制该 target.environmentId，testUrl 必须复制该 target.url，不得使用顶层 environmentId 代替具体目标环境。
-5. requiredRole 只能选择对应 target.availableRoles 中真实存在的角色；target 未提供角色时可从 testEnvironment.availableRoles 选择；不需要登录时写“无”；需要登录但没有可用角色时写“待配置”。不得输出用户名或密码。
-6. precondition 必须写清测试端、测试地址和所需角色。testData、steps 和 expectedResult 只能依据输入描述、需求规则和确认结论，不得编造账号、密码、金额或边界值。需求不清的问题应已在需求阶段处理；不要在 testData 中输出“待准备”“待确认”“待补充”来承接需求疑问。
-7. PC、APP 用例都只有在具备稳定定位、测试环境、可用账号和可验证结果时 automation 才可为 true；需要人工判断或缺少设备、定位信息时为 false。
-8. steps 使用“步骤N:”格式，每步一个操作；验证步骤使用“查看…是否…”。
-9. expectedResult 只对应验证步骤，使用“步骤N: …应…”格式。
-10. testType 只能是功能测试、性能测试、安全测试、兼容性测试。
+4. title 必须以“测试”开头，用一句话说清“具体测什么”——包含被测功能 + 触发条件 + 验证点，让人看标题就知道这条用例验证什么。严禁泛化、笼统或只写模块名。
+   - title 只能基于 requirementRule（需求规则）、测试点 description，以及 recognizedUI（若有）中真实存在的页面、字段、菜单、按钮来描述，不得自造功能名或瞎编页面元素。
+   - 正确示例：
+     · “测试登录页面账号输入框为空时点击提交，页面提示请输入员工号”
+     · “测试报价单列表按创建时间倒序排序，最新记录显示在第一行”
+     · “测试角色为普通用户时访问管理员菜单，页面提示无权限”
+     · “测试新增客户时手机号输入框输入少于11位，保存时提示格式错误”
+   - 错误示例（禁止）：“新增功能验证”、“登录测试”、“正常流程”、“菜单显示”、“报价单测试”、“权限控制”。
+5. 若输入含 recognizedUI（系统识别结果），steps 和 expectedResult 应尽量引用其中的真实页面路径（menuPaths）、表单字段（loginInputs/pageObjects.elements）和按钮（buttons），使用例贴合实际系统；不得引用 recognizedUI 里没有的元素。recognizedUI 缺失时，依据 requirementRule 和 description 正常生成。
+6. 根据测试目标选择 PC 或 APP，并从 testEnvironment.targets 中选择对应 platform 的目标；environmentId 必须复制该 target.environmentId，testUrl 必须复制该 target.url，不得使用顶层 environmentId 代替具体目标环境。
+7. requiredRole 只能选择对应 target.availableRoles 中真实存在的角色；target 未提供角色时可从 testEnvironment.availableRoles 选择；不需要登录时写“无”；需要登录但没有可用角色时写“待配置”。不得输出用户名或密码。
+8. precondition 必须写清测试端、测试地址和所需角色。testData、steps 和 expectedResult 只能依据输入描述、需求规则和确认结论，不得编造账号、密码、金额或边界值。需求不清的问题应已在需求阶段处理；不要在 testData 中输出“待准备”“待确认”“待补充”来承接需求疑问。
+9. automation 判定必须严格，宁可判 false 不可乐观判 true。以下任一情况 automation 必须为 false：
+   - 测试步骤含人工操作（如人工核对、肉眼检查、电话确认、线下操作、主管审批、邮件确认、签字、盖章等）；
+   - 预期结果依赖人工主观判断或视觉感受（如是否美观、体验好坏、看起来、颜色搭配、排版是否合理、肉眼观察等），无法用代码客观断言；
+   - targetPlatform 为 APP（当前 APP 自动化缺少设备与 Appium 服务支持）；
+   - testData 依赖尚未落实的外部数据（含“待准备/待确认/待补充/指定用户/指定文件”等描述）；
+   - 缺少稳定定位、测试环境、可用账号或可验证结果。
+   只有步骤可被脚本完整执行、且预期结果能用页面元素/返回值客观断言时，automation 才为 true。
+10. steps 使用“步骤N:”格式，每步一个操作；验证步骤使用“查看…是否…”。
+11. expectedResult 只对应验证步骤，使用“步骤N: …应…”格式。
+12. testType 只能是功能测试、性能测试、安全测试、兼容性测试。
+
+质量准则（每条用例必须满足）：
+13. 唯一性：同一个 testPointId 下不得有两条用例使用相同的输入等价类、相同的操作路径、验证相同的预期结果。若多条用例仅测试数据的值不同、而验证逻辑完全一致，应合并为一条用例并在 testData 中列出多个取值；仅当验证维度（如正常/异常/边界）或预期行为不同时才分别生成不同用例。
+14. 原子性：一条用例只验证一个功能点。title、steps、expectedResult 不得用“并/同时/以及”把多个互相独立的验证目标塞进同一条用例（如“测试登录成功并测试首页数据加载”应拆成两条）；一个验证步骤只对应一个明确的预期。仅当多个断言同属一个连贯操作的自然结果（如“提交后页面跳转且列表刷新”）时可保留在同一条。
+15. 独立性：用例的执行不得依赖其他用例的执行结果或遗留状态。precondition 必须自包含本条用例所需的全部前置条件（账号、数据、页面入口）；steps 不得假设“前一条用例已执行”或引用其他用例产生的数据；每条用例独立设置和清理自己的前置数据。
 
 只输出 JSON 数组。每项必须且只能包含：
 testPointId、module、feature、title、priority、precondition、steps、testData、expectedResult、testType、environmentId、targetPlatform、testUrl、requiredRole、automation。
-不要输出用例编号、需求编号、Markdown、解释或额外字段。""",
+title 必须以“测试”开头并描述具体被测场景（见规则4）。不要输出用例编号、需求编号、Markdown、解释或额外字段。""",
 
     "generate-scripts": """你是自动化测试脚本生成助手。输入是已评估为可自动化的测试用例 JSON 数组。目标是生成能被执行器或 pytest 真正运行并断言的脚本，不允许只生成函数定义或注释步骤。
 
@@ -120,7 +156,11 @@ testPointId、module、feature、title、priority、precondition、steps、testD
 2. targetPlatform=PC 使用 Python + Playwright async API；targetPlatform=APP 使用 Python + Appium。APP 缺少设备或元素定位信息时，代码应在主执行路径中抛出 RuntimeError 说明缺失项，不得编造定位器。
 3. PC 测试地址通过 WEB_BASE_URL 读取，APP 测试地址通过 APP_BASE_URL 读取，Appium 服务地址通过 APPIUM_SERVER_URL 读取；需要角色账号时通过 TEST_USERNAME、TEST_PASSWORD、TEST_ACCOUNT_ROLE 读取；登录验证码策略通过 TEST_LOGIN_CAPTCHA_REQUIRED 和 TEST_LOGIN_CAPTCHA_CODE 读取，TEST_LOGIN_CAPTCHA_REQUIRED=false 表示该环境后端不要求验证码，脚本可不填写验证码，除非页面前端校验要求填入 TEST_LOGIN_CAPTCHA_CODE 作为占位。不得在代码中硬编码 testUrl、用户名、密码或验证码。
 4. 按 precondition、steps、expectedResult 实现操作和断言，不改变原用例逻辑。
-5. 如果输入用例包含 recognizedUI，必须优先使用 recognizedUI.loginInputs、recognizedUI.menuPaths、recognizedUI.buttons、recognizedUI.componentHints 和 recognizedUI.scriptGuidance 生成定位器；不得忽略 recognizedUI 再凭常识猜 class、placeholder 或菜单结构。
+5. 如果输入用例包含 recognizedUI，必须优先使用其中的真实数据生成定位器，不得忽略 recognizedUI 再凭常识猜 class、placeholder 或菜单结构。优先级：
+   - 登录：优先用 recognizedUI.loginForm（accountLocator/passwordLocator/submitLocator/captchaRequired/captchaLocator）——这些是系统识别时实际验证过的定位器；loginForm 缺失时再用 recognizedUI.loginInputs 中的真实 placeholder。
+   - 页面元素：优先用 recognizedUI.pageObjects[].elements[].selector（含 selectorType/action）——这是最精确的元素定位；缺失时再用 menuPaths/buttons/tables。
+   - 导航：优先用 recognizedUI.navigationPlan 的真实点击路径；缺失时再用 recognizedUI.menuPaths。
+   - 验证码：严格依据 recognizedUI.loginForm.captchaRequired——为 false 时脚本不得填写验证码（即使页面前端有该字段也跳过）；为 true 时按 TEST_LOGIN_CAPTCHA_CODE 处理。
 6. 定位优先使用输入步骤中明确出现的 role、label、placeholder、title 或可见文本。输入未提供且 recognizedUI 未识别到的 data-testid、CSS、XPath、接口路径不得编造；缺少关键定位或接口信息时，在代码中抛出说明缺失项的 RuntimeError。
 7. 登录步骤不得只使用 page.get_by_placeholder("用户名") 这类泛化猜测。账号字段必须优先尝试 recognizedUI.loginInputs 中真实存在的 placeholder；无识别结果时再尝试：请输入员工号、员工号、请输入手机号、手机号、登录账号、账号、请输入用户名、用户名；密码字段必须优先尝试：请输入密码、密码、input[type='password']。如果都找不到，脚本应输出当前页面 input 的 placeholder/type 清单后抛出 RuntimeError。
 8. 菜单导航必须优先使用 recognizedUI.menuPaths 中的真实菜单路径；Element UI 菜单应按路径逐级点击可见文本或 span[title="菜单名"] 展开父菜单，再点击子级 .el-menu-item。不得使用 [class*="menu-item"] 这类宽泛猜测作为唯一定位器。
@@ -137,6 +177,31 @@ testPointId、module、feature、title、priority、precondition、steps、testD
 19. 严禁发明环境变量。除 WEB_BASE_URL、APP_BASE_URL、BASE_URL、TEST_BASE_URL、TEST_USERNAME、TEST_PASSWORD、TEST_ACCOUNT_ROLE、TEST_LOGIN_CAPTCHA_REQUIRED、TEST_LOGIN_CAPTCHA_CODE、TEST_TIMEOUT、TEST_TIMEOUT_MS、PLAYWRIGHT_HEADLESS、TEST_HEADLESS、TEST_SLOW_MO、APPIUM_SERVER_URL 外，不得读取 TEST_CREATOR_A_NAME、TEST_DEPARTMENT_NAME、TEST_FILE_NAME 等输入中没有明确提供的变量。
 20. 如果用例涉及创建人A、用户A、部门A、非权限范围数据、已上传文件、指定文件等业务对象，必须只使用需求确认结论、环境账号或 recognizedUI 中真实提供的信息。不得发明 TEST_CREATOR_A_NAME、TEST_DEPARTMENT_NAME、TEST_FILE_NAME 等临时环境变量；如果仍缺少关键业务口径，应在代码中用中文 RuntimeError 明确说明需要回到需求列表补充待确认问题。
 21. 禁止把泛化定位作为唯一业务定位依据，例如 page.locator("table")、[class*="menu-item"]、[class*="option"]。如果没有 recognizedUI 支撑，应明确缺少列表/列/按钮定位信息，而不是猜测。
+
+Playwright 语法约束（违反则脚本无法运行，必须严格遵守）：
+22. 【登录页地址】WEB_BASE_URL 是域名根（如 https://host:62978），不含路径。打开登录页必须拼接登录路径：
+    login_url = os.getenv("WEB_BASE_URL", "") + "/runtime/user/login"
+    await page.goto(login_url)
+    若输入用例的 testUrl 是完整登录地址，优先用 testUrl。禁止 await page.goto(base_url) 不拼路径。
+23. 【登录字段定位——正确语法】填写输入框必须用以下写法之一，禁止 page.fill("placeholder=xxx", v) 这种错误语法：
+    正确：page.get_by_placeholder("请输入员工号").fill(username)
+    正确：page.locator("input[placeholder='请输入员工号']").fill(username)
+    错误（禁止）：page.fill("placeholder=请输入员工号", username)  ← Playwright 不支持
+    错误（禁止）：page.fill("text=登录", v)
+    账号字段推荐用多候选尝试（第一个可见的就用），候选 placeholder 来自 recognizedUI.loginInputs 或：请输入员工号、请输入手机号、请输入账号、请输入用户名。
+    密码字段：page.locator("input[type='password']").fill(password) 或 page.get_by_placeholder("请输入密码").fill(password)。
+24. 【登录按钮定位】点击登录按钮用 page.get_by_role("button", name="登录").click() 或 page.locator("button:has-text('登录')").click()；不得用 page.click("text=登录")。
+25. 【登录后等待】登录后等待跳转：page.wait_for_url("**/homePage", timeout=15000)，用 try/except 包裹；不要用固定 time.sleep。
+26. 【菜单导航——Element UI 正确展开】展开有子菜单的父级必须点击 .el-submenu__title（不是 span[title]），等子菜单可见后再点叶子 .el-menu-item。正确范例：
+    # 展开父菜单"定价管理"
+    page.locator(".el-submenu__title", has_text="定价管理").click()
+    # 等待并点击子菜单"梯度价格"
+    child = page.locator(".el-menu-item", has_text="梯度价格")
+    child.wait_for(state="visible", timeout=5000)
+    child.click()
+    每步必须带 timeout；找不到菜单时抛 RuntimeError("未找到菜单：XX，请检查菜单路径")，不要静默跳过。
+    禁止只 click span[title="菜单名"]（Element UI 展开靠 .el-submenu__title 响应点击）。
+27. 【recognizedUI.loginForm 使用】若 recognizedUI.loginForm 存在且 accountLocator/passwordLocator/submitLocator 有值，代码必须把它们作为首选定位器写进代码（如 accountLocator="input[placeholder='请输入员工号']" 则用 page.locator(accountLocator).fill(username)），不得忽略 loginForm 另写泛化定位。
 
 只输出 JSON 数组。每项必须且只能包含：
 testCaseId、scriptType、framework、language、code。

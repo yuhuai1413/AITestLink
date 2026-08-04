@@ -14,6 +14,7 @@ from app.models.test_point import TestPoint
 
 VALID = "有效"
 INVALID = "已失效"
+REVIEW_INVALIDATED = "已作废"
 
 
 def now_utc() -> datetime:
@@ -40,7 +41,8 @@ async def invalidate_after_requirements(
 ) -> None:
     timestamp = timestamp or now_utc()
     await db.execute(update(TestPoint).where(TestPoint.project_id == project_id).values(
-        validity_status=INVALID, invalid_reason=reason, invalidated_at=timestamp, updated_at=timestamp,
+        validity_status=INVALID, review_status=REVIEW_INVALIDATED,
+        invalid_reason=reason, invalidated_at=timestamp, updated_at=timestamp,
     ))
     await invalidate_after_test_points(db, project_id, reason, timestamp)
 
@@ -53,7 +55,8 @@ async def invalidate_after_test_points(
 ) -> None:
     timestamp = timestamp or now_utc()
     await db.execute(update(TestCase).where(TestCase.project_id == project_id).values(
-        validity_status=INVALID, invalid_reason=reason, invalidated_at=timestamp, updated_at=timestamp,
+        validity_status=INVALID, review_status=REVIEW_INVALIDATED,
+        invalid_reason=reason, invalidated_at=timestamp, updated_at=timestamp,
     ))
     await invalidate_after_test_cases(db, project_id, reason, timestamp)
 
@@ -66,7 +69,8 @@ async def invalidate_after_test_cases(
 ) -> None:
     timestamp = timestamp or now_utc()
     await db.execute(update(AutomationScript).where(AutomationScript.project_id == project_id).values(
-        validity_status=INVALID, invalid_reason=reason, invalidated_at=timestamp, updated_at=timestamp,
+        validity_status=INVALID, review_status=REVIEW_INVALIDATED,
+        invalid_reason=reason, invalidated_at=timestamp, updated_at=timestamp,
     ))
     await invalidate_after_scripts(db, project_id, reason, timestamp)
 

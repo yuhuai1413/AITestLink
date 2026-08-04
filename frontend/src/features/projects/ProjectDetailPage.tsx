@@ -4,12 +4,12 @@ import { ArrowLeft } from "lucide-react";
 import { useProjectData } from "./useProjectData";
 import { DocGenerateTab } from "./detail/DocGenerateTab";
 import { DocFusionTab } from "./detail/DocFusionTab";
-import { DocManageTab } from "./detail/DocManageTab";
 import { ExecuteScriptsTab } from "./detail/ExecuteScriptsTab";
+import { DefectsTab } from "./detail/DefectsTab";
 import { FilesTab } from "./detail/FilesTab";
 import { RequirementsTab } from "./detail/RequirementsTab";
 import { ScriptsTab } from "./detail/ScriptsTab";
-import { SummaryTab } from "./detail/SummaryTab";
+import { OverviewTab } from "./detail/OverviewTab";
 import { TestPointsTab } from "./detail/TestPointsTab";
 import { TestCasesTab } from "./detail/TestCasesTab";
 import { EnvironmentPage } from "../environment/EnvironmentPage";
@@ -22,6 +22,7 @@ import {
 } from "./detail/projectDetail.config";
 
 const tabComponents: Record<TabKey, FC<{ projectId: string }>> = {
+  overview: OverviewTab,
   files: FilesTab,
   environment: EnvironmentPage,
   requirements: RequirementsTab,
@@ -29,8 +30,8 @@ const tabComponents: Record<TabKey, FC<{ projectId: string }>> = {
   testCases: TestCasesTab,
   scripts: ScriptsTab,
   executeScripts: ExecuteScriptsTab,
+  defects: DefectsTab,
   docFusion: DocFusionTab,
-  summary: SummaryTab,
   docGenerate: DocGenerateTab,
 };
 
@@ -61,15 +62,23 @@ export function ProjectDetailPage() {
   const { project, loading } = useProjectData(id);
   const prevIdRef = useRef<string | null | undefined>(null);
   const [activeTab, setActiveTab] = useState<TabKey>(() => {
-    return getStoredProjectTab(id) ?? "files";
+    return getStoredProjectTab(id) ?? "overview";
   });
   const tabContentRef = useRef<HTMLDivElement>(null);
   const handleTabChange = (tab: TabKey) => { setActiveTab(tab); persistProjectTab(id, tab); };
 
-  // 仅在项目 ID 真正切换时重置到输入资料页，页面刷新时恢复已保存的 tab
+  // 兼容热更新或旧本地状态：如果当前 activeTab 已被配置移除，回到项目概况。
+  useEffect(() => {
+    if (!isProjectDetailTabKey(activeTab)) {
+      setActiveTab("overview");
+      persistProjectTab(id, "overview");
+    }
+  }, [activeTab, id]);
+
+  // 仅在项目 ID 真正切换时重置到项目概况页，页面刷新时恢复已保存的 tab
   useEffect(() => {
     if (prevIdRef.current !== null && prevIdRef.current !== id) {
-      const nextTab = getStoredProjectTab(id) ?? "files";
+      const nextTab = getStoredProjectTab(id) ?? "overview";
       setActiveTab(nextTab);
       persistProjectTab(id, nextTab);
     }
@@ -116,7 +125,8 @@ export function ProjectDetailPage() {
     return <div className="page-stack page-stack--spaced page-stack--fill"><div className="empty-state"><p>项目不存在或已删除。</p><button className="primary-button" type="button" onClick={() => navigate("/projects")}>返回项目列表</button></div></div>;
   }
 
-  const ActiveComponent = tabComponents[activeTab];
+  const safeActiveTab: TabKey = isProjectDetailTabKey(activeTab) ? activeTab : "overview";
+  const ActiveComponent = tabComponents[safeActiveTab];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -125,18 +135,10 @@ export function ProjectDetailPage() {
         <h2 style={{ margin: 0 }}>{project.name}</h2>
       </div>
       <div className="tab-bar">
-        {allTabs.map((tab) => <button key={tab.key} type="button" className={`tab-button ${activeTab === tab.key ? "tab-button--active" : ""}`} onClick={() => handleTabChange(tab.key)}>{tab.label}</button>)}
+        {allTabs.map((tab) => <button key={tab.key} type="button" className={`tab-button ${safeActiveTab === tab.key ? "tab-button--active" : ""}`} onClick={() => handleTabChange(tab.key)}>{tab.label}</button>)}
       </div>
       <div className="tab-content" ref={tabContentRef}>
-        {allTabs.map((tab) => {
-          const Comp = tabComponents[tab.key];
-          if (!Comp) return null;
-          return (
-            <div key={tab.key} style={{ display: activeTab === tab.key ? "contents" : "none" }}>
-              <Comp projectId={project.id} />
-            </div>
-          );
-        })}
+        <ActiveComponent projectId={project.id} />
       </div>
     </div>
   );

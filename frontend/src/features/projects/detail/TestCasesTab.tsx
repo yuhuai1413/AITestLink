@@ -49,24 +49,49 @@ export function TestCasesTab({ projectId }: { projectId: string }) {
     await startGenerateTestCases(projectId);
     await refresh();
   };
-  const allSelected = testCases.length > 0 && testCases.every((tc) => selectedIds.has(tc.id));
-  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(testCases.map((tc) => tc.id)));
+  // 已失效（作废）的用例不可评审，全选时排除，且勾选框禁用。
+  const reviewableCases = testCases.filter((tc) => tc.validityStatus !== "已失效" && tc.reviewStatus !== "已作废");
+  const allSelected = reviewableCases.length > 0 && reviewableCases.every((tc) => selectedIds.has(tc.id));
+  const hasInvalid = testCases.some((tc) => tc.validityStatus === "已失效");
+  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(reviewableCases.map((tc) => tc.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleReview = async (tc: any) => {
+    if (tc.reviewStatus === "已作废") { toast.warning("已作废的测试用例不能修改评审状态"); return; }
     const newStatus = tc.reviewStatus === "已通过" ? "待评审" : "已通过";
     try { await testCasesApi.update(tc.id, { reviewStatus: newStatus } as any); } catch {}
     dispatch({ type: "UPDATE_TEST_CASE", payload: { ...tc, reviewStatus: newStatus } });
     await refreshTestCases();
   };
   const batchApprove = async () => {
-    for (const id of selectedIds) {
-      const tc = testCases.find((c) => c.id === id);
-      if (tc && tc.reviewStatus !== "已通过") {
-        try { await testCasesApi.update(tc.id, { reviewStatus: "已通过" } as any); } catch {}
-        dispatch({ type: "UPDATE_TEST_CASE", payload: { ...tc, reviewStatus: "已通过" } });
+    // 区分可评审用例与已失效（作废）用例，给出准确反馈。
+    const selected = testCases.filter((tc) => selectedIds.has(tc.id));
+    const invalid = selected.filter((tc) => tc.validityStatus === "已失效" || tc.reviewStatus === "已作废");
+    const reviewable = selected.filter((tc) => tc.validityStatus !== "已失效" && tc.reviewStatus !== "已作废" && tc.reviewStatus !== "已通过");
+
+    if (reviewable.length === 0) {
+      // 选中的全部是已失效或已通过，没有可评审的
+      if (invalid.length > 0) {
+        toast.warning(`选中的 ${selectedIds.size} 条用例均已失效，无法再次评审。数据失效后需重新生成用例`);
+      } else {
+        toast.info("选中的用例已是评审通过状态，无需重复评审");
       }
+      setSelectedIds(new Set());
+      return;
     }
-    toast.success(`已通过 ${selectedIds.size} 条用例`);
+
+    let passed = 0;
+    for (const tc of reviewable) {
+      try {
+        await testCasesApi.update(tc.id, { reviewStatus: "已通过" } as any);
+        dispatch({ type: "UPDATE_TEST_CASE", payload: { ...tc, reviewStatus: "已通过" } });
+        passed += 1;
+      } catch { }
+    }
+    if (invalid.length > 0) {
+      toast.success(`已通过 ${passed} 条用例；其中 ${invalid.length} 条已失效被自动跳过`);
+    } else {
+      toast.success(`已通过 ${passed} 条用例`);
+    }
     setSelectedIds(new Set());
     await refreshTestCases();
   };
@@ -115,7 +140,7 @@ export function TestCasesTab({ projectId }: { projectId: string }) {
 
   return (
     <div className="page-stack page-stack--spaced page-stack--fill">
-      <SectionHeader title="用例生成" description="从测试点生成可执行用例，AI 在生成时自动进行质量自检。" meta={<>共 <strong>{testCases.length}</strong> 条用例</>}
+      <SectionHeader title="用例生成" description="从测试点生成可执行用例，AI 在生成时自动进行质量自检。" meta={<>{testCases.length > 0 && <>共 <strong>{testCases.length}</strong> 条用例，其中 <strong>{testCases.filter((tc) => tc.automation === "是").length}</strong> 条支持自动化</>}</>}
         actions={<>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 8 }}>
@@ -129,7 +154,10 @@ export function TestCasesTab({ projectId }: { projectId: string }) {
       <section className="work-panel">
         {initialLoading && testCases.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : testCases.length === 0 ? <div className="empty-state"><p>暂无测试用例</p></div> : (
           <DataTable rows={testCases} getRowKey={(r) => r.id} columns={[
-            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
+            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} disabled={reviewableCases.length === 0} />, width: "40px", sticky: "left" as const, render: (r) => {
+              const invalid = r.validityStatus === "已失效" || r.reviewStatus === "已作废";
+              return <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} disabled={invalid} title={invalid ? "已失效用例不可评审" : undefined} />;
+            } },
             { key: "caseCode", label: "用例编号", render: (r) => r.caseCode },
             { key: "module", label: "模块", render: (r) => r.module },
             { key: "testType", label: "测试类型", render: (r) => r.testType || "功能测试" },
@@ -142,7 +170,8 @@ export function TestCasesTab({ projectId }: { projectId: string }) {
             { key: "steps", label: "测试步骤", align: "left", lineClamp: 3, render: (r) => <span className="test-steps-preview" title={r.steps}>{formatTestStepsForDisplay(r.steps)}</span> },
             { key: "expectedResult", label: "预期结果", align: "left", lineClamp: 3, render: (r) => <span title={r.expectedResult}>{r.expectedResult}</span> },
             { key: "reviewStatus", label: "评审", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus}</StatusPill></button> },
-            { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <span title={r.invalidReason || ""}><StatusPill tone={r.validityStatus === "已失效" ? "amber" : "green"}>{r.validityStatus || "有效"}</StatusPill></span> },
+            { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <StatusPill tone={r.validityStatus === "已失效" ? "amber" : "green"}>{r.validityStatus || "有效"}</StatusPill> },
+            ...(hasInvalid ? [{ key: "invalidReason", label: "失效原因", align: "left" as const, width: "14%", lineClamp: 2, render: (r: any) => (r.validityStatus === "已失效" && r.invalidReason) ? <span title={r.invalidReason}>{r.invalidReason}</span> : null }] : []),
             { key: "automation", label: "是否自动化", align: "center", render: (r) => <StatusPill tone={r.automation === "是" ? "green" : "slate"}>{r.automation === "是" ? "是" : "否"}</StatusPill> },
             { key: "createdAt", label: "生成时间", render: (r) => formatTime(r.createdAt) },
             { key: "updatedAt", label: "更新时间", render: (r) => formatTime(r.updatedAt) },
@@ -182,7 +211,17 @@ export function TestCasesTab({ projectId }: { projectId: string }) {
 
       <ConfirmDialog open={showGenerateConfirm} title="重新生成用例" message={`当前已有 ${testCases.length} 条用例，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={handleGenerate} onCancel={() => setShowGenerateConfirm(false)} />
 
-      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 条用例标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
+      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={(() => {
+        const selected = testCases.filter((tc) => selectedIds.has(tc.id));
+        const invalidCount = selected.filter((tc) => tc.validityStatus === "已失效" || tc.reviewStatus === "已作废").length;
+        if (invalidCount === selected.length) {
+          return `选中的 ${selectedIds.size} 条用例均已失效，无法再次评审。数据失效后需重新生成用例`;
+        }
+        if (invalidCount > 0) {
+          return `选中的 ${selectedIds.size} 条用例中有 ${invalidCount} 条已失效，将被自动跳过，仅评审其余 ${selectedIds.size - invalidCount} 条。是否继续？`;
+        }
+        return `确定将选中的 ${selectedIds.size} 条用例标记为评审通过？`;
+      })()} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
       {configErrorDialog}
       {tcDirty.confirmDialog}
     </div>

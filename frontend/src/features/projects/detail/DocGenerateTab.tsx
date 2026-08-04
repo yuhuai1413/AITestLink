@@ -33,14 +33,14 @@ type PrerequisiteItem = {
 export function DocGenerateTab({ projectId }: { projectId: string }) {
   const { files, requirements, testPoints, testCases, scripts, refresh, loading, initialLoading } = useProjectData(projectId);
   const templates = [
-    { id: "tpl-plan", name: "软件测试计划", desc: "测试范围、策略、资源、进度安排", needs: ["files", "requirements", "testPoints", "traceability"] },
-    { id: "tpl-spec", name: "软件测试说明", desc: "测试环境、用例设计、执行方法", needs: ["files", "requirements", "testPoints", "testCases", "traceability"] },
-    { id: "tpl-report", name: "软件测试报告", desc: "执行结果、缺陷统计、风险分析", needs: ["requirements", "testPoints", "testCases", "scripts", "traceability"] },
-    { id: "tpl-pc", name: "PC端操作手册", desc: "系统操作流程、功能说明", needs: ["files", "requirements"] },
-    { id: "tpl-app", name: "APP端操作手册", desc: "移动端操作流程、功能说明", needs: ["files", "requirements"] },
+    { id: "tpl-plan", name: "软件测试计划", desc: "明确测试范围、策略与资源安排，指导整个测试过程", highlights: ["测试策略", "资源安排", "里程碑"], needs: ["files", "requirements", "testPoints", "traceability"] },
+    { id: "tpl-spec", name: "软件测试说明", desc: "描述测试环境、用例设计与具体执行方法", highlights: ["测试环境", "用例设计", "执行方法"], needs: ["files", "requirements", "testPoints", "testCases", "traceability"] },
+    { id: "tpl-report", name: "软件测试报告", desc: "汇总执行结果、缺陷统计与风险评估，给出测试结论", highlights: ["执行结果", "缺陷统计", "风险评估"], needs: ["requirements", "testPoints", "testCases", "scripts", "traceability"] },
+    { id: "tpl-pc", name: "PC端操作手册", desc: "面向 PC 端用户的系统操作流程与功能说明", highlights: ["操作流程", "功能说明"], needs: ["files", "requirements"] },
+    { id: "tpl-app", name: "APP端操作手册", desc: "面向移动端用户的操作流程与功能说明", highlights: ["移动端流程", "功能说明"], needs: ["files", "requirements"] },
   ];
   const [generating, setGenerating] = useState<string | null>(null);
-  const [statusMap, setStatusMap] = useState<Record<string, { status: string; generatedAt: string | null }>>({});
+  const [statusMap, setStatusMap] = useState<Record<string, { status: string; generatedAt: string | null; docType?: string }>>({});
   const [statusLoaded, setStatusLoaded] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [reGenerateId, setReGenerateId] = useState<string | null>(null);
@@ -51,9 +51,42 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
 
   // 从数据库加载状态
   useEffect(() => {
-    docGenApi.getStatus(projectId).then((data) => {
-      if (data) setStatusMap(data);
-    }).catch(() => {}).finally(() => setStatusLoaded(true));
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await docGenApi.getStatus(projectId);
+        if (cancelled) return;
+        if (data) {
+          // 对已生成的模板，进一步从 AI 任务结果里取实际生成的文档类型（如 Word/PDF）
+          const baseMap: Record<string, { status: string; generatedAt: string | null; docType?: string }> = { ...data };
+          const generatedIds = Object.entries(baseMap).filter(([, v]) => v?.status === "已生成").map(([k]) => k);
+          if (generatedIds.length > 0) {
+            try {
+              const resp = await fetch(`${API_BASE}/projects/${projectId}/ai/tasks`, {
+                headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ""}` },
+              });
+              if (resp.ok) {
+                const tasks = await resp.json();
+                for (const id of generatedIds) {
+                  const doc = pickGeneratedDoc(tasks, id);
+                  if (doc) {
+                    const docType = docTypeFromGenerated(doc);
+                    if (docType) baseMap[id] = { ...baseMap[id], docType };
+                  }
+                }
+              }
+            } catch { /* 文档类型为辅助信息，失败时回退到默认 Word */ }
+            // 兜底：已生成但未取到类型时，按当前生成器实际产出（docx）记为 Word
+            for (const id of generatedIds) {
+              if (!baseMap[id].docType) baseMap[id] = { ...baseMap[id], docType: "Word" };
+            }
+          }
+          if (!cancelled) setStatusMap(baseMap);
+        }
+      } catch { /* ignore */ }
+      finally { if (!cancelled) setStatusLoaded(true); }
+    })();
+    return () => { cancelled = true; };
   }, [projectId]);
 
   const getTemplateStatus = (tpl: typeof templates[0]): string => {
@@ -173,33 +206,28 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
     return optionalBlocker?.blockers[0] || "";
   };
 
-  const renderPrerequisites = (tpl: typeof templates[0]) => (
-    <div className="doc-prereq-summary">
-      {(() => {
-        const items = getTemplatePrerequisites(tpl);
-        const blocker = getPrimaryBlocker(items);
-        const requiredReady = items.filter((item) => !item.optional && item.ready).length;
-        const requiredTotal = items.filter((item) => !item.optional).length;
-        return (
-          <>
-            <div className="doc-prereq-summary__top">
-              <StatusPill tone={requiredReady === requiredTotal ? "green" : "amber"}>{requiredReady}/{requiredTotal} 满足</StatusPill>
-              <button className="text-button doc-prereq-summary__detail" type="button" onClick={() => setPrereqDetailId(tpl.id)}>详情</button>
-            </div>
-            <div className="doc-prereq-summary__chips">
-              {items.slice(0, 4).map((item) => (
-                <span key={item.label} className={item.ready ? "doc-prereq-chip doc-prereq-chip--ready" : "doc-prereq-chip"} title={`${item.label}：${item.detail}`}>
-                  {item.label} {item.summary}
-                </span>
-              ))}
-              {items.length > 4 && <span className="doc-prereq-chip doc-prereq-chip--more">+{items.length - 4}</span>}
-            </div>
-            {blocker && <div className="doc-prereq-summary__blocker" title={blocker}>卡点：{blocker}</div>}
-          </>
-        );
-      })()}
-    </div>
-  );
+  const renderPrerequisites = (tpl: typeof templates[0]) => {
+    const items = getTemplatePrerequisites(tpl);
+    const blocker = getPrimaryBlocker(items);
+    const requiredReady = items.filter((item) => !item.optional && item.ready).length;
+    const requiredTotal = items.filter((item) => !item.optional).length;
+    const allReady = requiredReady === requiredTotal;
+    // 单个可点击徽章：本身展示「数据全不全」，点击弹出详情。
+    // 卡点摘要放进 title 悬浮提示，避免在列里摊开一堆 chips 和长文本。
+    const title = blocker
+      ? `数据不完整：${blocker}（点击查看详情）`
+      : `前置数据齐全（点击查看详情）`;
+    return (
+      <button
+        type="button"
+        className={`status-pill doc-prereq-trigger ${allReady ? "status-pill--green" : "status-pill--amber"}`}
+        title={title}
+        onClick={() => setPrereqDetailId(tpl.id)}
+      >
+        {requiredReady}/{requiredTotal} 满足
+      </button>
+    );
+  };
 
   const getGenerationGateError = () => {
     if (requirements.length === 0) return "需求列表为空，请先完成需求解析";
@@ -254,7 +282,7 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
 
       if (result.success) {
         await docGenApi.updateStatus(projectId, id, "已生成");
-        setStatusMap((prev) => ({ ...prev, [id]: { status: "已生成", generatedAt: new Date().toISOString() } }));
+        setStatusMap((prev) => ({ ...prev, [id]: { status: "已生成", generatedAt: new Date().toISOString(), docType: "Word" } }));
       } else {
         await docGenApi.updateStatus(projectId, id, "待生成");
         setStatusMap((prev) => ({ ...prev, [id]: { status: "待生成", generatedAt: null } }));
@@ -287,6 +315,25 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
       }
     }
     return null;
+  };
+
+  // 扩展名 → 可读文档类型映射；用于「文档类型」列展示实际生成的文档类型
+  const EXT_TYPE_MAP: Record<string, string> = {
+    docx: "Word", doc: "Word", pdf: "PDF", xlsx: "Excel", xls: "Excel",
+    csv: "CSV", md: "Markdown", txt: "文本", html: "HTML",
+  };
+
+  // 根据实际生成的文档产出（docxFileName 或 content）推断文档类型
+  const docTypeFromGenerated = (doc: any): string => {
+    if (!doc) return "";
+    const fileName: string = doc.docxFileName || doc.fileName || "";
+    if (fileName) {
+      const ext = fileName.split(".").pop()?.toLowerCase() || "";
+      if (ext) return EXT_TYPE_MAP[ext] || ext.toUpperCase();
+    }
+    if (doc.docxBase64) return "Word";     // docx 产出但缺文件名时按 Word
+    if (doc.content) return "HTML";         // 降级为 HTML 内容
+    return "";
   };
 
   const handlePreview = useCallback(async (id: string) => {
@@ -424,7 +471,7 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
 
         if (result.success) {
           await docGenApi.updateStatus(projectId, id, "已生成");
-          setStatusMap((prev) => ({ ...prev, [id]: { status: "已生成", generatedAt: new Date().toISOString() } }));
+          setStatusMap((prev) => ({ ...prev, [id]: { status: "已生成", generatedAt: new Date().toISOString(), docType: "Word" } }));
         } else {
           await docGenApi.updateStatus(projectId, id, "待生成");
           setStatusMap((prev) => ({ ...prev, [id]: { status: "待生成", generatedAt: null } }));
@@ -453,8 +500,19 @@ export function DocGenerateTab({ projectId }: { projectId: string }) {
         <DataTable rows={templates} getRowKey={(r) => r.id} columns={[
           { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
           { key: "name", label: "模板名称", lineClamp: 3, render: (r) => r.name },
-          { key: "desc", label: "说明", lineClamp: 3, render: (r) => r.desc },
-          { key: "needs", label: "前置数据", align: "left", width: "34%", render: renderPrerequisites },
+          { key: "desc", label: "说明", align: "left", lineClamp: 3, render: (r) => (
+            <div className="doc-desc">
+              <div className="doc-desc__text">{r.desc}</div>
+              <div className="doc-desc__tags">
+                {r.highlights.map((h) => <span key={h} className="doc-desc__tag">{h}</span>)}
+              </div>
+            </div>
+          ) },
+          { key: "needs", label: "前置数据", align: "center", width: "120px", render: renderPrerequisites },
+          { key: "docType", label: "文档类型", align: "center", width: "100px", render: (r) => {
+            const docType = statusMap[r.id]?.docType;
+            return docType ? <StatusPill tone="slate">{docType}</StatusPill> : <span style={{ color: "var(--muted)" }}>-</span>;
+          }},
           { key: "status", label: "状态", align: "center", render: (r) => {
             const st = getTemplateStatus(r);
             if (st === "已生成") return <StatusPill tone="green">已生成</StatusPill>;

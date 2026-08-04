@@ -323,6 +323,15 @@ def render_docx_from_template(
         "{{summary.testPointCount}}": str(len(test_points)),
         "{{summary.testCaseCount}}": str(len(test_cases)),
         "{{today}}": today,
+        # 新增占位符（对应测试计划模板里的项目相关内容）
+        "{{software.name}}": _safe(getattr(project, "software_name", "")) or project_name,
+        "{{software.code}}": _safe(getattr(project, "software_code", "")) or _safe(getattr(project, "id", ""))[:8].upper(),
+        "{{software.version}}": _safe(getattr(project, "software_version", "")) or "V1.0",
+        "{{client.company}}": _safe(getattr(project, "client_company", "")) or "（待填写）",
+        "{{dev.company}}": _safe(getattr(project, "dev_company", "")) or "（待填写）",
+        "{{doc.number}}": f"DOC-{datetime.now().strftime('%Y%m%d')}",
+        "{{project.startDate}}": _safe(getattr(project, "start_date", "")) or today[:4] + "年",
+        "{{maintenance.months}}": _safe(getattr(project, "maintenance_months", "")) or "12",
     }
 
     for paragraph in doc.paragraphs:

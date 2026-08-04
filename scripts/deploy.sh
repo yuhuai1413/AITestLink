@@ -38,4 +38,4 @@ else
 fi
 
 echo "部署完成。请确保新 dist 文件已上传到 $DIST_DIR"
-echo "验证方法: curl -s https://www.aimstong.com/aitestlink/ | grep -o 'index-[a-zA-Z0-9]*\.js'"
+echo "验证方法: curl -s https://aitestlink.cn/ | grep -o 'index-[a-zA-Z0-9]*\.js'"

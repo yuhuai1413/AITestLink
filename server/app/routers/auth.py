@@ -162,6 +162,27 @@ async def list_users(
     return {"ok": True, "users": users}
 
 
+class CreateUserRequest(BaseModel):
+    phone: str
+    password: Optional[str] = None
+    is_admin: Optional[bool] = False
+    is_active: Optional[bool] = True
+
+
+@router.post("/users")
+async def create_user(
+    data: CreateUserRequest,
+    user: dict = Depends(require_admin),
+    service: AuthService = Depends(get_auth_service),
+):
+    return await service.create_user({
+        "phone": data.phone,
+        "password": data.password,
+        "is_admin": data.is_admin,
+        "is_active": data.is_active,
+    })
+
+
 class UpdateUserRequest(BaseModel):
     nickname: Optional[str] = None
     is_admin: Optional[bool] = None

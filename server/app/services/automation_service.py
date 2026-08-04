@@ -9,7 +9,7 @@ from app.services.export_format import format_api_datetime
 from app.models.test_case import TestCase
 from app.services.base import BaseService
 from app.services.ai_service import AIService
-from app.services.data_lineage_service import VALID, cascade_delete_script
+from app.services.data_lineage_service import INVALID, REVIEW_INVALIDATED, VALID, cascade_delete_script
 
 
 class AutomationService(BaseService):
@@ -48,13 +48,15 @@ class AutomationService(BaseService):
         # 批量创建
         scripts = []
         for item in generated:
+            # 规范化脚本元数据：不信任 AI 随意填写的值
+            raw_platform = (item.get("targetPlatform") or "PC").upper()
             script = AutomationScript(
                 id=str(uuid.uuid4()),
                 project_id=project_id,
                 test_case_id=item.get("testCaseId"),
-                script_type=item.get("scriptType", "UI"),
-                framework=item.get("framework", "Playwright"),
-                language=item.get("language", "Python"),
+                script_type="APP" if raw_platform == "APP" else "UI",
+                framework="Appium" if raw_platform == "APP" else "Playwright",
+                language="Python",
                 code=item.get("code", ""),
                 status="未测试",
                 script_code=item.get("scriptCode", ""),
@@ -109,6 +111,13 @@ class AutomationService(BaseService):
         script = result.scalar_one_or_none()
         if not script:
             return None
+        # 已失效（作废）的脚本不允许改为已通过——数据失效后需重新生成
+        if status == "已通过" and (script.review_status == REVIEW_INVALIDATED or script.validity_status == INVALID):
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=400,
+                detail="该脚本已失效，无法再次评审。请重新生成脚本",
+            )
         script.review_status = status
         script.updated_at = self._now()
         await self.db.commit()

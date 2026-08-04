@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Shield, ShieldOff, X, RotateCcw } from "lucide-react";
-import { listUsers, deleteUser, updateUser, getMeWithAdmin, type UserItem } from "../auth/api/auth";
+import { Plus, Shield, ShieldOff, X, RotateCcw } from "lucide-react";
+import { listUsers, deleteUser, updateUser, createUser, getMeWithAdmin, type UserItem } from "../auth/api/auth";
+import { toast } from "../auth/components/ToastProvider";
 import { DataTable } from "../../shared/components/DataTable";
 import { DataPanel } from "../../shared/components/DataPanel";
 import { ConfirmDialog } from "../../shared/components/ConfirmDialog";
@@ -25,6 +26,12 @@ export function UserManagementPage() {
   const [editForm, setEditForm] = useState({ nickname: "", is_admin: false, is_active: true });
   const [saving, setSaving] = useState(false);
   const userDirty = useUnsavedChanges();
+  // 新增用户弹窗
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState({ phone: "", password: "", role: "user" as "user" | "admin", is_active: true });
+  const [creating, setCreating] = useState(false);
+  const createDirty = useUnsavedChanges("新增用户");
+  const phoneError = createForm.phone && !/^1[3-9]\d{9}$/.test(createForm.phone) ? "请输入正确的手机号" : "";
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -77,7 +84,7 @@ export function UserManagementPage() {
 
   const handleDeleteClick = (user: UserItem) => {
     if (user.id === currentUserId) {
-      alert("不能删除自己的账号");
+      toast.error("不能删除自己的账号");
       return;
     }
     setUserToDelete(user);
@@ -94,11 +101,12 @@ export function UserManagementPage() {
         await loadUsers();
         setDeleteDialogOpen(false);
         setUserToDelete(null);
+        toast.success("删除成功");
       } else {
-        alert(res.message || "删除失败");
+        toast.error(res.message || "删除失败");
       }
     } catch {
-      alert("删除失败，请重试");
+      toast.error("删除失败，请重试");
     } finally {
       setDeleting(false);
     }
@@ -130,11 +138,12 @@ export function UserManagementPage() {
         }
         setEditingUser(null);
         userDirty.markClean();
+        toast.success("保存成功");
       } else {
-        alert(res.message || "保存失败");
+        toast.error(res.message || "保存失败");
       }
     } catch {
-      alert("保存失败，请重试");
+      toast.error("保存失败，请重试");
     } finally {
       setSaving(false);
     }
@@ -153,6 +162,38 @@ export function UserManagementPage() {
     } catch {
       // 失败时恢复原状态
       setUsers(users.map(u => u.id === user.id ? { ...u, is_active: user.is_active } : u));
+    }
+  };
+
+  const openCreate = () => {
+    setCreateForm({ phone: "", password: "", role: "user", is_active: true });
+    createDirty.markClean();
+    setCreateOpen(true);
+  };
+
+  const handleCreate = async () => {
+    if (!createForm.phone.trim()) { toast.error("请输入手机号"); return; }
+    if (phoneError) { toast.error(phoneError); return; }
+    setCreating(true);
+    try {
+      const res = await createUser({
+        phone: createForm.phone.trim(),
+        password: createForm.password.trim() || undefined, // 空 → 后端用默认密码 password123
+        is_admin: createForm.role === "admin",
+        is_active: createForm.is_active,
+      });
+      if (res.ok) {
+        await loadUsers();
+        setCreateOpen(false);
+        createDirty.markClean();
+        toast.success("创建成功");
+      } else {
+        toast.error(res.message || "创建失败");
+      }
+    } catch {
+      toast.error("创建失败，请重试");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -204,6 +245,10 @@ export function UserManagementPage() {
           重置
         </button>
       </div>
+      <button className="primary-button toolbar-button toolbar-primary-button" type="button" style={{ marginLeft: "auto" }} onClick={openCreate}>
+        <Plus size={16} />
+        新增用户
+      </button>
     </div>
   );
 
@@ -347,6 +392,67 @@ export function UserManagementPage() {
 
         </form>
       </Modal>
+
+      {/* 新增用户弹窗 */}
+      <Modal
+        open={createOpen}
+        onClose={() => createDirty.requestClose(() => setCreateOpen(false))}
+        title="新增用户"
+        width={520}
+        footer={<>
+          <button className="ghost-button" type="button" onClick={() => createDirty.requestClose(() => setCreateOpen(false))}>取消</button>
+          <button className="primary-button" type="button" onClick={handleCreate} disabled={creating || !!phoneError}>
+            {creating ? "创建中..." : "创建"}
+          </button>
+        </>}
+      >
+        <form className="form-stack" onSubmit={(e) => { e.preventDefault(); handleCreate(); }}>
+          <div className="form-label">
+            <span>手机号 <span style={{ color: "var(--red)" }}>*</span></span>
+            <input
+              className="form-input"
+              type="text"
+              maxLength={11}
+              placeholder="请输入 11 位手机号"
+              value={createForm.phone}
+              onChange={(e) => { setCreateForm({ ...createForm, phone: e.target.value.replace(/\D/g, "") }); createDirty.markDirty(); }}
+            />
+            {phoneError && <span className="form-help" style={{ color: "var(--red)" }}>{phoneError}</span>}
+          </div>
+          <div className="form-label">
+            <span>密码</span>
+            <input
+              className="form-input"
+              type="text"
+              placeholder="不填则使用默认密码 password123（不少于8位，含字母和数字）"
+              value={createForm.password}
+              onChange={(e) => { setCreateForm({ ...createForm, password: e.target.value }); createDirty.markDirty(); }}
+            />
+          </div>
+          <div className="form-label">
+            <span>角色</span>
+            <MenuSelect
+              value={createForm.role}
+              options={[{ value: "user", label: "普通用户" }, { value: "admin", label: "管理员" }]}
+              onChange={(value) => { setCreateForm({ ...createForm, role: value as "user" | "admin" }); createDirty.markDirty(); }}
+            />
+          </div>
+          <div className="form-label">
+            <span>状态</span>
+            <label className="toggle-switch" style={{ opacity: createForm.role === "admin" ? 0.5 : 1, cursor: createForm.role === "admin" ? "not-allowed" : "pointer" }}>
+              <input
+                type="checkbox"
+                checked={createForm.role === "admin" ? true : createForm.is_active}
+                disabled={createForm.role === "admin"}
+                onChange={(e) => { setCreateForm({ ...createForm, is_active: e.target.checked }); createDirty.markDirty(); }}
+              />
+              <span className="toggle-switch__slider" />
+            </label>
+            <span className="form-help">{createForm.role === "admin" ? "管理员账号默认启用" : "启用 / 禁用"}</span>
+          </div>
+        </form>
+      </Modal>
+      {createDirty.confirmDialog}
       {userDirty.confirmDialog}
     </div>
   );

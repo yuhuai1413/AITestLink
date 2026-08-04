@@ -44,10 +44,14 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
     await startGenerateTestPoints(projectId);
     await refresh();
   };
-  const allSelected = testPoints.length > 0 && testPoints.every((tp) => selectedIds.has(tp.id));
-  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(testPoints.map((tp) => tp.id)));
+  const isInvalid = (tp: any) => tp.validityStatus === "已失效" || tp.reviewStatus === "已作废";
+  const reviewableTestPoints = testPoints.filter((tp) => !isInvalid(tp));
+  const allSelected = reviewableTestPoints.length > 0 && reviewableTestPoints.every((tp) => selectedIds.has(tp.id));
+  const hasInvalid = testPoints.some((tp) => tp.validityStatus === "已失效");
+  const toggleSelectAll = () => setSelectedIds(allSelected ? new Set() : new Set(reviewableTestPoints.map((tp) => tp.id)));
   const toggleSelect = (id: string) => setSelectedIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleReview = async (tp: any) => {
+    if (isInvalid(tp)) { toast.warning("已失效的测试点不能修改评审状态，请重新生成测试点"); return; }
     const newStatus = tp.reviewStatus === "已通过" ? "待评审" : "已通过";
     try { await testPointsApi.update(tp.id, { reviewStatus: newStatus } as any); } catch {}
     dispatch({ type: "UPDATE_TEST_POINT", payload: { ...tp, reviewStatus: newStatus } });
@@ -55,14 +59,31 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
   };
   const [showBatchApproveConfirm, setShowBatchApproveConfirm] = useState(false);
   const batchApprove = async () => {
-    for (const id of selectedIds) {
-      const tp = testPoints.find((t) => t.id === id);
-      if (tp && tp.reviewStatus !== "已通过") {
-        try { await testPointsApi.update(tp.id, { reviewStatus: "已通过" } as any); } catch {}
-        dispatch({ type: "UPDATE_TEST_POINT", payload: { ...tp, reviewStatus: "已通过" } });
+    const selected = testPoints.filter((tp) => selectedIds.has(tp.id));
+    const invalid = selected.filter(isInvalid);
+    const reviewable = selected.filter((tp) => !isInvalid(tp) && tp.reviewStatus !== "已通过");
+
+    if (reviewable.length === 0) {
+      if (invalid.length > 0) {
+        toast.warning(`选中的 ${selectedIds.size} 个测试点均已失效，无法再次评审。数据失效后需重新生成测试点`);
+      } else {
+        toast.info("选中的测试点已是评审通过状态，无需重复评审");
       }
+      setSelectedIds(new Set());
+      return;
     }
-    toast.success(`已通过 ${selectedIds.size} 个测试点`);
+
+    let passed = 0;
+    for (const tp of reviewable) {
+      try { await testPointsApi.update(tp.id, { reviewStatus: "已通过" } as any); } catch {}
+      dispatch({ type: "UPDATE_TEST_POINT", payload: { ...tp, reviewStatus: "已通过" } });
+      passed += 1;
+    }
+    if (invalid.length > 0) {
+      toast.success(`已通过 ${passed} 个测试点；其中 ${invalid.length} 个已失效被自动跳过`);
+    } else {
+      toast.success(`已通过 ${passed} 个测试点`);
+    }
     setSelectedIds(new Set());
     await refreshTestPoints();
   };
@@ -116,14 +137,18 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
       <section className="work-panel">
         {initialLoading && testPoints.length === 0 ? <div className="empty-state"><Loader2 size={20} className="animate-spin" style={{ color: "var(--muted)" }} /><p style={{ marginTop: 8, color: "var(--muted)" }}>加载中...</p></div> : testPoints.length === 0 ? <div className="empty-state"><p>暂无测试点</p></div> : (
           <DataTable rows={testPoints} getRowKey={(r) => r.id} columns={[
-            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />, width: "40px", sticky: "left" as const, render: (r) => <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /> },
+            { key: "select", label: <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} disabled={reviewableTestPoints.length === 0} />, width: "40px", sticky: "left" as const, render: (r) => {
+              const invalid = isInvalid(r);
+              return <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} disabled={invalid} title={invalid ? "已失效测试点不可评审" : undefined} />;
+            } },
             { key: "pointCode", label: "测试点编号", render: (r) => r.pointCode || <span style={{ color: "var(--muted)" }}>-</span> },
             { key: "module", label: "模块", render: (r) => r.module },
             { key: "type", label: "类型", render: (r) => r.type },
             { key: "title", label: "测试点", align: "left", lineClamp: 3, render: (r) => r.title },
             { key: "priority", label: "优先级", align: "center", render: (r) => <StatusPill tone={priorityTone(r.priority)}>{r.priority}</StatusPill> },
             { key: "reviewStatus", label: "评审", align: "center", render: (r) => <button type="button" className="text-button" onClick={() => toggleReview(r)}><StatusPill tone={reviewTone(r.reviewStatus)}>{r.reviewStatus}</StatusPill></button> },
-            { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <span title={r.invalidReason || ""}><StatusPill tone={r.validityStatus === "已失效" ? "amber" : "green"}>{r.validityStatus || "有效"}</StatusPill></span> },
+            { key: "validityStatus", label: "数据状态", align: "center", render: (r) => <StatusPill tone={r.validityStatus === "已失效" ? "amber" : "green"}>{r.validityStatus || "有效"}</StatusPill> },
+            ...(hasInvalid ? [{ key: "invalidReason", label: "失效原因", align: "left" as const, width: "14%", lineClamp: 2, render: (r: any) => (r.validityStatus === "已失效" && r.invalidReason) ? <span title={r.invalidReason}>{r.invalidReason}</span> : null }] : []),
             { key: "createdAt", label: "生成时间", render: (r) => formatTime(r.createdAt) },
             { key: "updatedAt", label: "更新时间", render: (r) => formatTime(r.updatedAt) },
             { key: "actions", label: "操作", width: "120px", sticky: "right" as const, align: "center", render: (r) => (
@@ -175,7 +200,17 @@ export function TestPointsTab({ projectId }: { projectId: string }) {
       </Modal>
 
       <ConfirmDialog open={showGenerateConfirm} title="重新生成测试点" message={`当前已有 ${testPoints.length} 个测试点，再次生成将覆盖之前的数据，是否继续？`} confirmLabel="继续生成" onConfirm={handleGenerate} onCancel={() => setShowGenerateConfirm(false)} />
-      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={`确定将选中的 ${selectedIds.size} 个测试点标记为评审通过？`} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
+      <ConfirmDialog open={showBatchApproveConfirm} title="批量评审通过" message={(() => {
+        const selected = testPoints.filter((tp) => selectedIds.has(tp.id));
+        const invalidCount = selected.filter(isInvalid).length;
+        if (invalidCount === selected.length) {
+          return `选中的 ${selectedIds.size} 个测试点均已失效，无法再次评审。数据失效后需重新生成测试点`;
+        }
+        if (invalidCount > 0) {
+          return `选中的 ${selectedIds.size} 个测试点中有 ${invalidCount} 个已失效，将被自动跳过，仅评审其余 ${selectedIds.size - invalidCount} 个。是否继续？`;
+        }
+        return `确定将选中的 ${selectedIds.size} 个测试点标记为评审通过？`;
+      })()} confirmLabel="确认通过" onConfirm={() => { setShowBatchApproveConfirm(false); batchApprove(); }} onCancel={() => setShowBatchApproveConfirm(false)} />
       {configErrorDialog}
       {tpDirty.confirmDialog}
 

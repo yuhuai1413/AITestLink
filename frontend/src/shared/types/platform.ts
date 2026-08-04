@@ -164,7 +164,8 @@ export type AITaskType =
   | "用例生成"
   | "脚本生成"
   | "执行脚本"
-  | "文档生成";
+  | "文档生成"
+  | "系统识别";
 export type AITaskStatus = "等待" | "执行中" | "成功" | "失败";
 
 export interface AITask {

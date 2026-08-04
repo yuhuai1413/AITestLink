@@ -1,6 +1,7 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +34,7 @@ async def lifespan(app: FastAPI):
                 update(AITask).where(AITask.status == "执行中").values(
                     status="失败",
                     error_message="任务因服务器重启而中断，请重新执行",
+                    finished_at=datetime.now(timezone.utc),
                 )
             )
             await db.commit()
